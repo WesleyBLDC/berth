@@ -35,6 +35,12 @@ for pair in Berth:com.wesleybldc.berth berthd:com.wesleybldc.berth.daemon berth:
   echo "$details" | grep -q "flags=.*runtime" || fail "$file lacks the hardened runtime"
 done
 
+# No entitlement may widen what the hardened runtime allows, and test tools stay out of the bundle.
+for file in "$app" "$app"/Contents/Helpers/*; do
+  [ -z "$(codesign -d --entitlements - "$file" 2>/dev/null)" ] || fail "$file carries entitlements"
+done
+[ -z "$(find "$app" -name 'berth-app-probe*')" ] || fail "berth-app-probe is in the bundle"
+
 # Berth.app holds no secret: no Keychain item, keychain or access call may be linked into it.
 if nm -u "$app/Contents/MacOS/Berth" | grep -E '_Sec(Item|Keychain|Access)'; then
   fail "Berth links Keychain code"

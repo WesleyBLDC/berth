@@ -14,6 +14,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	berthv1 "berth/gen/berth/v1"
+	"berth/internal/codetrust"
 )
 
 // Berth.app decodes WatchSessions with hand written Swift models and escapes text with a Swift
@@ -166,5 +167,32 @@ func writeFixtures(t *testing.T, sessionsPath, shownPath string, messages []*ber
 		if err := os.WriteFile(path, buf.Bytes(), 0o600); err != nil {
 			t.Fatal(err)
 		}
+	}
+}
+
+// The app checks that the signed berthd answers with a requirement written in Swift; it must be
+// the one Go pins berthd by in release builds, byte for byte.
+func TestSwiftDaemonRequirementFixture(t *testing.T) {
+	path := filepath.Join(swiftFixtures, "requirement.json")
+	want := map[string]string{"daemon": codetrust.Requirement(codetrust.DaemonSigningID)}
+	if *updateSwift {
+		b, err := json.MarshalIndent(want, "", "  ")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, append(b, '\n'), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var got map[string]string
+	if err := json.Unmarshal(raw, &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["daemon"] != want["daemon"] {
+		t.Fatalf("%s says %q, Go pins berthd by %q; rerun with -update-swift", path, got["daemon"], want["daemon"])
 	}
 }

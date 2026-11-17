@@ -178,3 +178,11 @@ private func cut(_ bytes: [UInt8], every size: Int) -> [[UInt8]] {
     var byte: UInt8 = 0
     #expect(read(accepted, &byte, 1) == 0)
 }
+
+/// The Go test writes the requirement Go pins berthd by in release builds; the app must use
+/// exactly that one.
+@Test func theDaemonRequirementMatchesGo() throws {
+    let go = try JSONDecoder().decode([String: String].self, from: fixture("requirement.json"))
+    #expect(go["daemon"] == berthDaemonRequirement)
+    #expect(SocketDialer(path: "/x").requirement == berthDaemonRequirement)
+}
