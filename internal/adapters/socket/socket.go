@@ -9,6 +9,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 	"unsafe"
 
@@ -102,79 +103,153 @@ func Listen(ctx context.Context, path string, uid uint32, peer PeerUID, log *slo
 	return &listener{Listener: ln, uid: uid, peer: peer, log: log}, nil
 }
 
-// ListenShared creates a socket another user can reach: mode 0660 with group gid, inside a 0710
-// folder with the same group, so members can connect but not list it. Only peers with user ID
-// uid are served. The daemon's user must belong to gid. It refuses a folder another user owns
-// or could replace, since berthd changes its mode and group and agents trust what answers there.
+// ListenShared creates a socket another user can reach, mode 0660 with group gid, and serves
+// only peers with user ID uid. berthd never creates the socket's folder: berth agent setup makes
+// it, owned by the daemon's user with group gid and mode 0710, inside a root owned parent, so no
+// other user can squat or replace any folder on the path. Every level of the path is checked
+// before the bind and again after it.
 func ListenShared(ctx context.Context, path string, uid, gid uint32, peer PeerUID, log *slog.Logger) (net.Listener, error) {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil { //nolint:gosec // the parent only has to be traversable
-		return nil, err
-	}
-	if err := checkAncestors(filepath.Dir(dir)); err != nil {
-		return nil, err
-	}
-	if err := os.Mkdir(dir, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
-		return nil, err
-	}
-	if err := shareFolder(dir, gid); err != nil {
+	before, err := verifyFolder(dir, gid)
+	if err != nil {
 		return nil, err
 	}
 	ln, err := bind(ctx, path, 0o660, int(gid))
 	if err != nil {
 		return nil, err
 	}
+	// Go cannot bind relative to the checked descriptor, so the path is walked again: the folder
+	// it reaches must be the same one. Every level is owned by root or this user and writable by
+	// no one else, so only root could change a level between the two walks.
+	after, err := verifyFolder(dir, gid)
+	if err == nil && after != before {
+		err = fmt.Errorf("%w: %s changed while berthd bound the socket", ErrUnsafeFolder, dir)
+	}
+	if err != nil {
+		_ = ln.Close()
+		return nil, err
+	}
 	return &listener{Listener: ln, uid: uid, peer: peer, log: log}, nil
 }
 
-// ErrUnsafeFolder means another user owns or could replace a folder on the socket's path.
+// ErrUnsafeFolder means a folder or symlink on the socket's path belongs to, or can be changed
+// by, someone other than root and this user, or the socket folder is not set up as expected.
 var ErrUnsafeFolder = errors.New("unsafe socket folder")
 
-// checkAncestors walks the real path of dir up to the root: each folder must belong to this user
-// or root, and only a root owned folder with the sticky bit (like /tmp) may be writable by others.
-func checkAncestors(dir string) error {
-	real, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		return err
-	}
-	self := uint32(os.Getuid()) //nolint:gosec // user IDs fit in 32 bits
-	for p := real; ; p = filepath.Dir(p) {
-		var st unix.Stat_t
-		if err := unix.Lstat(p, &st); err != nil {
-			return err
-		}
-		sticky := st.Mode&unix.S_ISVTX != 0
-		switch {
-		case st.Uid != self && st.Uid != 0:
-			return fmt.Errorf("%w: %s belongs to user %d", ErrUnsafeFolder, p, st.Uid)
-		case st.Mode&0o022 != 0 && (st.Uid != 0 || !sticky):
-			return fmt.Errorf("%w: others can write %s", ErrUnsafeFolder, p)
-		}
-		if p == filepath.Dir(p) {
-			return nil
-		}
-	}
-}
+// ErrNotSetUp means the agent socket's folder does not exist yet.
+var ErrNotSetUp = errors.New("the agent socket folder is missing; run berth agent setup")
 
-// shareFolder sets dir to 0710 with group gid through a descriptor opened without following
-// symlinks, so the change lands on the folder that was checked and nowhere else.
-func shareFolder(dir string, gid uint32) error {
-	fd, err := unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+type folderID struct{ dev, ino uint64 }
+
+// verifyFolder walks dir from / one component at a time, opening each level with O_NOFOLLOW so
+// the checked folder is the one used. A symlink is followed only when root owns it (/tmp, /var);
+// every level must belong to root or this user, and only a root owned sticky folder may be
+// writable by others. The last level must be this user's, with group gid and mode 0710.
+func verifyFolder(dir string, gid uint32) (folderID, error) {
+	if !filepath.IsAbs(dir) {
+		return folderID{}, fmt.Errorf("%w: %s is not an absolute path", ErrUnsafeFolder, dir)
+	}
+	const flags = unix.O_RDONLY | unix.O_DIRECTORY | unix.O_NOFOLLOW | unix.O_CLOEXEC
+	fd, err := unix.Open("/", flags, 0)
 	if err != nil {
-		return fmt.Errorf("%w: open %s: %w", ErrUnsafeFolder, dir, err)
+		return folderID{}, err
 	}
 	defer func() { _ = unix.Close(fd) }()
+	st, err := checkLevel(fd, "/")
+	if err != nil {
+		return folderID{}, err
+	}
+	pending := components(dir)
+	for links := 0; len(pending) > 0; {
+		name := pending[0]
+		pending = pending[1:]
+		next, err := unix.Openat(fd, name, flags, 0)
+		switch {
+		// O_NOFOLLOW with O_DIRECTORY answers ENOTDIR for a symlink on macOS, ELOOP elsewhere.
+		case (errors.Is(err, unix.ELOOP) || errors.Is(err, unix.ENOTDIR)) && isSymlink(fd, name):
+			if links++; links > 32 {
+				return folderID{}, fmt.Errorf("%w: too many symlinks in %s", ErrUnsafeFolder, dir)
+			}
+			target, err := rootSymlink(fd, name)
+			if err != nil {
+				return folderID{}, fmt.Errorf("%w: %s in %s", err, name, dir)
+			}
+			if filepath.IsAbs(target) {
+				root, err := unix.Open("/", flags, 0)
+				if err != nil {
+					return folderID{}, err
+				}
+				_ = unix.Close(fd)
+				fd = root
+			}
+			pending = append(components(target), pending...)
+			continue
+		case errors.Is(err, unix.ENOENT):
+			return folderID{}, fmt.Errorf("%w (%s)", ErrNotSetUp, dir)
+		case err != nil:
+			return folderID{}, fmt.Errorf("open %s in %s: %w", name, dir, err)
+		}
+		_ = unix.Close(fd)
+		fd = next
+		if st, err = checkLevel(fd, name); err != nil {
+			return folderID{}, err
+		}
+	}
+	switch {
+	case st.Uid != uint32(os.Getuid()): //nolint:gosec // user IDs fit in 32 bits
+		return folderID{}, fmt.Errorf("%w: %s belongs to user %d; run berth agent setup", ErrUnsafeFolder, dir, st.Uid)
+	case st.Gid != gid || st.Mode&0o7777 != 0o710:
+		return folderID{}, fmt.Errorf("%w: %s must have group %d and mode 0710; run berth agent setup", ErrUnsafeFolder, dir, gid)
+	}
+	return folderID{dev: uint64(st.Dev), ino: st.Ino}, nil //nolint:gosec // device numbers are not negative
+}
+
+func checkLevel(fd int, name string) (unix.Stat_t, error) {
 	var st unix.Stat_t
 	if err := unix.Fstat(fd, &st); err != nil {
-		return err
+		return st, err
 	}
-	if st.Uid != uint32(os.Getuid()) { //nolint:gosec // user IDs fit in 32 bits
-		return fmt.Errorf("%w: %s belongs to user %d", ErrUnsafeFolder, dir, st.Uid)
+	self := uint32(os.Getuid()) //nolint:gosec // user IDs fit in 32 bits
+	sticky := st.Mode&unix.S_ISVTX != 0
+	switch {
+	case st.Uid != self && st.Uid != 0:
+		return st, fmt.Errorf("%w: %s belongs to user %d", ErrUnsafeFolder, name, st.Uid)
+	case st.Mode&0o022 != 0 && (st.Uid != 0 || !sticky):
+		return st, fmt.Errorf("%w: others can write %s", ErrUnsafeFolder, name)
 	}
-	if err := unix.Fchown(fd, -1, int(gid)); err != nil {
-		return fmt.Errorf("give %s to group %d: %w", dir, gid, err)
+	return st, nil
+}
+
+func isSymlink(fd int, name string) bool {
+	var st unix.Stat_t
+	return unix.Fstatat(fd, name, &st, unix.AT_SYMLINK_NOFOLLOW) == nil && st.Mode&unix.S_IFMT == unix.S_IFLNK
+}
+
+// rootSymlink reads the symlink name in the folder fd, refusing one root does not own.
+func rootSymlink(fd int, name string) (string, error) {
+	var st unix.Stat_t
+	if err := unix.Fstatat(fd, name, &st, unix.AT_SYMLINK_NOFOLLOW); err != nil {
+		return "", err
 	}
-	return unix.Fchmod(fd, 0o710)
+	if st.Uid != 0 {
+		return "", fmt.Errorf("%w: symlink owned by user %d", ErrUnsafeFolder, st.Uid)
+	}
+	buf := make([]byte, unix.PathMax)
+	n, err := unix.Readlinkat(fd, name, buf)
+	if err != nil {
+		return "", err
+	}
+	return string(buf[:n]), nil
+}
+
+func components(p string) []string {
+	var out []string
+	for _, c := range strings.Split(p, "/") {
+		if c != "" && c != "." {
+			out = append(out, c)
+		}
+	}
+	return out
 }
 
 // bind listens at path, removing a stale socket file but refusing a live one, then sets the
@@ -215,7 +290,17 @@ type listener struct {
 	log  *slog.Logger
 }
 
-// Accept drops connections from any other user before a single byte is read.
+// Conn is an accepted connection with the facts the kernel gave about its peer, read before a
+// single byte was.
+type Conn struct {
+	*net.UnixConn
+	UID        uint32
+	PID        int
+	AuditToken [32]byte
+}
+
+// Accept drops connections from any other user before a single byte is read, and any whose
+// peer facts the kernel would not give, so no handler ever sees a peer it cannot name.
 func (l *listener) Accept() (net.Conn, error) {
 	for {
 		conn, err := l.Listener.Accept()
@@ -233,6 +318,16 @@ func (l *listener) Accept() (net.Conn, error) {
 			_ = conn.Close()
 			continue
 		}
-		return conn, nil
+		pid, err := KernelPeerPID(uc)
+		var token [32]byte
+		if err == nil {
+			token, err = KernelPeerToken(uc)
+		}
+		if err != nil {
+			l.log.Warn("refused socket peer without process facts", "peer_uid", got, "err", err)
+			_ = conn.Close()
+			continue
+		}
+		return &Conn{UnixConn: uc, UID: got, PID: pid, AuditToken: token}, nil
 	}
 }

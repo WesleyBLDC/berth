@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strconv"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -25,7 +26,19 @@ func startWithAgent(t *testing.T, h string, agentUID int) (*daemonProc, string) 
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	sock := filepath.Join(dir, "b", "u", "agent.sock")
+	// The folders berth agent setup makes: a parent no one else can write, and the socket folder
+	// with the agent group and mode 0710; berthd only checks them.
+	sockDir := filepath.Join(dir, "b", "u")
+	if err := os.MkdirAll(sockDir, 0o755); err != nil { //nolint:gosec // setup makes the parent 0755
+		t.Fatal(err)
+	}
+	if err := os.Chown(sockDir, -1, os.Getgid()); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(sockDir, 0o710); err != nil { //nolint:gosec // the mode setup gives it
+		t.Fatal(err)
+	}
+	sock := filepath.Join(sockDir, "agent.sock")
 	d := start(t, h, "-agent-uid", strconv.Itoa(agentUID), "-agent-gid", strconv.Itoa(os.Getgid()), "-agent-socket", sock)
 	waitServing(t, h)
 	return d, sock
@@ -130,5 +143,24 @@ func TestRequestLogKeepsEachCallersReplies(t *testing.T) {
 	again, err := owner.Secrets.RequestSecret(ctx, &berthv1.RequestSecretRequest{RequestId: id, Name: "owner-secret", Reason: "owner"})
 	if err != nil || again.GetName() != "owner-secret" || again.GetOutcome() != first.GetOutcome() {
 		t.Fatalf("owner retry: %v %v", again, err)
+	}
+}
+
+func TestAgentSocketWithoutSetupStopsBerthd(t *testing.T) {
+	h := home(t)
+	dir, err := os.MkdirTemp("", "berth-agent-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	d := start(t, h, "-agent-uid", strconv.Itoa(os.Getuid()), "-agent-gid", strconv.Itoa(os.Getgid()),
+		"-agent-socket", filepath.Join(dir, "b", "u", "agent.sock"))
+	_ = d.cmd.Wait()
+	log, _ := os.ReadFile(filepath.Join(h, "berthd.log"))
+	if !strings.Contains(string(log), "run berth agent setup") {
+		t.Fatalf("berthd did not say to run setup; log:\n%s", log)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "b")); !os.IsNotExist(err) {
+		t.Fatalf("berthd created the folder setup owns: %v", err)
 	}
 }

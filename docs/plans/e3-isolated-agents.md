@@ -85,7 +85,7 @@ Questions, each answered with the command run and its output:
 
 ### Item 2: `berth agent setup` and `uninstall`
 
-- `setup` creates the agent user and the runner user (hidden, standard, no admin), the `berth` group with the owner, the agent and the runner in it, the workspace `/Users/Shared/berth-work` (group `berth`, setgid, group writable, with an inheriting ACL so new files stay group writable), the socket folders of item 3, the launch helper of D3, and writes `berthd`'s agent uid and gid.
+- `setup` creates the agent user and the runner user (hidden, standard, no admin), the `berth` group with the owner, the agent and the runner in it, the workspace `/Users/Shared/berth-work` (group `berth`, setgid, group writable, with an inheriting ACL so new files stay group writable), the socket folders of item 3 (`/Users/Shared/Berth` owned by root with mode `0755`, and `/Users/Shared/Berth/<owner uid>` owned by the owner with the agent group and mode `0710`; `berthd` never creates either), the launch helper of D3, and writes `berthd`'s agent uid and gid.
 - `uninstall` removes the users, the group, the helper and the socket folders; it keeps the workspace unless `--purge` is given.
 - Both need admin rights, so the code is built and its plan printing is unit tested now, while the real run is a by hand check by the maintainer. Nothing in `make check` runs it.
 
@@ -95,8 +95,8 @@ Built; it is tested as one user.
 
 - `berthd` listens on a second Unix socket when it is given an agent uid (`berthd -agent-uid <uid> -agent-gid <gid> [-agent-socket <path>]`). With no agent uid the agent socket is off; an agent uid without a gid, or uid 0, is refused at start.
 - **Path:** `/Users/Shared/Berth/<owner uid>/agent.sock` by default, since `BERTH_HOME` sits inside the owner's `~/Library`, which is `0700` and so unreachable for another user.
-- **Modes:** the socket folder is `0710`, owned by the owner with group `<agent gid>` (setup makes this the `berth` group), so the agent can reach the socket but not list the folder; the socket is `0660` with the same group. The owner must be a member of that group, which setup arranges.
-- **No swapping:** `berthd` refuses to serve when the socket folder is a symlink or owned by someone else, or when its parent is writable by anyone but the owner or root (a root owned parent with the sticky bit, like `/tmp`, is fine), so another user cannot replace the socket. Setup creates `/Users/Shared/Berth` as root first, so an agent cannot squat the name before `berthd` runs.
+- **Folders made by setup, never by `berthd`:** setup (item 2) creates `/Users/Shared/Berth` owned by root with mode `0755`, and the socket folder `<owner uid>/` owned by the owner with group `<agent gid>` (the `berth` group) and mode `0710`, so the agent can reach the socket but not list the folder. The socket is `0660` with the same group, and the owner must be a member of that group, which setup arranges. When a folder is missing, the agent socket does not start and `berthd` says to run `berth agent setup`.
+- **No swapping:** `berthd` walks the path as written from `/`, one component at a time, opening each level with `O_NOFOLLOW` and checking the open descriptor. It follows a symlink only when root owns it (so `/tmp` and `/var` work), and refuses any level owned by someone other than root or the owner, or writable by others unless it is a root owned sticky folder like `/Users/Shared`. The socket folder itself must be the owner's, with the agent group and mode `0710`. Go cannot bind relative to the checked descriptor, so `berthd` walks the path again after the bind and serves only if it reaches the same folder; since every level belongs to root or the owner and no one else can write it, only root could change a level in that window.
 - **Peer check:** every connection's peer uid is read with `LOCAL_PEERCRED` before a byte is read, as on the owner socket, and must equal the configured agent uid; any other connection is closed. The owner socket keeps refusing every uid but the owner's, so the agent can reach `berthd` only here.
 - **Methods:** only methods marked `(berth.v1.agent) = true` are served; every other method answers `PermissionDenied` with the new reason `ERROR_REASON_NOT_AGENT_METHOD`. The check reads the method's schema option, so a newly marked method is served without further wiring, and `TestAgentSurface` pins both the list and the refusal.
 - **Before items 4 to 6:** the agent methods answer exactly as on the owner socket. `AuthorizeUse` and `AuthorizeProxy` hand out tickets that only a `berth-native` or `berth-proxy` redeeming on the owner socket can use, and the owner socket refuses the agent uid, so a ticket an agent obtains here leads to no value.
@@ -144,8 +144,13 @@ These go into `ARCHITECTURE.md` when the items that create them land.
 - Until the spike answers it, the agent may share the owner's audit session and launchd domain (pasteboard, GUI services) when started with plain `sudo -u`.
 - The owner's home may be readable by the agent through the `staff` group until setup tightens it.
 - `berthd` cannot see another user's process arguments (`kern.procargs2`), so it can broker only browsers it launched.
-- An agent that runs before setup can create `/Users/Shared/Berth` first; `berthd` then refuses to serve the agent socket (a denial of service, not a bypass).
+- Nothing can squat the agent socket's folders: setup creates them root owned (the parent) and owner owned (the socket folder), and before setup the agent socket does not start.
 - Free signing (D7): no Endpoint Security and no notarization until M8.
+
+## Follow ups from the review
+
+- The folder check reads only the owner and mode bits and ignores ACLs, so an ACL that grants another user write on a folder in the agent socket's path passes the check. Setup creates the folders without ACLs; the check should also refuse an ACL entry that grants write or delete to anyone but the owner.
+- Until session tokens (item 4) exist, an agent can call `RequestSecret` as often as it likes, and each call opens a store dialog on the owner's screen. Item 4 should rate limit store requests per session.
 
 ## Acceptance tests
 

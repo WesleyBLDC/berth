@@ -7,6 +7,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -102,8 +103,10 @@ func TestKernelPeerPIDIsTheConnectingProcess(t *testing.T) {
 			return
 		}
 		defer func() { _ = conn.Close() }()
-		pid, err := socket.KernelPeerPID(conn.(*net.UnixConn))
-		if err != nil {
+		// The accepted connection carries the kernel's facts, and asking again agrees.
+		sc := conn.(*socket.Conn)
+		pid, err := socket.KernelPeerPID(sc.UnixConn)
+		if err != nil || pid != sc.PID || sc.AuditToken == ([32]byte{}) {
 			pid = -1
 		}
 		got <- pid
@@ -121,6 +124,8 @@ func TestKernelPeerPIDIsTheConnectingProcess(t *testing.T) {
 
 func gid() uint32 { return uint32(os.Getgid()) } //nolint:gosec // group IDs fit in 32 bits
 
+// sharedPath makes the folders berth agent setup would: a parent only this user (standing in for
+// root) can write, and the socket folder with this user's group and mode 0710.
 func sharedPath(t *testing.T) string {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "berth-agent-")
@@ -128,7 +133,26 @@ func sharedPath(t *testing.T) string {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
-	return filepath.Join(dir, "Berth", "501", "agent.sock")
+	sockDir := filepath.Join(dir, "Berth", "501")
+	if err := os.MkdirAll(sockDir, 0o755); err != nil { //nolint:gosec // setup makes the parent 0755
+		t.Fatal(err)
+	}
+	if err := os.Chown(sockDir, -1, int(gid())); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chmod(sockDir, 0o710); err != nil { //nolint:gosec // the mode setup gives it
+		t.Fatal(err)
+	}
+	return filepath.Join(sockDir, "agent.sock")
+}
+
+func listenShared(t *testing.T, path string) error {
+	t.Helper()
+	ln, err := socket.ListenShared(t.Context(), path, uid(), gid(), socket.KernelPeerUID, slog.New(slog.DiscardHandler))
+	if err == nil {
+		_ = ln.Close()
+	}
+	return err
 }
 
 func serveShared(t *testing.T, path string, peer socket.PeerUID) {
@@ -176,39 +200,58 @@ func TestSharedSocketRefusesAnotherUID(t *testing.T) {
 	}
 }
 
-func TestSharedSocketRefusesAFolderOthersCouldReplace(t *testing.T) {
-	listen := func(path string) error {
-		ln, err := socket.ListenShared(t.Context(), path, uid(), gid(), socket.KernelPeerUID, slog.New(slog.DiscardHandler))
-		if err == nil {
-			_ = ln.Close()
-		}
-		return err
+func TestSharedSocketNeedsSetup(t *testing.T) {
+	path := sharedPath(t)
+	berth := filepath.Dir(filepath.Dir(path))
+	if err := os.RemoveAll(berth); err != nil {
+		t.Fatal(err)
 	}
+	err := listenShared(t, path)
+	if !errors.Is(err, socket.ErrNotSetUp) || !strings.Contains(err.Error(), "run berth agent setup") {
+		t.Fatalf("missing folders: got %v, want ErrNotSetUp naming berth agent setup", err)
+	}
+	if _, err := os.Stat(berth); !os.IsNotExist(err) {
+		t.Fatalf("berthd created the folder setup owns: %v", err)
+	}
+}
 
+func TestSharedSocketRefusesAFolderOthersCouldReplace(t *testing.T) {
 	writable := sharedPath(t)
-	parent := filepath.Dir(filepath.Dir(writable))
-	if err := os.MkdirAll(parent, 0o755); err != nil {
+	if err := os.Chmod(filepath.Dir(filepath.Dir(writable)), 0o777); err != nil { //nolint:gosec // the point of the test
 		t.Fatal(err)
 	}
-	if err := os.Chmod(parent, 0o777); err != nil { //nolint:gosec // the point of the test
-		t.Fatal(err)
-	}
-	if err := listen(writable); !errors.Is(err, socket.ErrUnsafeFolder) {
+	if err := listenShared(t, writable); !errors.Is(err, socket.ErrUnsafeFolder) {
 		t.Errorf("parent writable by others: got %v, want ErrUnsafeFolder", err)
 	}
 
-	linked := sharedPath(t)
-	target := t.TempDir()
-	if err := os.MkdirAll(filepath.Dir(filepath.Dir(linked)), 0o755); err != nil {
+	loose := sharedPath(t)
+	if err := os.Chmod(filepath.Dir(loose), 0o750); err != nil { //nolint:gosec // the point of the test
 		t.Fatal(err)
 	}
-	if err := os.Symlink(target, filepath.Dir(linked)); err != nil {
-		t.Fatal(err)
+	if err := listenShared(t, loose); !errors.Is(err, socket.ErrUnsafeFolder) {
+		t.Errorf("socket folder not 0710: got %v, want ErrUnsafeFolder", err)
 	}
-	if err := listen(linked); !errors.Is(err, socket.ErrUnsafeFolder) {
-		t.Errorf("socket folder is a symlink: got %v, want ErrUnsafeFolder", err)
-	}
-	if fi, err := os.Stat(target); err != nil || fi.Mode().Perm() == 0o710 {
-		t.Errorf("the symlink target's mode changed: %v %v", fi.Mode().Perm(), err)
+
+	// A symlink this user (not root) owns is refused as the socket folder and in the middle.
+	for _, level := range []int{1, 2} {
+		real := sharedPath(t)
+		linked := sharedPath(t)
+		link := linked
+		for range level {
+			link = filepath.Dir(link)
+		}
+		target := real
+		for range level {
+			target = filepath.Dir(target)
+		}
+		if err := os.RemoveAll(link); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.Symlink(target, link); err != nil {
+			t.Fatal(err)
+		}
+		if err := listenShared(t, linked); !errors.Is(err, socket.ErrUnsafeFolder) {
+			t.Errorf("symlink %d levels up: got %v, want ErrUnsafeFolder", level, err)
+		}
 	}
 }

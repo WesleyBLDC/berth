@@ -168,6 +168,7 @@ func (s *shell) run(ctx context.Context, effect daemon.Effect) ([]daemon.Event, 
 		return []daemon.Event{{Kind: daemon.Recovered, Note: note}}, nil
 	case daemon.StartServing:
 		if err := s.serve(ctx); err != nil {
+			s.log.Error("cannot serve", "err", err)
 			return []daemon.Event{{Kind: daemon.Failed, Note: err.Error()}}, nil
 		}
 		return nil, nil
@@ -275,16 +276,11 @@ func (s *shell) listen(ln net.Listener, sock string, server *connect.Server, age
 	protocols.SetHTTP1(true)
 	hs := &http.Server{
 		Handler: mux, Protocols: protocols, ReadHeaderTimeout: 5 * time.Second,
+		// The listener hands over only connections whose uid, pid and audit token the kernel gave.
 		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
-			if uc, ok := c.(*net.UnixConn); ok {
-				// The listener already refused any other uid, so this read cannot fail for a served peer.
-				uid, _ := socket.KernelPeerUID(uc)
-				ctx = api.WithCaller(ctx, api.Caller{Agent: agent, UID: uid})
-				pid, pidErr := socket.KernelPeerPID(uc)
-				token, tokenErr := socket.KernelPeerToken(uc)
-				if pidErr == nil && tokenErr == nil {
-					return api.WithPeer(ctx, ports.Peer{PID: pid, AuditToken: token})
-				}
+			if sc, ok := c.(*socket.Conn); ok {
+				ctx = api.WithCaller(ctx, api.Caller{Agent: agent, UID: sc.UID})
+				return api.WithPeer(ctx, ports.Peer{PID: sc.PID, AuditToken: sc.AuditToken})
 			}
 			return ctx
 		},
