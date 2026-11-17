@@ -10,7 +10,8 @@ import (
 )
 
 // Browsers is a scriptable ports.BrowserDriver: each launch gets a FakeBrowser that answers
-// Browser.getVersion and exits on Browser.close or Kill, unless told otherwise.
+// Browser.getVersion, exits on Browser.close or Kill, and answers any other call with an empty
+// result, unless told otherwise.
 type Browsers struct {
 	mu sync.Mutex
 	// LaunchErr fails every launch; Silent launches browsers that never answer over the pipe;
@@ -66,7 +67,7 @@ type FakeBrowser struct {
 	stubborn bool
 
 	mu     sync.Mutex
-	calls  []string
+	calls  []FakeCall
 	sent   [][]byte
 	sink   func([]byte)
 	killed bool
@@ -81,9 +82,14 @@ func (b *FakeBrowser) OwnSession(string) bool    { return false }
 // Exit ends the fake browser as if its process exited on its own.
 func (b *FakeBrowser) Exit() { b.once.Do(func() { close(b.done) }) }
 
-func (b *FakeBrowser) Call(ctx context.Context, _, method string, _ []byte) ([]byte, error) {
+// FakeCall is one call Berth made on its own id range.
+type FakeCall struct {
+	Session, Method, Params string
+}
+
+func (b *FakeBrowser) Call(ctx context.Context, session, method string, params []byte) ([]byte, error) {
 	b.mu.Lock()
-	b.calls = append(b.calls, method)
+	b.calls = append(b.calls, FakeCall{Session: session, Method: method, Params: string(params)})
 	b.mu.Unlock()
 	select {
 	case <-b.done:
@@ -95,6 +101,8 @@ func (b *FakeBrowser) Call(ctx context.Context, _, method string, _ []byte) ([]b
 		return []byte(`{"product":"FakeChrome/1.0"}`), nil
 	case method == "Browser.close" && !b.stubborn:
 		b.Exit()
+		return []byte(`{}`), nil
+	case method != "Browser.getVersion" && method != "Browser.close":
 		return []byte(`{}`), nil
 	}
 	select {
@@ -143,11 +151,11 @@ func (b *FakeBrowser) Kill() error {
 	return nil
 }
 
-// Calls are the methods Berth called, in order.
-func (b *FakeBrowser) Calls() []string {
+// Calls are the calls Berth made, in order.
+func (b *FakeBrowser) Calls() []FakeCall {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return append([]string(nil), b.calls...)
+	return append([]FakeCall(nil), b.calls...)
 }
 
 // Sent are the raw messages passed through Send, in order.

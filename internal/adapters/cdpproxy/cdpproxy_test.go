@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -254,5 +255,125 @@ func TestDownloadBehaviourIsAnsweredByTheProxy(t *testing.T) {
 	}
 	if len(fb.Sent()) != 0 {
 		t.Fatalf("browser got %q; the download behaviour must never reach it", fb.Sent())
+	}
+}
+
+func write(t *testing.T, ws *websocket.Conn, raw string) {
+	t.Helper()
+	if err := ws.Write(t.Context(), websocket.MessageText, []byte(raw)); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// redial connects again once the previous connection's state is undone and its slot free.
+func redial(t *testing.T, endpoint string) *websocket.Conn {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
+		ws, _, err := dial(t, endpoint, true)
+		if err == nil {
+			return ws
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no new connection after the first ended: %v", err)
+		}
+	}
+}
+
+// The browser and its pipe outlive each connection, so whatever one connection turned on must
+// not reach the next: a target paused waiting for the debugger is resumed, its sessions are
+// detached, browser level Fetch and auto attach are turned off, and the replies to its calls
+// still in flight are dropped.
+func TestAnEndedConnectionLeavesNothingToTheNext(t *testing.T) {
+	fb, endpoint, _ := serveWith(t, &cdpproxy.Proxy{Log: slog.New(slog.DiscardHandler), ResetWait: 100 * time.Millisecond})
+	ws, _, err := dial(t, endpoint, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, ws, `{"id":1,"method":"Target.setAutoAttach","params":{"autoAttach":true,"waitForDebuggerOnStart":true,"flatten":true}}`)
+	write(t, ws, `{"id":2,"method":"Fetch.enable"}`)
+	write(t, ws, `{"id":3,"method":"Target.attachToTarget","params":{"targetId":"T2","flatten":true}}`)
+	write(t, ws, `{"id":7,"method":"Target.getTargets"}`)
+	for deadline := time.Now().Add(5 * time.Second); len(fb.Sent()) < 4; time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the browser never got the messages")
+		}
+	}
+	for _, raw := range []string{
+		`{"id":1,"result":{}}`, `{"id":2,"result":{}}`,
+		`{"method":"Target.attachedToTarget","params":{"sessionId":"S1","targetInfo":{},"waitingForDebugger":true}}`,
+		`{"method":"Target.attachedToTarget","sessionId":"S1","params":{"sessionId":"S1-child","targetInfo":{},"waitingForDebugger":false}}`,
+		`{"id":3,"result":{"sessionId":"S2"}}`,
+	} {
+		if err := fb.Emit([]byte(raw)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for range 5 {
+		read(t, ws)
+	}
+	_ = ws.CloseNow()
+
+	next := redial(t, endpoint)
+	defer func() { _ = next.CloseNow() }()
+	var got []string
+	for _, c := range fb.Calls() {
+		got = append(got, c.Session+" "+c.Method+" "+c.Params)
+	}
+	for _, want := range []string{
+		`S1 Runtime.runIfWaitingForDebugger `,
+		` Target.detachFromTarget {"sessionId":"S1"}`,
+		`S1 Target.detachFromTarget {"sessionId":"S1-child"}`,
+		` Target.detachFromTarget {"sessionId":"S2"}`,
+		` Fetch.disable `,
+		` Target.setAutoAttach {"autoAttach":false,"waitForDebuggerOnStart":false,"flatten":true}`,
+	} {
+		if !slices.Contains(got, want) {
+			t.Errorf("the reset made no call %q; calls %q", want, got)
+		}
+	}
+	// The first connection's getTargets is answered only now; the next connection must not see it.
+	if err := fb.Emit([]byte(`{"id":7,"result":{"targetInfos":[]}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if err := fb.Emit([]byte(`{"method":"Target.targetCreated","params":{}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if m := read(t, next); m["method"] != "Target.targetCreated" {
+		t.Fatalf("the next connection got %v; a reply to the previous one's call must never reach it", m)
+	}
+	// Once that reply came, its id is free again.
+	write(t, next, `{"id":7,"method":"Target.getTargets"}`)
+	if err := fb.Emit([]byte(`{"id":7,"result":{"targetInfos":[]}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if m := read(t, next); m["id"] != float64(7) || m["error"] != nil {
+		t.Fatalf("reply = %v", m)
+	}
+}
+
+// An id an ended connection left unanswered is refused to the next until its reply comes, so a
+// reply can never be read as the answer to the wrong call.
+func TestAnIDLeftInFlightIsRefusedToTheNextConnection(t *testing.T) {
+	fb, endpoint, _ := serveWith(t, &cdpproxy.Proxy{Log: slog.New(slog.DiscardHandler), ResetWait: 50 * time.Millisecond})
+	ws, _, err := dial(t, endpoint, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, ws, `{"id":5,"method":"Target.getTargets"}`)
+	for deadline := time.Now().Add(5 * time.Second); len(fb.Sent()) < 1; time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the browser never got the message")
+		}
+	}
+	_ = ws.CloseNow()
+	next := redial(t, endpoint)
+	defer func() { _ = next.CloseNow() }()
+	write(t, next, `{"id":5,"method":"Target.getTargets"}`)
+	m := read(t, next)
+	if m["id"] != float64(5) || !strings.Contains(m["error"].(map[string]any)["message"].(string), "still in flight") {
+		t.Fatalf("reply = %v, want a refusal", m)
+	}
+	if len(fb.Sent()) != 1 {
+		t.Fatalf("browser got %q; the reused id must not reach it", fb.Sent())
 	}
 }
