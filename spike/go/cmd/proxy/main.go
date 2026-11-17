@@ -17,9 +17,9 @@ import (
 	"os/signal"
 	"sync"
 
-	"github.com/coder/websocket"
-
 	"berth/spike/go/chrome"
+
+	"github.com/coder/websocket"
 )
 
 // refused lists methods an agent may never call: they reach beyond its own session.

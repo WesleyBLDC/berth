@@ -36,5 +36,6 @@ let package = Package(
             ]
         ),
         .executableTarget(name: "NativeProof"),
+        .executableTarget(name: "WindowProof"),
     ]
 )

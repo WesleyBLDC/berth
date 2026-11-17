@@ -1,0 +1,67 @@
+version: "2"
+
+run:
+  timeout: 3m
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - contextcheck
+    - depguard
+    - errorlint
+    - exhaustive
+    - forbidigo
+    - gocritic
+    - gosec
+    - misspell
+    - nilerr
+    - noctx
+    - revive
+    - unconvert
+    - unparam
+    - usestdlibvars
+  settings:
+    exhaustive:
+      default-signifies-exhaustive: false
+    depguard:
+      rules:
+        core-imports-no-adapters:
+          files:
+            - "**/internal/core/**"
+          deny:
+            - pkg: "berth/internal/adapters"
+              desc: "the core talks to ports only; adapters live outside it"
+            - pkg: "database/sql"
+              desc: "storage goes through the Store port"
+            - pkg: "os/exec"
+              desc: "process work goes through a port"
+            - pkg: "net/http"
+              desc: "the core has no transport"
+    forbidigo:
+      forbid:
+        - pattern: '^time\.Now$'
+          msg: "use the Clock port so tests control time"
+        - pattern: '^fmt\.Print'
+          msg: "use slog"
+      exclude-godoc-examples: true
+  exclusions:
+    rules:
+      - path: '(^|/)(cmd|spike)/'
+        linters: [forbidigo]
+      - path: '_test\.go'
+        linters: [gosec, forbidigo]
+      - path: '(^|/)gen/'
+        linters: [revive, gocritic, unparam]
+
+formatters:
+  enable:
+    - gofumpt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - berth
+  exclusions:
+    paths:
+      - '(^|/)gen/'

@@ -3,7 +3,8 @@ import GRPCCore
 import GRPCNIOTransportHTTP2
 import SpikeProto
 
-let path = CommandLine.arguments.dropFirst().first
+let path =
+    CommandLine.arguments.dropFirst().first
     ?? NSString(string: "~/Library/Application Support/Berth/spike.sock").expandingTildeInPath
 let total: Int32 = 1000
 

@@ -14,12 +14,13 @@ import (
 	"path/filepath"
 	"syscall"
 
+	"berth/spike/go/gen/spike/v1/spikev1connect"
+
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
 	"golang.org/x/sys/unix"
 
 	spikev1 "berth/spike/go/gen/spike/v1"
-	"berth/spike/go/gen/spike/v1/spikev1connect"
 )
 
 type server struct {

@@ -13,9 +13,11 @@ func fail(_ message: String, _ code: Int32 = 1) -> Never {
 }
 
 func baseQuery() -> [String: Any] {
-    [kSecClass as String: kSecClassGenericPassword,
-     kSecAttrService as String: service,
-     kSecAttrAccount as String: account]
+    [
+        kSecClass as String: kSecClassGenericPassword,
+        kSecAttrService as String: service,
+        kSecAttrAccount as String: account,
+    ]
 }
 
 func add() {

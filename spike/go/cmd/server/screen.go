@@ -12,8 +12,9 @@ import (
 	"time"
 
 	"berth/spike/go/chrome"
-	spikev1 "berth/spike/go/gen/spike/v1"
 	"berth/spike/go/gen/spike/v1/spikev1connect"
+
+	spikev1 "berth/spike/go/gen/spike/v1"
 )
 
 const animatedPage = `<!doctype html><body style="margin:0;background:#111">

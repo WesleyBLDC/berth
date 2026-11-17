@@ -25,6 +25,17 @@ https://wiki.wesleybldc.com/wiki-artifacts/berth (start with the reading order o
 4. Run `make check` (lint, `buf lint`, `buf breaking`, tests) before committing.
 5. If the change alters a decision, add or supersede a record in `docs/adr/` and update the wiki page.
 
+## Lint and hooks
+
+- `make hooks` installs the prek git hooks; `make lint` runs every hook over every file; `make fmt` formats Go, Swift, Protobuf and Python.
+- Go: `golangci-lint` v2 with `.golangci.yml` (gofumpt, goimports, exhaustive, depguard keeping `internal/core` free of adapters, forbidigo banning `time.Now` in the core, gosec and more).
+- Swift: `swift format` from the Xcode toolchain with `.swift-format`.
+- Protobuf: `buf format` and `buf lint`.
+- Python and shell: `ruff` and `shellcheck`.
+- Every file: trailing whitespace, final newline, private key detection, `gitleaks`, and no em or en dashes in Markdown.
+- Claude Code hooks in `.claude/settings.json`: after every edit the file is formatted and linted, and problems come straight back to the agent; a guard refuses Bash commands that would print a Keychain secret or put one on the command line.
+- `spike/` is throwaway (deleted when M0 closes) and is exempt from the language linters, not from the whitespace and secret checks.
+
 ## Writing style
 
 - Plain commit messages, no `type:` prefixes, no co-author trailers.

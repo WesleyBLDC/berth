@@ -28,8 +28,10 @@ final class LiveView: ObservableObject {
         let p50 = sorted.isEmpty ? 0 : sorted[sorted.count / 2]
         let p95 = sorted.isEmpty ? 0 : sorted[Int(Double(sorted.count) * 0.95)]
         let size = image.map { "\(Int($0.size.width))x\(Int($0.size.height))" } ?? "none"
-        print(String(format: "frames shown: %d in %.1f s = %.1f fps, size %@, latency p50 %.1f ms p95 %.1f ms",
-                     rendered, seconds, Double(rendered) / max(seconds, 0.001), size, p50, p95))
+        print(
+            String(
+                format: "frames shown: %d in %.1f s = %.1f fps, size %@, latency p50 %.1f ms p95 %.1f ms",
+                rendered, seconds, Double(rendered) / max(seconds, 0.001), size, p50, p95))
         exit(rendered > 0 && Double(rendered) / max(seconds, 0.001) >= 15 ? 0 : 1)
     }
 }
@@ -49,13 +51,15 @@ struct LiveViewWindow: View {
     }
 }
 
-let socket = CommandLine.arguments.dropFirst().first
+let socket =
+    CommandLine.arguments.dropFirst().first
     ?? NSString(string: "~/Library/Application Support/Berth/spike.sock").expandingTildeInPath
 let model = LiveView()
 let app = NSApplication.shared
 app.setActivationPolicy(.regular)
-let window = NSWindow(contentRect: NSRect(x: 200, y: 200, width: 960, height: 600),
-                      styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
+let window = NSWindow(
+    contentRect: NSRect(x: 200, y: 200, width: 960, height: 600),
+    styleMask: [.titled, .closable, .resizable], backing: .buffered, defer: false)
 window.title = "Berth spike: live view"
 window.contentView = NSHostingView(rootView: LiveViewWindow(model: model))
 window.makeKeyAndOrderFront(nil)
