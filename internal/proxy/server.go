@@ -40,6 +40,8 @@ type Server struct {
 	roots  *x509.CertPool
 	dial   DialFunc
 	log    *slog.Logger
+	// grantedOnly refuses every CONNECT to a target without a grant (proxyctl.ModeAgent).
+	grantedOnly bool
 
 	injected atomic.Uint64
 	refused  atomic.Uint64
@@ -61,20 +63,23 @@ type ServerConfig struct {
 	Roots      *x509.CertPool
 	Dial       DialFunc
 	Log        *slog.Logger
+	// GrantedOnly refuses a CONNECT to any host and port without a grant instead of tunnelling it.
+	GrantedOnly bool
 }
 
 func NewServer(c ServerConfig) *Server {
 	ctx, cancel := context.WithCancel(context.Background())
 	s := &Server{
-		grants: map[string]*Grant{},
-		ca:     c.CA,
-		auth:   []byte("berth:" + c.Credential),
-		roots:  c.Roots,
-		dial:   c.Dial,
-		log:    c.Log,
-		ctx:    ctx,
-		cancel: cancel,
-		conns:  map[net.Conn]struct{}{},
+		grants:      map[string]*Grant{},
+		ca:          c.CA,
+		auth:        []byte("berth:" + c.Credential),
+		roots:       c.Roots,
+		dial:        c.Dial,
+		log:         c.Log,
+		ctx:         ctx,
+		grantedOnly: c.GrantedOnly,
+		cancel:      cancel,
+		conns:       map[net.Conn]struct{}{},
 	}
 	for _, g := range c.Grants {
 		s.grants[g.authority()] = g
@@ -255,6 +260,10 @@ func (s *Server) handle(c net.Conn) {
 	authority := net.JoinHostPort(host, strconv.Itoa(port))
 	if g, ok := s.grants[authority]; ok {
 		s.intercept(c, br, g)
+		return
+	}
+	if s.grantedOnly {
+		writeStatus(c, http.StatusForbidden, "")
 		return
 	}
 	s.tunnel(c, br, authority)

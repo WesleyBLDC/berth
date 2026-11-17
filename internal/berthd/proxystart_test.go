@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sync"
 	"testing"
 	"time"
@@ -36,6 +37,7 @@ type fakeStarter struct {
 	hang, skipAuthorize, ignoreStdin, failAtOnce bool
 
 	mu     sync.Mutex
+	modes  []string
 	pids   []int
 	next   int
 	killed map[int]bool
@@ -91,6 +93,9 @@ func (fs *fakeStarter) start(ctx context.Context) (*proxyproc.Process, error) {
 			_, _ = io.Copy(io.Discard, in)
 			return
 		}
+		fs.mu.Lock()
+		fs.modes = append(fs.modes, req.Mode)
+		fs.mu.Unlock()
 		session := ""
 		stop := make(chan struct{})
 		if !fs.skipAuthorize {
@@ -229,6 +234,12 @@ func TestStartProxyRunsTheProxyForTheAgentSession(t *testing.T) {
 	rec, ok, err := f.store.ProxySession(t.Context(), resp.GetSessionId())
 	if err != nil || !ok || rec.PID != proxyPID || rec.AgentSession != agentSession {
 		t.Fatalf("session row %+v %v %v", rec, ok, err)
+	}
+	fs.mu.Lock()
+	modes := slices.Clone(fs.modes)
+	fs.mu.Unlock()
+	if !slices.Equal(modes, []string{proxyctl.ModeAgent}) {
+		t.Fatalf("berthd started its proxy in modes %q, want agent", modes)
 	}
 	f.s.stopAgentSessions(t.Context(), agentSession)
 	if err := ended(t, done); err != nil {

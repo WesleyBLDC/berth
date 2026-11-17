@@ -167,8 +167,9 @@ func TestAgentProxyRunsUnderBerthd(t *testing.T) {
 		if g := a.got("/a"); got["A"] != "200" || len(g) != 1 || g[0] != "Bearer "+canary {
 			t.Errorf("A: status %s, %d headers, injected %v", got["A"], len(g), len(g) == 1 && g[0] == "Bearer "+canary)
 		}
-		if g := b.got("/b"); got["B"] != "200" || len(g) != 1 || g[0] != "Bearer berth-proxy-placeholder" {
-			t.Errorf("B: status %s, headers %q", got["B"], g)
+		// berthd's proxy runs as the owner, so it dials nothing it holds no grant for.
+		if g := b.got("/b"); !strings.HasPrefix(got["B"], "error") || len(g) != 0 || got["OTHER"] != "403" {
+			t.Errorf("B: status %s, CONNECT %s, headers %q", got["B"], got["OTHER"], g)
 		}
 		if got["PLAIN"] != "405" || got["WRONG"] != "407" || got["NOAUTH"] != "407" {
 			t.Errorf("plain %q, wrong credential %q, no credential %q", got["PLAIN"], got["WRONG"], got["NOAUTH"])

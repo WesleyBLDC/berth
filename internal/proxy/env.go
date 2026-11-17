@@ -1,5 +1,6 @@
 // Package proxy is berth-proxy: a loopback HTTPS forward proxy that writes one secret header into
-// requests to exactly the hosts a person granted, and tunnels everything else untouched. The
+// requests to exactly the hosts a person granted, and tunnels everything else untouched (or, when
+// berthd started it for an agent session, refuses everything else). The
 // value never becomes a Go string, lives in locked memory outside the Go heap, and is zeroed on
 // every exit path (docs/plans/e2b-header-proxy.md).
 package proxy

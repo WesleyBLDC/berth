@@ -146,6 +146,13 @@ func upstreamPool(u *upstream) *x509.CertPool {
 
 func startProxy(t *testing.T, roots *x509.CertPool, trusted *upstream, grants ...*Grant) *fixture {
 	t.Helper()
+	return startProxyWith(t, ServerConfig{}, roots, trusted, grants...)
+}
+
+// startProxyWith starts a proxy with cfg's switches; the grants, CA, credential, roots, dialer and
+// log are the fixture's.
+func startProxyWith(t *testing.T, cfg ServerConfig, roots *x509.CertPool, trusted *upstream, grants ...*Grant) *fixture {
+	t.Helper()
 	hosts := make([]string, 0, len(grants))
 	for _, g := range grants {
 		hosts = append(hosts, g.Host)
@@ -154,7 +161,8 @@ func startProxy(t *testing.T, roots *x509.CertPool, trusted *upstream, grants ..
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := NewServer(ServerConfig{Grants: grants, CA: ca, Credential: testCred, Roots: roots, Dial: loopbackDial, Log: slog.New(slog.DiscardHandler)})
+	cfg.Grants, cfg.CA, cfg.Credential, cfg.Roots, cfg.Dial, cfg.Log = grants, ca, testCred, roots, loopbackDial, slog.New(slog.DiscardHandler)
+	srv := NewServer(cfg)
 	var lc net.ListenConfig
 	ln, err := lc.Listen(t.Context(), "tcp", "127.0.0.1:0")
 	if err != nil {
@@ -296,6 +304,26 @@ func TestHeaderReachesOnlyTheGrantedHostAndPort(t *testing.T) {
 	}
 	if injected, _ := f.srv.Counts(); injected != 1 {
 		t.Fatalf("injected %d, want 1", injected)
+	}
+}
+
+// TestGrantedOnlyRefusesEveryOtherTarget: the proxy berthd runs for an agent session dials only
+// its granted host and port, never loopback or any other target the agent's child names.
+func TestGrantedOnlyRefusesEveryOtherTarget(t *testing.T) {
+	a, b := newUpstream(t), newUpstream(t)
+	f := startProxyWith(t, ServerConfig{GrantedOnly: true}, upstreamPool(a), a, testGrant(t, target(a.port(), nil)))
+	resp, body, err := get(t, f.client(t, testCred), "https://"+a.authority()+"/")
+	if err != nil || resp.StatusCode != http.StatusOK || body != "ok " {
+		t.Fatalf("granted host: %v %q %v", resp, body, err)
+	}
+	for _, authority := range []string{b.authority(), net.JoinHostPort("127.0.0.1", strconv.Itoa(b.port())), grantHost + ":443"} {
+		head := fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\nProxy-Authorization: %s\r\n\r\n", authority, authority, basic(testCred))
+		if r := f.raw(t, head); r.StatusCode != http.StatusForbidden {
+			t.Fatalf("CONNECT %s: %d, want 403", authority, r.StatusCode)
+		}
+	}
+	if _, _, conns, _ := b.snapshot(); conns != 0 {
+		t.Fatalf("a target without a grant was dialled %d times", conns)
 	}
 }
 

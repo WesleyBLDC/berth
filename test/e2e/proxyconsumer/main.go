@@ -2,7 +2,7 @@
 // end tests. It holds no secret: it only gets the proxy's address, credential and CA files, and
 // a placeholder.
 //
-//	proxyconsumer canary <A> <B> <C>   one round of requests, then its environment
+//	proxyconsumer canary <A> <B> <C>   one round of requests, a CONNECT to B, then its environment
 //	proxyconsumer loop <A>             requests every 100 ms until one fails after a success
 //
 // Each address is host:port. Go on macOS ignores SSL_CERT_FILE, so the consumer loads it itself,
@@ -94,6 +94,7 @@ func canary(client *http.Client, proxyURL *url.URL, a, b, c string) {
 	fmt.Println("C", get(client, "https://"+c+"/c"))
 	fmt.Println("WRONG", connectStatus(proxyURL, a, "berth:wrong"))
 	fmt.Println("NOAUTH", connectStatus(proxyURL, a, ""))
+	fmt.Println("OTHER", connectStatus(proxyURL, b, proxyURL.User.String()))
 	env, _ := json.Marshal(os.Environ())
 	fmt.Println("ENV", string(env))
 }

@@ -397,8 +397,8 @@ func TestProxyCanary(t *testing.T) {
 	if g := a.got("/a"); got["A"] != "200" || len(g) != 1 || g[0] != "Bearer "+canary {
 		t.Errorf("A: status %s, %d Authorization headers, injected %v", got["A"], len(g), len(g) == 1 && g[0] == "Bearer "+canary)
 	}
-	if g := b.got("/b"); got["B"] != "200" || len(g) != 1 || g[0] != "Bearer berth-proxy-placeholder" {
-		t.Errorf("B: status %s, headers %q", got["B"], g)
+	if g := b.got("/b"); got["B"] != "200" || got["OTHER"] != "200" || len(g) != 1 || g[0] != "Bearer berth-proxy-placeholder" {
+		t.Errorf("B: status %s, CONNECT %s, headers %q", got["B"], got["OTHER"], g)
 	}
 	if got["PLAIN"] != "405" || len(a.got("/plain")) != 0 {
 		t.Errorf("plain HTTP: %q, A saw %q", got["PLAIN"], a.got("/plain"))

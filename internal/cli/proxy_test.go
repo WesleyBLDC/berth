@@ -96,7 +96,7 @@ func TestRunProxyGivesTheChildBerthsValuesAndPassesTheExitCode(t *testing.T) {
 	if fake.authorize != 0 {
 		t.Fatal("proxy mode called AuthorizeUse")
 	}
-	if proxy.request != `{"secrets":["openai-key","gh-token"]}`+"\n" {
+	if proxy.request != `{"secrets":["openai-key","gh-token"],"mode":"owner"}`+"\n" {
 		t.Fatalf("request %q", proxy.request)
 	}
 	if !<-proxy.stopped {

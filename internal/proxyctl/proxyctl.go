@@ -11,10 +11,23 @@ import (
 	"time"
 )
 
-// Request is the one line berth writes to berth-proxy's stdin.
+// Request is the one line berth or berthd writes to berth-proxy's stdin.
 type Request struct {
 	Secrets []string `json:"secrets"`
+	// Mode is ModeOwner or ModeAgent; berth-proxy refuses a request with any other, so its
+	// starter always says which and the proxy never guesses.
+	Mode string `json:"mode"`
 }
+
+const (
+	// ModeOwner is berth run --proxy started by the person: the proxy tunnels any target it holds
+	// no grant for, untouched, as the person's own process could reach it anyway.
+	ModeOwner = "owner"
+	// ModeAgent is the proxy berthd starts for an agent session, as the owner: it refuses a
+	// CONNECT to any host and port it holds no grant for, so the agent's child cannot reach
+	// loopback, the local network or anything else through a process of the owner.
+	ModeAgent = "agent"
+)
 
 // Control is the one line berth-proxy writes to its stdout once it serves. It carries no value:
 // the credential only lets the child use the proxy, and placeholders are stand ins the proxy

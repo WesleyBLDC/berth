@@ -83,10 +83,10 @@ func keepEnv(environ []string) []string {
 	return out
 }
 
-// Handshake sends the request and waits up to timeout for the control line, which the proxy
-// prints only once berthd let its session serve.
-func Handshake(p *Process, names []string, timeout time.Duration) (proxyctl.Control, error) {
-	req, err := json.Marshal(proxyctl.Request{Secrets: names})
+// Handshake sends the request for names in mode (proxyctl.ModeOwner or ModeAgent) and waits up
+// to timeout for the control line, which the proxy prints only once berthd let its session serve.
+func Handshake(p *Process, names []string, mode string, timeout time.Duration) (proxyctl.Control, error) {
+	req, err := json.Marshal(proxyctl.Request{Secrets: names, Mode: mode})
 	if err != nil {
 		return proxyctl.Control{}, err
 	}

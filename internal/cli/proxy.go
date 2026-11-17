@@ -65,7 +65,7 @@ func runProxied(ctx context.Context, names []string, exe string, argv []string, 
 		fmt.Fprintf(env.Stderr, "berth-proxy did not start: %v; the command did not start\n", err)
 		return ExitProxyFailed
 	}
-	ctl, err := proxyproc.Handshake(p, names, proxyctl.ReadyTimeout)
+	ctl, err := proxyproc.Handshake(p, names, proxyctl.ModeOwner, proxyctl.ReadyTimeout)
 	if err == nil {
 		err = checkControl(ctl)
 	}

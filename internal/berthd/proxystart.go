@@ -9,6 +9,7 @@ import (
 	berthv1 "berth/gen/berth/v1"
 	"berth/internal/adapters/api"
 	"berth/internal/core/agentsession"
+	"berth/internal/proxyctl"
 	"berth/internal/proxyproc"
 )
 
@@ -84,7 +85,7 @@ func (s *secrets) StartProxy(ctx context.Context, req *berthv1.StartProxyRequest
 		_ = p.Wait()
 	}()
 
-	ctl, err := proxyproc.Handshake(p, req.GetNames(), s.readyTimeout)
+	ctl, err := proxyproc.Handshake(p, req.GetNames(), proxyctl.ModeAgent, s.readyTimeout)
 	if err != nil {
 		s.Log.Warn("berth-proxy did not start for a caller", "agent_session", agent, "pid", p.PID, "err", err)
 		_ = p.Kill()

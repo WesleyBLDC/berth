@@ -89,10 +89,11 @@ func run(ctx context.Context, d Deps) (int, []*Grant) {
 	}
 
 	in := bufio.NewReaderSize(io.LimitReader(d.Stdin, maxRequest), 4096)
-	names, err := readRequest(in)
+	req, err := readRequest(in)
 	if err != nil {
 		return fail(ExitRefused, "bad request on stdin", err), nil
 	}
+	names := req.Secrets
 	cl, err := d.Connect(ctx)
 	if err != nil {
 		return fail(ExitError, "cannot reach the signed berthd", err), nil
@@ -145,7 +146,10 @@ func run(ctx context.Context, d Deps) (int, []*Grant) {
 		return fail(ExitError, "cannot listen on loopback", err), grants
 	}
 	credential := randomHex(16)
-	srv := NewServer(ServerConfig{Grants: grants, CA: ca, Credential: credential, Roots: d.Roots, Dial: d.Dial, Log: log})
+	srv := NewServer(ServerConfig{
+		Grants: grants, CA: ca, Credential: credential, Roots: d.Roots, Dial: d.Dial, Log: log,
+		GrantedOnly: req.Mode == proxyctl.ModeAgent,
+	})
 	defer srv.Close(closeWait)
 
 	watchCtx, stopWatch := context.WithCancel(ctx)
@@ -243,28 +247,33 @@ func waitForEnd(ctx context.Context, events <-chan event, stdinClosed <-chan str
 	}
 }
 
-func readRequest(in *bufio.Reader) ([]string, error) {
+var errRequestLine = errors.New(`expected one line {"secrets":[...],"mode":"owner"|"agent"}`)
+
+func readRequest(in *bufio.Reader) (proxyctl.Request, error) {
 	line, err := in.ReadBytes('\n')
 	if err != nil {
-		return nil, errors.New(`expected one line {"secrets":[...]}`)
+		return proxyctl.Request{}, errRequestLine
 	}
 	var req proxyctl.Request
 	dec := json.NewDecoder(bytes.NewReader(line))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {
-		return nil, errors.New(`expected one line {"secrets":[...]}`)
+		return proxyctl.Request{}, errRequestLine
+	}
+	if req.Mode != proxyctl.ModeOwner && req.Mode != proxyctl.ModeAgent {
+		return proxyctl.Request{}, errRequestLine
 	}
 	if len(req.Secrets) == 0 || len(req.Secrets) > proxyctl.MaxNames {
-		return nil, fmt.Errorf("name between 1 and %d secrets", proxyctl.MaxNames)
+		return proxyctl.Request{}, fmt.Errorf("name between 1 and %d secrets", proxyctl.MaxNames)
 	}
 	seen := map[string]bool{}
 	for _, n := range req.Secrets {
 		if !proxyctl.NamePattern.MatchString(n) || seen[n] {
-			return nil, fmt.Errorf("bad or repeated secret name %q", n)
+			return proxyctl.Request{}, fmt.Errorf("bad or repeated secret name %q", n)
 		}
 		seen[n] = true
 	}
-	return req.Secrets, nil
+	return req, nil
 }
 
 // buildGrants pairs each requested name with exactly one ticket, in request order, and refuses

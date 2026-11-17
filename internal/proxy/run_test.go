@@ -160,7 +160,7 @@ func startRun(t *testing.T, deps Deps) *running {
 		r.done <- result{code, grants}
 	}()
 	t.Cleanup(func() { _ = inW.Close() })
-	if _, err := io.WriteString(inW, `{"secrets":["api-key"]}`+"\n"); err != nil {
+	if _, err := io.WriteString(inW, `{"secrets":["api-key"],"mode":"owner"}`+"\n"); err != nil {
 		t.Fatal(err)
 	}
 	line, err := bufio.NewReader(outR).ReadString('\n')
@@ -332,7 +332,7 @@ func TestValueWithCRLFOrNULIsRefused(t *testing.T) {
 		var raw []byte
 		deps.Read = func(context.Context, []byte) ([]byte, error) { raw = []byte(v); return raw, nil }
 		var stdout, stderr bytes.Buffer
-		deps.Stdin, deps.Stdout, deps.Stderr = strings.NewReader(`{"secrets":["api-key"]}`+"\n"), &stdout, &stderr
+		deps.Stdin, deps.Stdout, deps.Stderr = strings.NewReader(`{"secrets":["api-key"],"mode":"owner"}`+"\n"), &stdout, &stderr
 		if code := Run(t.Context(), deps); code != ExitRefused || stdout.Len() != 0 {
 			t.Fatalf("%q: exit %d, stdout %q", v, code, stdout.String())
 		}
@@ -365,6 +365,26 @@ func TestNoGrantOrBadRequestServesNothing(t *testing.T) {
 		if code := Run(t.Context(), deps); code != want || stdout.Len() != 0 {
 			t.Fatalf("%q: exit %d, stdout %q", in, code, stdout.String())
 		}
+	}
+}
+
+// TestRequestMustNameItsMode: a starter that does not say whose run this is gets nothing, so the
+// proxy never falls back to tunnelling for an agent.
+func TestRequestMustNameItsMode(t *testing.T) {
+	u := newUpstream(t)
+	d := newFakeDaemon(target(u.port(), nil))
+	deps := testDeps(t, d, u, canary)
+	for _, in := range []string{`{"secrets":["api-key"]}`, `{"secrets":["api-key"],"mode":""}`, `{"secrets":["api-key"],"mode":"root"}`} {
+		var stdout bytes.Buffer
+		deps.Stdin, deps.Stdout, deps.Stderr = strings.NewReader(in+"\n"), &stdout, io.Discard
+		if code := Run(t.Context(), deps); code != ExitRefused || stdout.Len() != 0 {
+			t.Fatalf("%s: exit %d, stdout %q", in, code, stdout.String())
+		}
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.authorized != 0 {
+		t.Fatalf("%d requests without a valid mode reached berthd", d.authorized)
 	}
 }
 
