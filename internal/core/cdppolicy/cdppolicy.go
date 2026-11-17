@@ -136,7 +136,7 @@ func walkValue(dec *json.Decoder, path string) error {
 // Allowed lists the domains whose every method passes; the riskier domains are in Methods.
 var Allowed = []string{
 	"Accessibility", "Animation", "Audits", "BackgroundService", "CSS", "CacheStorage", "Console",
-	"DOMDebugger", "DOMSnapshot", "DOMStorage", "Database", "Debugger", "DeviceAccess", "DeviceOrientation",
+	"DOMDebugger", "DOMSnapshot", "DOMStorage", "Database", "Debugger", "DeviceOrientation",
 	"Emulation", "EventBreakpoints", "FedCm", "Fetch", "FileSystem", "HeadlessExperimental", "HeapProfiler",
 	"IndexedDB", "Inspector", "LayerTree", "Log", "Media", "Memory", "Overlay", "Performance",
 	"PerformanceTimeline", "Preload", "Profiler", "Runtime", "Schema", "Security", "ServiceWorker",
@@ -147,9 +147,9 @@ var Allowed = []string{
 // browser's life, the only methods that pass: what Playwright and Puppeteer use for normal
 // automation. Any other method of these domains is refused.
 var Methods = map[string][]string{
-	"Browser": {"getVersion", "getWindowForTarget", "getWindowBounds", "setWindowBounds", "cancelDownload", "setDockTile"},
+	"Browser": {"getVersion", "getWindowForTarget", "getWindowBounds", "setWindowBounds", "cancelDownload"},
 	"Target": {
-		"activateTarget", "attachToTarget", "autoAttachRelated", "closeTarget", "createBrowserContext", "createTarget",
+		"activateTarget", "attachToTarget", "closeTarget", "createBrowserContext", "createTarget",
 		"detachFromTarget", "disposeBrowserContext", "getBrowserContexts", "getTargetInfo", "getTargets",
 		"setAutoAttach", "setDiscoverTargets",
 	},
@@ -189,8 +189,10 @@ var Methods = map[string][]string{
 		"untrackCacheStorageForOrigin", "untrackIndexedDBForOrigin",
 	},
 	// IO only reads the streams Chrome itself made (a PDF or a trace), never a path.
-	"IO":      {"close", "read", "resolveBlob"},
-	"Tracing": {"end", "getCategories", "recordClockSyncMarker", "requestMemoryDump", "start"},
+	"IO": {"close", "read", "resolveBlob"},
+	// A trace's metadata holds the command line, the profile path and machine facts, so tracing
+	// itself is not listed.
+	"Tracing": {"getCategories", "recordClockSyncMarker", "requestMemoryDump"},
 }
 
 // Denied names methods, and whole domains (as "Domain.*"), refused whatever their parameters,
@@ -215,6 +217,7 @@ var Denied = map[string]string{
 	"DOM.getFileInfo":               "it shows local file paths",
 	"Network.loadNetworkResource":   "it loads any URL, local files included",
 	"SystemInfo.*":                  "it reads facts about the machine",
+	"DeviceAccess.*":                "it picks nearby Bluetooth and USB devices with no person in the loop",
 	"Tethering.*":                   "it binds ports on the Mac",
 	"Extensions.*":                  "it loads code from disk into the browser",
 	"PWA.*":                         "it installs and launches apps outside the browser",
@@ -298,7 +301,7 @@ func checkParams(m Message, own func(string) bool) string {
 		if p.URL != nil && !Loadable(url) {
 			return webOnly
 		}
-	case "Target.attachToTarget", "Target.setAutoAttach", "Target.autoAttachRelated":
+	case "Target.attachToTarget", "Target.setAutoAttach":
 		if string(p.Flatten) != "true" {
 			return "only flattened sessions, so every message passes the filter"
 		}

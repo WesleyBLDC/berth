@@ -85,7 +85,6 @@ func TestCheck(t *testing.T) {
 		{method: "Target.createTarget", params: `{"url":""}`, allowed: true},
 		{method: "Target.attachToTarget", params: `{"targetId":"T","flatten":true}`, allowed: true},
 		{method: "Target.setAutoAttach", params: `{"autoAttach":true,"waitForDebuggerOnStart":false,"flatten":true}`, allowed: true},
-		{method: "Target.autoAttachRelated", params: `{"targetId":"T","waitForDebuggerOnStart":false,"flatten":true}`, allowed: true},
 		{method: "Browser.getVersion", allowed: true},
 		{method: "Network.getCookies", allowed: true},
 		{method: "Storage.getCookies", allowed: true},
@@ -139,7 +138,9 @@ func TestNoUncheckedSessions(t *testing.T) {
 		{method: "Target.attachToTarget", params: `{"targetId":"T","flatten":"true"}`},
 		{method: "Target.attachToTarget", params: `{"targetId":"T","flatten":1}`},
 		{method: "Target.setAutoAttach", params: `{"autoAttach":true,"waitForDebuggerOnStart":false}`},
-		{method: "Target.autoAttachRelated", params: `{"targetId":"T","waitForDebuggerOnStart":false,"flatten":null}`},
+		// autoAttachRelated has no flatten parameter, so the filter cannot tell whether the sessions
+		// it creates are flat; no driver tested needs it, so it is not listed at all.
+		{method: "Target.autoAttachRelated", params: `{"targetId":"T","waitForDebuggerOnStart":false}`},
 	})
 }
 
@@ -175,6 +176,13 @@ func TestNoLocalFiles(t *testing.T) {
 		row{method: "Page.newMethodChromeAddsLater"},
 		row{method: "IO.write"},
 		row{method: "Tracing.writeTraceToFile"},
+		// A trace's metadata holds the command line, the profile path and machine facts.
+		row{method: "Tracing.start", params: `{"traceConfig":{}}`},
+		row{method: "Tracing.end"},
+		row{method: "Browser.setDockTile", params: `{"image":"AA=="}`},
+		// It picks nearby Bluetooth and USB devices with no person in the loop.
+		row{method: "DeviceAccess.enable"},
+		row{method: "DeviceAccess.selectPrompt", params: `{"id":"p","deviceId":"d"}`},
 	)
 	check(t, rows)
 }
