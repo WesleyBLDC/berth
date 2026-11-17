@@ -1,7 +1,7 @@
 # E2: Terminal secrets
 
 Goal: agents store and use Keychain secrets from the terminal without ever reading them, and Berth shows who holds what.
-Design: https://wiki.wesleybldc.com/wiki-artifacts/berth/terminal-secrets and ADR 0012.
+Design: [ARCHITECTURE.md](../../ARCHITECTURE.md#secrets-store-and-use-never-read) and ADR 0012.
 
 ## Scope of this slice (E2a)
 
