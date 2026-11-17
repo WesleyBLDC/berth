@@ -4,6 +4,7 @@ import (
 	"context"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -88,26 +89,87 @@ func TestInvalidRequestIsRejectedBeforeTheCore(t *testing.T) {
 // TestAgentSurface pins the methods agents may call. Adding one must be a deliberate change here.
 func TestAgentSurface(t *testing.T) {
 	var agent []string
-	protoregistry.GlobalFiles.RangeFilesByPackage("berth.v1", func(fd protoreflect.FileDescriptor) bool {
-		for i := range fd.Services().Len() {
-			svc := fd.Services().Get(i)
-			for j := range svc.Methods().Len() {
-				m := svc.Methods().Get(j)
-				if proto.GetExtension(m.Options(), berthv1.E_Agent).(bool) {
-					agent = append(agent, string(m.FullName()))
-				}
-			}
+	eachMethod(func(m protoreflect.MethodDescriptor) {
+		if proto.GetExtension(m.Options(), berthv1.E_Agent).(bool) {
+			agent = append(agent, string(m.FullName()))
 		}
-		return true
 	})
 	slices.Sort(agent)
 	want := []string{
 		"berth.v1.DaemonService.Handshake",
+		"berth.v1.SecretsService.AuthorizeProxy",
 		"berth.v1.SecretsService.AuthorizeUse",
+		"berth.v1.SecretsService.EndProxySession",
 		"berth.v1.SecretsService.ListSecrets",
 		"berth.v1.SecretsService.RequestSecret",
+		"berth.v1.SecretsService.WatchProxySession",
 	}
 	if !slices.Equal(agent, want) {
 		t.Fatalf("agent methods = %v, want %v", agent, want)
 	}
+}
+
+func eachMethod(f func(m protoreflect.MethodDescriptor)) {
+	protoregistry.GlobalFiles.RangeFilesByPackage("berth.v1", func(fd protoreflect.FileDescriptor) bool {
+		for i := range fd.Services().Len() {
+			svc := fd.Services().Get(i)
+			for j := range svc.Methods().Len() {
+				f(svc.Methods().Get(j))
+			}
+		}
+		return true
+	})
+}
+
+// TestNoFieldCarriesAValue pins the only places that could hold secret material: bytes fields
+// (tickets, which are not values) and fields named for a value (the proxy header's fixed text).
+func TestNoFieldCarriesAValue(t *testing.T) {
+	allowed := []string{
+		"berth.v1.AuthorizeUseResponse.ticket",
+		"berth.v1.ProxyTarget.value_prefix",
+		"berth.v1.ProxyTarget.value_suffix",
+		"berth.v1.ProxyTicket.ticket",
+		"berth.v1.RedeemUseTicketRequest.ticket",
+	}
+	var found []string
+	var walk func(md protoreflect.MessageDescriptor)
+	seen := map[protoreflect.FullName]bool{}
+	walk = func(md protoreflect.MessageDescriptor) {
+		if seen[md.FullName()] || md.ParentFile().Package() != "berth.v1" {
+			return
+		}
+		seen[md.FullName()] = true
+		for i := range md.Fields().Len() {
+			fd := md.Fields().Get(i)
+			name := string(fd.Name())
+			if fd.Kind() == protoreflect.BytesKind || strings.Contains(name, "value") || strings.Contains(name, "password") || strings.Contains(name, "plaintext") {
+				found = append(found, string(fd.FullName()))
+			}
+			if fd.Message() != nil {
+				walk(fd.Message())
+			}
+		}
+	}
+	eachMethod(func(m protoreflect.MethodDescriptor) {
+		walk(m.Input())
+		walk(m.Output())
+	})
+	slices.Sort(found)
+	if !slices.Equal(found, allowed) {
+		t.Fatalf("fields that could carry a value = %v, want %v", found, allowed)
+	}
+}
+
+// TestMutatingMethodsTakeARequestID keeps every method that changes something idempotent.
+func TestMutatingMethodsTakeARequestID(t *testing.T) {
+	readOnly := []string{"Handshake", "Status", "GetState", "ListSecrets", "WatchProxySession"}
+	eachMethod(func(m protoreflect.MethodDescriptor) {
+		if slices.Contains(readOnly, string(m.Name())) {
+			return
+		}
+		fd := m.Input().Fields().ByName("request_id")
+		if fd == nil || fd.Number() != 1 || fd.Kind() != protoreflect.StringKind {
+			t.Errorf("%s has no string request_id = 1", m.FullName())
+		}
+	})
 }

@@ -212,6 +212,12 @@ func reportError(w io.Writer, err error, name, exe string) int {
 		line = "berthd gives secrets only to the signed berth binary; run make build and use bin/berth beside bin/berthd"
 	case berthv1.ErrorReason_ERROR_REASON_INTERPRETER:
 		line = fmt.Sprintf("%s is an interpreter, so anything it runs could print the secret; add --allow-interpreter only if that is what you want", exe)
+	case berthv1.ErrorReason_ERROR_REASON_BUSY:
+		line = fmt.Sprintf("secret %s is waiting for the person on another request; try again when it finishes", name)
+	case berthv1.ErrorReason_ERROR_REASON_BAD_PROXY_TARGET:
+		line = "berthd will not grant this proxy target"
+	case berthv1.ErrorReason_ERROR_REASON_GRANT_NOT_FOUND:
+		line = "no grant has this id; berth secret ls lists them"
 	case berthv1.ErrorReason_ERROR_REASON_UNSPECIFIED:
 		line = err.Error()
 	}

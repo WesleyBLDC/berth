@@ -192,6 +192,9 @@ const (
 	SecretState_SECRET_STATE_STORED      SecretState = 2
 	SecretState_SECRET_STATE_DENIED      SecretState = 3
 	SecretState_SECRET_STATE_FAILED      SecretState = 4
+	SecretState_SECRET_STATE_ROTATING    SecretState = 5
+	SecretState_SECRET_STATE_REMOVING    SecretState = 6
+	SecretState_SECRET_STATE_REMOVED     SecretState = 7
 )
 
 // Enum value maps for SecretState.
@@ -202,6 +205,9 @@ var (
 		2: "SECRET_STATE_STORED",
 		3: "SECRET_STATE_DENIED",
 		4: "SECRET_STATE_FAILED",
+		5: "SECRET_STATE_ROTATING",
+		6: "SECRET_STATE_REMOVING",
+		7: "SECRET_STATE_REMOVED",
 	}
 	SecretState_value = map[string]int32{
 		"SECRET_STATE_UNSPECIFIED": 0,
@@ -209,6 +215,9 @@ var (
 		"SECRET_STATE_STORED":      2,
 		"SECRET_STATE_DENIED":      3,
 		"SECRET_STATE_FAILED":      4,
+		"SECRET_STATE_ROTATING":    5,
+		"SECRET_STATE_REMOVING":    6,
+		"SECRET_STATE_REMOVED":     7,
 	}
 )
 
@@ -237,6 +246,268 @@ func (x SecretState) Number() protoreflect.EnumNumber {
 // Deprecated: Use SecretState.Descriptor instead.
 func (SecretState) EnumDescriptor() ([]byte, []int) {
 	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{3}
+}
+
+// ConsumerKind says what a grant pins: an executable that receives the value in its
+// environment, or an HTTPS target berth-proxy writes it to.
+type ConsumerKind int32
+
+const (
+	ConsumerKind_CONSUMER_KIND_UNSPECIFIED ConsumerKind = 0
+	ConsumerKind_CONSUMER_KIND_EXECUTABLE  ConsumerKind = 1
+	ConsumerKind_CONSUMER_KIND_PROXY       ConsumerKind = 2
+)
+
+// Enum value maps for ConsumerKind.
+var (
+	ConsumerKind_name = map[int32]string{
+		0: "CONSUMER_KIND_UNSPECIFIED",
+		1: "CONSUMER_KIND_EXECUTABLE",
+		2: "CONSUMER_KIND_PROXY",
+	}
+	ConsumerKind_value = map[string]int32{
+		"CONSUMER_KIND_UNSPECIFIED": 0,
+		"CONSUMER_KIND_EXECUTABLE":  1,
+		"CONSUMER_KIND_PROXY":       2,
+	}
+)
+
+func (x ConsumerKind) Enum() *ConsumerKind {
+	p := new(ConsumerKind)
+	*p = x
+	return p
+}
+
+func (x ConsumerKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ConsumerKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_berth_v1_secrets_proto_enumTypes[4].Descriptor()
+}
+
+func (ConsumerKind) Type() protoreflect.EnumType {
+	return &file_berth_v1_secrets_proto_enumTypes[4]
+}
+
+func (x ConsumerKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ConsumerKind.Descriptor instead.
+func (ConsumerKind) EnumDescriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{4}
+}
+
+// RemoveOutcome is all a caller learns about a remove.
+type RemoveOutcome int32
+
+const (
+	RemoveOutcome_REMOVE_OUTCOME_UNSPECIFIED RemoveOutcome = 0
+	RemoveOutcome_REMOVE_OUTCOME_REMOVED     RemoveOutcome = 1
+	RemoveOutcome_REMOVE_OUTCOME_DENIED      RemoveOutcome = 2
+	RemoveOutcome_REMOVE_OUTCOME_FAILED      RemoveOutcome = 3
+)
+
+// Enum value maps for RemoveOutcome.
+var (
+	RemoveOutcome_name = map[int32]string{
+		0: "REMOVE_OUTCOME_UNSPECIFIED",
+		1: "REMOVE_OUTCOME_REMOVED",
+		2: "REMOVE_OUTCOME_DENIED",
+		3: "REMOVE_OUTCOME_FAILED",
+	}
+	RemoveOutcome_value = map[string]int32{
+		"REMOVE_OUTCOME_UNSPECIFIED": 0,
+		"REMOVE_OUTCOME_REMOVED":     1,
+		"REMOVE_OUTCOME_DENIED":      2,
+		"REMOVE_OUTCOME_FAILED":      3,
+	}
+)
+
+func (x RemoveOutcome) Enum() *RemoveOutcome {
+	p := new(RemoveOutcome)
+	*p = x
+	return p
+}
+
+func (x RemoveOutcome) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (RemoveOutcome) Descriptor() protoreflect.EnumDescriptor {
+	return file_berth_v1_secrets_proto_enumTypes[5].Descriptor()
+}
+
+func (RemoveOutcome) Type() protoreflect.EnumType {
+	return &file_berth_v1_secrets_proto_enumTypes[5]
+}
+
+func (x RemoveOutcome) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use RemoveOutcome.Descriptor instead.
+func (RemoveOutcome) EnumDescriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{5}
+}
+
+// TicketAction says what berth-native may do with a redeemed ticket.
+type TicketAction int32
+
+const (
+	TicketAction_TICKET_ACTION_UNSPECIFIED TicketAction = 0
+	// USE reads the value and writes it to fd 3.
+	TicketAction_TICKET_ACTION_USE    TicketAction = 1
+	TicketAction_TICKET_ACTION_REMOVE TicketAction = 2
+	TicketAction_TICKET_ACTION_ROTATE TicketAction = 3
+)
+
+// Enum value maps for TicketAction.
+var (
+	TicketAction_name = map[int32]string{
+		0: "TICKET_ACTION_UNSPECIFIED",
+		1: "TICKET_ACTION_USE",
+		2: "TICKET_ACTION_REMOVE",
+		3: "TICKET_ACTION_ROTATE",
+	}
+	TicketAction_value = map[string]int32{
+		"TICKET_ACTION_UNSPECIFIED": 0,
+		"TICKET_ACTION_USE":         1,
+		"TICKET_ACTION_REMOVE":      2,
+		"TICKET_ACTION_ROTATE":      3,
+	}
+)
+
+func (x TicketAction) Enum() *TicketAction {
+	p := new(TicketAction)
+	*p = x
+	return p
+}
+
+func (x TicketAction) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (TicketAction) Descriptor() protoreflect.EnumDescriptor {
+	return file_berth_v1_secrets_proto_enumTypes[6].Descriptor()
+}
+
+func (TicketAction) Type() protoreflect.EnumType {
+	return &file_berth_v1_secrets_proto_enumTypes[6]
+}
+
+func (x TicketAction) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use TicketAction.Descriptor instead.
+func (TicketAction) EnumDescriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{6}
+}
+
+// ProxyStopReason tells berth-proxy why berthd ended its session.
+type ProxyStopReason int32
+
+const (
+	ProxyStopReason_PROXY_STOP_REASON_UNSPECIFIED     ProxyStopReason = 0
+	ProxyStopReason_PROXY_STOP_REASON_GRANT_REVOKED   ProxyStopReason = 1
+	ProxyStopReason_PROXY_STOP_REASON_SECRET_REMOVED  ProxyStopReason = 2
+	ProxyStopReason_PROXY_STOP_REASON_DAEMON_STOPPING ProxyStopReason = 3
+)
+
+// Enum value maps for ProxyStopReason.
+var (
+	ProxyStopReason_name = map[int32]string{
+		0: "PROXY_STOP_REASON_UNSPECIFIED",
+		1: "PROXY_STOP_REASON_GRANT_REVOKED",
+		2: "PROXY_STOP_REASON_SECRET_REMOVED",
+		3: "PROXY_STOP_REASON_DAEMON_STOPPING",
+	}
+	ProxyStopReason_value = map[string]int32{
+		"PROXY_STOP_REASON_UNSPECIFIED":     0,
+		"PROXY_STOP_REASON_GRANT_REVOKED":   1,
+		"PROXY_STOP_REASON_SECRET_REMOVED":  2,
+		"PROXY_STOP_REASON_DAEMON_STOPPING": 3,
+	}
+)
+
+func (x ProxyStopReason) Enum() *ProxyStopReason {
+	p := new(ProxyStopReason)
+	*p = x
+	return p
+}
+
+func (x ProxyStopReason) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ProxyStopReason) Descriptor() protoreflect.EnumDescriptor {
+	return file_berth_v1_secrets_proto_enumTypes[7].Descriptor()
+}
+
+func (ProxyStopReason) Type() protoreflect.EnumType {
+	return &file_berth_v1_secrets_proto_enumTypes[7]
+}
+
+func (x ProxyStopReason) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ProxyStopReason.Descriptor instead.
+func (ProxyStopReason) EnumDescriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{7}
+}
+
+type ProxySessionEventKind int32
+
+const (
+	ProxySessionEventKind_PROXY_SESSION_EVENT_KIND_UNSPECIFIED ProxySessionEventKind = 0
+	// SERVING is the first event: berthd moved the session to Serving.
+	ProxySessionEventKind_PROXY_SESSION_EVENT_KIND_SERVING ProxySessionEventKind = 1
+	// STOP ends the session; the proxy zeroes its values and exits.
+	ProxySessionEventKind_PROXY_SESSION_EVENT_KIND_STOP ProxySessionEventKind = 2
+)
+
+// Enum value maps for ProxySessionEventKind.
+var (
+	ProxySessionEventKind_name = map[int32]string{
+		0: "PROXY_SESSION_EVENT_KIND_UNSPECIFIED",
+		1: "PROXY_SESSION_EVENT_KIND_SERVING",
+		2: "PROXY_SESSION_EVENT_KIND_STOP",
+	}
+	ProxySessionEventKind_value = map[string]int32{
+		"PROXY_SESSION_EVENT_KIND_UNSPECIFIED": 0,
+		"PROXY_SESSION_EVENT_KIND_SERVING":     1,
+		"PROXY_SESSION_EVENT_KIND_STOP":        2,
+	}
+)
+
+func (x ProxySessionEventKind) Enum() *ProxySessionEventKind {
+	p := new(ProxySessionEventKind)
+	*p = x
+	return p
+}
+
+func (x ProxySessionEventKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (ProxySessionEventKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_berth_v1_secrets_proto_enumTypes[8].Descriptor()
+}
+
+func (ProxySessionEventKind) Type() protoreflect.EnumType {
+	return &file_berth_v1_secrets_proto_enumTypes[8]
+}
+
+func (x ProxySessionEventKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use ProxySessionEventKind.Descriptor instead.
+func (ProxySessionEventKind) EnumDescriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{8}
 }
 
 // GrantState mirrors the grant machine's states.
@@ -282,11 +553,11 @@ func (x GrantState) String() string {
 }
 
 func (GrantState) Descriptor() protoreflect.EnumDescriptor {
-	return file_berth_v1_secrets_proto_enumTypes[4].Descriptor()
+	return file_berth_v1_secrets_proto_enumTypes[9].Descriptor()
 }
 
 func (GrantState) Type() protoreflect.EnumType {
-	return &file_berth_v1_secrets_proto_enumTypes[4]
+	return &file_berth_v1_secrets_proto_enumTypes[9]
 }
 
 func (x GrantState) Number() protoreflect.EnumNumber {
@@ -295,7 +566,7 @@ func (x GrantState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use GrantState.Descriptor instead.
 func (GrantState) EnumDescriptor() ([]byte, []int) {
-	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{4}
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{9}
 }
 
 type RequestSecretRequest struct {
@@ -579,7 +850,10 @@ type Consumer struct {
 	UseCount   int64                  `protobuf:"varint,10,opt,name=use_count,json=useCount,proto3" json:"use_count,omitempty"`
 	// pass_env names the environment variables, beyond Berth's fixed allowlist, that berth run
 	// passes from its own environment to this consumer.
-	PassEnv       []string `protobuf:"bytes,11,rep,name=pass_env,json=passEnv,proto3" json:"pass_env,omitempty"`
+	PassEnv []string `protobuf:"bytes,11,rep,name=pass_env,json=passEnv,proto3" json:"pass_env,omitempty"`
+	// kind is EXECUTABLE for the exe fields above and PROXY for proxy, never both.
+	Kind          ConsumerKind `protobuf:"varint,12,opt,name=kind,proto3,enum=berth.v1.ConsumerKind" json:"kind,omitempty"`
+	Proxy         *ProxyTarget `protobuf:"bytes,13,opt,name=proxy,proto3" json:"proxy,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -691,6 +965,131 @@ func (x *Consumer) GetPassEnv() []string {
 	return nil
 }
 
+func (x *Consumer) GetKind() ConsumerKind {
+	if x != nil {
+		return x.Kind
+	}
+	return ConsumerKind_CONSUMER_KIND_UNSPECIFIED
+}
+
+func (x *Consumer) GetProxy() *ProxyTarget {
+	if x != nil {
+		return x.Proxy
+	}
+	return nil
+}
+
+// ProxyTarget is where berth-proxy may write a secret: one header on requests to one HTTPS host
+// and port. The written header is <header_name>: <value_prefix><value><value_suffix>.
+type ProxyTarget struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// host is a lowercase DNS name. berthd also refuses IP literals and localhost outside e2e builds.
+	Host string `protobuf:"bytes,1,opt,name=host,proto3" json:"host,omitempty"`
+	// port 0 means 443.
+	Port uint32 `protobuf:"varint,2,opt,name=port,proto3" json:"port,omitempty"`
+	// header_name is an HTTP token. Headers that frame or route a request, or talk to a proxy,
+	// can never be granted.
+	HeaderName string `protobuf:"bytes,3,opt,name=header_name,json=headerName,proto3" json:"header_name,omitempty"`
+	// value_prefix and value_suffix are printable ASCII, so no CR, LF or NUL reaches the header.
+	ValuePrefix string `protobuf:"bytes,4,opt,name=value_prefix,json=valuePrefix,proto3" json:"value_prefix,omitempty"`
+	ValueSuffix string `protobuf:"bytes,5,opt,name=value_suffix,json=valueSuffix,proto3" json:"value_suffix,omitempty"`
+	// path_glob limits the request paths; empty allows any.
+	PathGlob string `protobuf:"bytes,6,opt,name=path_glob,json=pathGlob,proto3" json:"path_glob,omitempty"`
+	// methods limits the request methods; empty allows any.
+	Methods []string `protobuf:"bytes,7,rep,name=methods,proto3" json:"methods,omitempty"`
+	// placeholder_env names a variable berth run sets in the child to a fixed placeholder, for
+	// tools that refuse to start without a key; empty sets none.
+	PlaceholderEnv string `protobuf:"bytes,8,opt,name=placeholder_env,json=placeholderEnv,proto3" json:"placeholder_env,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *ProxyTarget) Reset() {
+	*x = ProxyTarget{}
+	mi := &file_berth_v1_secrets_proto_msgTypes[6]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProxyTarget) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProxyTarget) ProtoMessage() {}
+
+func (x *ProxyTarget) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_secrets_proto_msgTypes[6]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProxyTarget.ProtoReflect.Descriptor instead.
+func (*ProxyTarget) Descriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{6}
+}
+
+func (x *ProxyTarget) GetHost() string {
+	if x != nil {
+		return x.Host
+	}
+	return ""
+}
+
+func (x *ProxyTarget) GetPort() uint32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
+func (x *ProxyTarget) GetHeaderName() string {
+	if x != nil {
+		return x.HeaderName
+	}
+	return ""
+}
+
+func (x *ProxyTarget) GetValuePrefix() string {
+	if x != nil {
+		return x.ValuePrefix
+	}
+	return ""
+}
+
+func (x *ProxyTarget) GetValueSuffix() string {
+	if x != nil {
+		return x.ValueSuffix
+	}
+	return ""
+}
+
+func (x *ProxyTarget) GetPathGlob() string {
+	if x != nil {
+		return x.PathGlob
+	}
+	return ""
+}
+
+func (x *ProxyTarget) GetMethods() []string {
+	if x != nil {
+		return x.Methods
+	}
+	return nil
+}
+
+func (x *ProxyTarget) GetPlaceholderEnv() string {
+	if x != nil {
+		return x.PlaceholderEnv
+	}
+	return ""
+}
+
 type GrantSecretRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -711,7 +1110,7 @@ type GrantSecretRequest struct {
 
 func (x *GrantSecretRequest) Reset() {
 	*x = GrantSecretRequest{}
-	mi := &file_berth_v1_secrets_proto_msgTypes[6]
+	mi := &file_berth_v1_secrets_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -723,7 +1122,7 @@ func (x *GrantSecretRequest) String() string {
 func (*GrantSecretRequest) ProtoMessage() {}
 
 func (x *GrantSecretRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_berth_v1_secrets_proto_msgTypes[6]
+	mi := &file_berth_v1_secrets_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -736,7 +1135,7 @@ func (x *GrantSecretRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrantSecretRequest.ProtoReflect.Descriptor instead.
 func (*GrantSecretRequest) Descriptor() ([]byte, []int) {
-	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{6}
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *GrantSecretRequest) GetRequestId() string {
@@ -792,7 +1191,7 @@ type GrantSecretResponse struct {
 
 func (x *GrantSecretResponse) Reset() {
 	*x = GrantSecretResponse{}
-	mi := &file_berth_v1_secrets_proto_msgTypes[7]
+	mi := &file_berth_v1_secrets_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -804,7 +1203,7 @@ func (x *GrantSecretResponse) String() string {
 func (*GrantSecretResponse) ProtoMessage() {}
 
 func (x *GrantSecretResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_berth_v1_secrets_proto_msgTypes[7]
+	mi := &file_berth_v1_secrets_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -817,7 +1216,7 @@ func (x *GrantSecretResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GrantSecretResponse.ProtoReflect.Descriptor instead.
 func (*GrantSecretResponse) Descriptor() ([]byte, []int) {
-	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{7}
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *GrantSecretResponse) GetOutcome() GrantOutcome {
@@ -848,7 +1247,7 @@ type AuthorizeUseRequest struct {
 
 func (x *AuthorizeUseRequest) Reset() {
 	*x = AuthorizeUseRequest{}
-	mi := &file_berth_v1_secrets_proto_msgTypes[8]
+	mi := &file_berth_v1_secrets_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -860,7 +1259,7 @@ func (x *AuthorizeUseRequest) String() string {
 func (*AuthorizeUseRequest) ProtoMessage() {}
 
 func (x *AuthorizeUseRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_berth_v1_secrets_proto_msgTypes[8]
+	mi := &file_berth_v1_secrets_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -873,7 +1272,7 @@ func (x *AuthorizeUseRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuthorizeUseRequest.ProtoReflect.Descriptor instead.
 func (*AuthorizeUseRequest) Descriptor() ([]byte, []int) {
-	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{8}
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *AuthorizeUseRequest) GetRequestId() string {
@@ -919,7 +1318,7 @@ type AuthorizeUseResponse struct {
 
 func (x *AuthorizeUseResponse) Reset() {
 	*x = AuthorizeUseResponse{}
-	mi := &file_berth_v1_secrets_proto_msgTypes[9]
+	mi := &file_berth_v1_secrets_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -931,7 +1330,7 @@ func (x *AuthorizeUseResponse) String() string {
 func (*AuthorizeUseResponse) ProtoMessage() {}
 
 func (x *AuthorizeUseResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_berth_v1_secrets_proto_msgTypes[9]
+	mi := &file_berth_v1_secrets_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -944,7 +1343,7 @@ func (x *AuthorizeUseResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use AuthorizeUseResponse.ProtoReflect.Descriptor instead.
 func (*AuthorizeUseResponse) Descriptor() ([]byte, []int) {
-	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{9}
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *AuthorizeUseResponse) GetOutcome() UseOutcome {
@@ -987,7 +1386,7 @@ type RedeemUseTicketRequest struct {
 
 func (x *RedeemUseTicketRequest) Reset() {
 	*x = RedeemUseTicketRequest{}
-	mi := &file_berth_v1_secrets_proto_msgTypes[10]
+	mi := &file_berth_v1_secrets_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -999,7 +1398,7 @@ func (x *RedeemUseTicketRequest) String() string {
 func (*RedeemUseTicketRequest) ProtoMessage() {}
 
 func (x *RedeemUseTicketRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_berth_v1_secrets_proto_msgTypes[10]
+	mi := &file_berth_v1_secrets_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1012,7 +1411,7 @@ func (x *RedeemUseTicketRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RedeemUseTicketRequest.ProtoReflect.Descriptor instead.
 func (*RedeemUseTicketRequest) Descriptor() ([]byte, []int) {
-	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{10}
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *RedeemUseTicketRequest) GetRequestId() string {
@@ -1032,14 +1431,17 @@ func (x *RedeemUseTicketRequest) GetTicket() []byte {
 type RedeemUseTicketResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// name is the secret berth-native reads from Keychain item berth.<name>.
-	Name          string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Name string `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// consumer_kind must match berth-native's parent: EXECUTABLE for berth, PROXY for berth-proxy.
+	ConsumerKind  ConsumerKind `protobuf:"varint,2,opt,name=consumer_kind,json=consumerKind,proto3,enum=berth.v1.ConsumerKind" json:"consumer_kind,omitempty"`
+	Action        TicketAction `protobuf:"varint,3,opt,name=action,proto3,enum=berth.v1.TicketAction" json:"action,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
 
 func (x *RedeemUseTicketResponse) Reset() {
 	*x = RedeemUseTicketResponse{}
-	mi := &file_berth_v1_secrets_proto_msgTypes[11]
+	mi := &file_berth_v1_secrets_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -1051,7 +1453,7 @@ func (x *RedeemUseTicketResponse) String() string {
 func (*RedeemUseTicketResponse) ProtoMessage() {}
 
 func (x *RedeemUseTicketResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_berth_v1_secrets_proto_msgTypes[11]
+	mi := &file_berth_v1_secrets_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -1064,7 +1466,7 @@ func (x *RedeemUseTicketResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RedeemUseTicketResponse.ProtoReflect.Descriptor instead.
 func (*RedeemUseTicketResponse) Descriptor() ([]byte, []int) {
-	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{11}
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *RedeemUseTicketResponse) GetName() string {
@@ -1072,6 +1474,863 @@ func (x *RedeemUseTicketResponse) GetName() string {
 		return x.Name
 	}
 	return ""
+}
+
+func (x *RedeemUseTicketResponse) GetConsumerKind() ConsumerKind {
+	if x != nil {
+		return x.ConsumerKind
+	}
+	return ConsumerKind_CONSUMER_KIND_UNSPECIFIED
+}
+
+func (x *RedeemUseTicketResponse) GetAction() TicketAction {
+	if x != nil {
+		return x.Action
+	}
+	return TicketAction_TICKET_ACTION_UNSPECIFIED
+}
+
+type GrantProxyRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	Target        *ProxyTarget           `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GrantProxyRequest) Reset() {
+	*x = GrantProxyRequest{}
+	mi := &file_berth_v1_secrets_proto_msgTypes[13]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GrantProxyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GrantProxyRequest) ProtoMessage() {}
+
+func (x *GrantProxyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_secrets_proto_msgTypes[13]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GrantProxyRequest.ProtoReflect.Descriptor instead.
+func (*GrantProxyRequest) Descriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{13}
+}
+
+func (x *GrantProxyRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *GrantProxyRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *GrantProxyRequest) GetTarget() *ProxyTarget {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+type GrantProxyResponse struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Outcome GrantOutcome           `protobuf:"varint,1,opt,name=outcome,proto3,enum=berth.v1.GrantOutcome" json:"outcome,omitempty"`
+	// consumer is set only when outcome is GRANTED.
+	Consumer      *Consumer `protobuf:"bytes,2,opt,name=consumer,proto3" json:"consumer,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *GrantProxyResponse) Reset() {
+	*x = GrantProxyResponse{}
+	mi := &file_berth_v1_secrets_proto_msgTypes[14]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *GrantProxyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*GrantProxyResponse) ProtoMessage() {}
+
+func (x *GrantProxyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_secrets_proto_msgTypes[14]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use GrantProxyResponse.ProtoReflect.Descriptor instead.
+func (*GrantProxyResponse) Descriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{14}
+}
+
+func (x *GrantProxyResponse) GetOutcome() GrantOutcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return GrantOutcome_GRANT_OUTCOME_UNSPECIFIED
+}
+
+func (x *GrantProxyResponse) GetConsumer() *Consumer {
+	if x != nil {
+		return x.Consumer
+	}
+	return nil
+}
+
+type RevokeGrantRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	GrantId       int64                  `protobuf:"varint,2,opt,name=grant_id,json=grantId,proto3" json:"grant_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeGrantRequest) Reset() {
+	*x = RevokeGrantRequest{}
+	mi := &file_berth_v1_secrets_proto_msgTypes[15]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeGrantRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeGrantRequest) ProtoMessage() {}
+
+func (x *RevokeGrantRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_secrets_proto_msgTypes[15]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeGrantRequest.ProtoReflect.Descriptor instead.
+func (*RevokeGrantRequest) Descriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{15}
+}
+
+func (x *RevokeGrantRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *RevokeGrantRequest) GetGrantId() int64 {
+	if x != nil {
+		return x.GrantId
+	}
+	return 0
+}
+
+type RevokeGrantResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	State         GrantState             `protobuf:"varint,1,opt,name=state,proto3,enum=berth.v1.GrantState" json:"state,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RevokeGrantResponse) Reset() {
+	*x = RevokeGrantResponse{}
+	mi := &file_berth_v1_secrets_proto_msgTypes[16]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RevokeGrantResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RevokeGrantResponse) ProtoMessage() {}
+
+func (x *RevokeGrantResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_secrets_proto_msgTypes[16]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RevokeGrantResponse.ProtoReflect.Descriptor instead.
+func (*RevokeGrantResponse) Descriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{16}
+}
+
+func (x *RevokeGrantResponse) GetState() GrantState {
+	if x != nil {
+		return x.State
+	}
+	return GrantState_GRANT_STATE_UNSPECIFIED
+}
+
+type RemoveSecretRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RemoveSecretRequest) Reset() {
+	*x = RemoveSecretRequest{}
+	mi := &file_berth_v1_secrets_proto_msgTypes[17]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveSecretRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveSecretRequest) ProtoMessage() {}
+
+func (x *RemoveSecretRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_secrets_proto_msgTypes[17]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveSecretRequest.ProtoReflect.Descriptor instead.
+func (*RemoveSecretRequest) Descriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{17}
+}
+
+func (x *RemoveSecretRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *RemoveSecretRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type RemoveSecretResponse struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Outcome RemoveOutcome          `protobuf:"varint,1,opt,name=outcome,proto3,enum=berth.v1.RemoveOutcome" json:"outcome,omitempty"`
+	// revoked_grant_ids lists the grants revoked because the secret was removed.
+	RevokedGrantIds []int64 `protobuf:"varint,2,rep,packed,name=revoked_grant_ids,json=revokedGrantIds,proto3" json:"revoked_grant_ids,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
+}
+
+func (x *RemoveSecretResponse) Reset() {
+	*x = RemoveSecretResponse{}
+	mi := &file_berth_v1_secrets_proto_msgTypes[18]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RemoveSecretResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RemoveSecretResponse) ProtoMessage() {}
+
+func (x *RemoveSecretResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_secrets_proto_msgTypes[18]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RemoveSecretResponse.ProtoReflect.Descriptor instead.
+func (*RemoveSecretResponse) Descriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{18}
+}
+
+func (x *RemoveSecretResponse) GetOutcome() RemoveOutcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return RemoveOutcome_REMOVE_OUTCOME_UNSPECIFIED
+}
+
+func (x *RemoveSecretResponse) GetRevokedGrantIds() []int64 {
+	if x != nil {
+		return x.RevokedGrantIds
+	}
+	return nil
+}
+
+type RotateSecretRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Name          string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RotateSecretRequest) Reset() {
+	*x = RotateSecretRequest{}
+	mi := &file_berth_v1_secrets_proto_msgTypes[19]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RotateSecretRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RotateSecretRequest) ProtoMessage() {}
+
+func (x *RotateSecretRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_secrets_proto_msgTypes[19]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RotateSecretRequest.ProtoReflect.Descriptor instead.
+func (*RotateSecretRequest) Descriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{19}
+}
+
+func (x *RotateSecretRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *RotateSecretRequest) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+type RotateSecretResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// outcome is STORED when the new value replaced the old one.
+	Outcome       StoreOutcome `protobuf:"varint,1,opt,name=outcome,proto3,enum=berth.v1.StoreOutcome" json:"outcome,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *RotateSecretResponse) Reset() {
+	*x = RotateSecretResponse{}
+	mi := &file_berth_v1_secrets_proto_msgTypes[20]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *RotateSecretResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*RotateSecretResponse) ProtoMessage() {}
+
+func (x *RotateSecretResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_secrets_proto_msgTypes[20]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use RotateSecretResponse.ProtoReflect.Descriptor instead.
+func (*RotateSecretResponse) Descriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{20}
+}
+
+func (x *RotateSecretResponse) GetOutcome() StoreOutcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return StoreOutcome_STORE_OUTCOME_UNSPECIFIED
+}
+
+type AuthorizeProxyRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Names         []string               `protobuf:"bytes,2,rep,name=names,proto3" json:"names,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuthorizeProxyRequest) Reset() {
+	*x = AuthorizeProxyRequest{}
+	mi := &file_berth_v1_secrets_proto_msgTypes[21]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuthorizeProxyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuthorizeProxyRequest) ProtoMessage() {}
+
+func (x *AuthorizeProxyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_secrets_proto_msgTypes[21]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuthorizeProxyRequest.ProtoReflect.Descriptor instead.
+func (*AuthorizeProxyRequest) Descriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{21}
+}
+
+func (x *AuthorizeProxyRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *AuthorizeProxyRequest) GetNames() []string {
+	if x != nil {
+		return x.Names
+	}
+	return nil
+}
+
+type AuthorizeProxyResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// outcome is AUTHORIZED only when every name has an Active proxy grant; otherwise no session
+	// is made and nothing else is set.
+	Outcome UseOutcome `protobuf:"varint,1,opt,name=outcome,proto3,enum=berth.v1.UseOutcome" json:"outcome,omitempty"`
+	// session_id is 32 lowercase hex characters; the session's entity is proxy/<session_id>.
+	SessionId     string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	Tickets       []*ProxyTicket         `protobuf:"bytes,3,rep,name=tickets,proto3" json:"tickets,omitempty"`
+	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AuthorizeProxyResponse) Reset() {
+	*x = AuthorizeProxyResponse{}
+	mi := &file_berth_v1_secrets_proto_msgTypes[22]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AuthorizeProxyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AuthorizeProxyResponse) ProtoMessage() {}
+
+func (x *AuthorizeProxyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_secrets_proto_msgTypes[22]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AuthorizeProxyResponse.ProtoReflect.Descriptor instead.
+func (*AuthorizeProxyResponse) Descriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{22}
+}
+
+func (x *AuthorizeProxyResponse) GetOutcome() UseOutcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return UseOutcome_USE_OUTCOME_UNSPECIFIED
+}
+
+func (x *AuthorizeProxyResponse) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *AuthorizeProxyResponse) GetTickets() []*ProxyTicket {
+	if x != nil {
+		return x.Tickets
+	}
+	return nil
+}
+
+func (x *AuthorizeProxyResponse) GetExpiresAt() *timestamppb.Timestamp {
+	if x != nil {
+		return x.ExpiresAt
+	}
+	return nil
+}
+
+// ProxyTicket lets berth-native read one secret for berth-proxy, once.
+type ProxyTicket struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Name  string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	// ticket is 32 random bytes, bound to the name and the proxy's pid; never written down.
+	Ticket        []byte       `protobuf:"bytes,2,opt,name=ticket,proto3" json:"ticket,omitempty"`
+	Target        *ProxyTarget `protobuf:"bytes,3,opt,name=target,proto3" json:"target,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProxyTicket) Reset() {
+	*x = ProxyTicket{}
+	mi := &file_berth_v1_secrets_proto_msgTypes[23]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProxyTicket) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProxyTicket) ProtoMessage() {}
+
+func (x *ProxyTicket) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_secrets_proto_msgTypes[23]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProxyTicket.ProtoReflect.Descriptor instead.
+func (*ProxyTicket) Descriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{23}
+}
+
+func (x *ProxyTicket) GetName() string {
+	if x != nil {
+		return x.Name
+	}
+	return ""
+}
+
+func (x *ProxyTicket) GetTicket() []byte {
+	if x != nil {
+		return x.Ticket
+	}
+	return nil
+}
+
+func (x *ProxyTicket) GetTarget() *ProxyTarget {
+	if x != nil {
+		return x.Target
+	}
+	return nil
+}
+
+type WatchProxySessionRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	SessionId     string                 `protobuf:"bytes,1,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WatchProxySessionRequest) Reset() {
+	*x = WatchProxySessionRequest{}
+	mi := &file_berth_v1_secrets_proto_msgTypes[24]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchProxySessionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchProxySessionRequest) ProtoMessage() {}
+
+func (x *WatchProxySessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_secrets_proto_msgTypes[24]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchProxySessionRequest.ProtoReflect.Descriptor instead.
+func (*WatchProxySessionRequest) Descriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{24}
+}
+
+func (x *WatchProxySessionRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+type WatchProxySessionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Event         *ProxySessionEvent     `protobuf:"bytes,1,opt,name=event,proto3" json:"event,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WatchProxySessionResponse) Reset() {
+	*x = WatchProxySessionResponse{}
+	mi := &file_berth_v1_secrets_proto_msgTypes[25]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchProxySessionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchProxySessionResponse) ProtoMessage() {}
+
+func (x *WatchProxySessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_secrets_proto_msgTypes[25]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchProxySessionResponse.ProtoReflect.Descriptor instead.
+func (*WatchProxySessionResponse) Descriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{25}
+}
+
+func (x *WatchProxySessionResponse) GetEvent() *ProxySessionEvent {
+	if x != nil {
+		return x.Event
+	}
+	return nil
+}
+
+type ProxySessionEvent struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	Kind  ProxySessionEventKind  `protobuf:"varint,1,opt,name=kind,proto3,enum=berth.v1.ProxySessionEventKind" json:"kind,omitempty"`
+	// stop_reason is set only on STOP.
+	StopReason    ProxyStopReason `protobuf:"varint,2,opt,name=stop_reason,json=stopReason,proto3,enum=berth.v1.ProxyStopReason" json:"stop_reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *ProxySessionEvent) Reset() {
+	*x = ProxySessionEvent{}
+	mi := &file_berth_v1_secrets_proto_msgTypes[26]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *ProxySessionEvent) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*ProxySessionEvent) ProtoMessage() {}
+
+func (x *ProxySessionEvent) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_secrets_proto_msgTypes[26]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use ProxySessionEvent.ProtoReflect.Descriptor instead.
+func (*ProxySessionEvent) Descriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{26}
+}
+
+func (x *ProxySessionEvent) GetKind() ProxySessionEventKind {
+	if x != nil {
+		return x.Kind
+	}
+	return ProxySessionEventKind_PROXY_SESSION_EVENT_KIND_UNSPECIFIED
+}
+
+func (x *ProxySessionEvent) GetStopReason() ProxyStopReason {
+	if x != nil {
+		return x.StopReason
+	}
+	return ProxyStopReason_PROXY_STOP_REASON_UNSPECIFIED
+}
+
+type EndProxySessionRequest struct {
+	state     protoimpl.MessageState `protogen:"open.v1"`
+	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	SessionId string                 `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	// injected counts requests that got the header; refused counts requests a method or path
+	// limit, or a Host mismatch, turned away.
+	Injected      uint64 `protobuf:"varint,3,opt,name=injected,proto3" json:"injected,omitempty"`
+	Refused       uint64 `protobuf:"varint,4,opt,name=refused,proto3" json:"refused,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EndProxySessionRequest) Reset() {
+	*x = EndProxySessionRequest{}
+	mi := &file_berth_v1_secrets_proto_msgTypes[27]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EndProxySessionRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EndProxySessionRequest) ProtoMessage() {}
+
+func (x *EndProxySessionRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_secrets_proto_msgTypes[27]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EndProxySessionRequest.ProtoReflect.Descriptor instead.
+func (*EndProxySessionRequest) Descriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{27}
+}
+
+func (x *EndProxySessionRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *EndProxySessionRequest) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *EndProxySessionRequest) GetInjected() uint64 {
+	if x != nil {
+		return x.Injected
+	}
+	return 0
+}
+
+func (x *EndProxySessionRequest) GetRefused() uint64 {
+	if x != nil {
+		return x.Refused
+	}
+	return 0
+}
+
+type EndProxySessionResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *EndProxySessionResponse) Reset() {
+	*x = EndProxySessionResponse{}
+	mi := &file_berth_v1_secrets_proto_msgTypes[28]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *EndProxySessionResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*EndProxySessionResponse) ProtoMessage() {}
+
+func (x *EndProxySessionResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_secrets_proto_msgTypes[28]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use EndProxySessionResponse.ProtoReflect.Descriptor instead.
+func (*EndProxySessionResponse) Descriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{28}
 }
 
 var File_berth_v1_secrets_proto protoreflect.FileDescriptor
@@ -1097,7 +2356,7 @@ const file_berth_v1_secrets_proto_rawDesc = "" +
 	"\x05state\x18\x02 \x01(\x0e2\x15.berth.v1.SecretStateR\x05state\x129\n" +
 	"\n" +
 	"created_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x120\n" +
-	"\tconsumers\x18\x04 \x03(\v2\x12.berth.v1.ConsumerR\tconsumers\"\x8a\x03\n" +
+	"\tconsumers\x18\x04 \x03(\v2\x12.berth.v1.ConsumerR\tconsumers\"\xe3\x03\n" +
 	"\bConsumer\x12\x19\n" +
 	"\bgrant_id\x18\x01 \x01(\x03R\agrantId\x12*\n" +
 	"\x05state\x18\x02 \x01(\x0e2\x14.berth.v1.GrantStateR\x05state\x12\x19\n" +
@@ -1113,7 +2372,20 @@ const file_berth_v1_secrets_proto_rawDesc = "" +
 	"lastUsedAt\x12\x1b\n" +
 	"\tuse_count\x18\n" +
 	" \x01(\x03R\buseCount\x12\x19\n" +
-	"\bpass_env\x18\v \x03(\tR\apassEnv\"\xb8\x02\n" +
+	"\bpass_env\x18\v \x03(\tR\apassEnv\x12*\n" +
+	"\x04kind\x18\f \x01(\x0e2\x16.berth.v1.ConsumerKindR\x04kind\x12+\n" +
+	"\x05proxy\x18\r \x01(\v2\x15.berth.v1.ProxyTargetR\x05proxy\"\x97\x06\n" +
+	"\vProxyTarget\x12j\n" +
+	"\x04host\x18\x01 \x01(\tBV\xbaHSrQ\x18\xfd\x012L^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?[.])*[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$R\x04host\x12\x1d\n" +
+	"\x04port\x18\x02 \x01(\rB\t\xbaH\x06*\x04\x18\xff\xff\x03R\x04port\x12\xc6\x02\n" +
+	"\vheader_name\x18\x03 \x01(\tB\xa4\x02\xbaH\xa0\x02\xba\x01\xf6\x01\n" +
+	"\x15header_name_grantable\x12>this header frames or routes the request and cannot be granted\x1a\x9c\x01!(this.lowerAscii() in ['host', 'content-length', 'transfer-encoding', 'connection', 'upgrade', 'te', 'trailer']) && !this.lowerAscii().startsWith('proxy-')r$2\"^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,64}$R\n" +
+	"headerName\x12;\n" +
+	"\fvalue_prefix\x18\x04 \x01(\tB\x18\xbaH\x15r\x13\x18\x80\x012\x0e^[\\x20-\\x7E]*$R\vvaluePrefix\x12;\n" +
+	"\fvalue_suffix\x18\x05 \x01(\tB\x18\xbaH\x15r\x13\x18\x80\x012\x0e^[\\x20-\\x7E]*$R\vvalueSuffix\x125\n" +
+	"\tpath_glob\x18\x06 \x01(\tB\x18\xbaH\x15r\x13\x18\x80\b2\x0e^[\\x21-\\x7E]*$R\bpathGlob\x127\n" +
+	"\amethods\x18\a \x03(\tB\x1d\xbaH\x1a\x92\x01\x17\x10\x10\x18\x01\"\x11r\x0f2\r^[A-Z]{1,16}$R\amethods\x12J\n" +
+	"\x0fplaceholder_env\x18\b \x01(\tB!\xbaH\x1er\x1c2\x1a^([A-Z_][A-Z0-9_]{0,63})?$R\x0eplaceholderEnv\"\xb8\x02\n" +
 	"\x12GrantSecretRequest\x12)\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tB\n" +
@@ -1144,9 +2416,76 @@ const file_berth_v1_secrets_proto_rawDesc = "" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\b\x18\x80\x01R\trequestId\x12\x1f\n" +
-	"\x06ticket\x18\x02 \x01(\fB\a\xbaH\x04z\x02h R\x06ticket\"-\n" +
+	"\x06ticket\x18\x02 \x01(\fB\a\xbaH\x04z\x02h R\x06ticket\"\x9a\x01\n" +
 	"\x17RedeemUseTicketResponse\x12\x12\n" +
-	"\x04name\x18\x01 \x01(\tR\x04name*{\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12;\n" +
+	"\rconsumer_kind\x18\x02 \x01(\x0e2\x16.berth.v1.ConsumerKindR\fconsumerKind\x12.\n" +
+	"\x06action\x18\x03 \x01(\x0e2\x16.berth.v1.TicketActionR\x06action\"\xae\x01\n" +
+	"\x11GrantProxyRequest\x12)\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\b\x18\x80\x01R\trequestId\x127\n" +
+	"\x04name\x18\x02 \x01(\tB#\xbaH r\x1e2\x1c^[a-z0-9][a-z0-9._-]{0,127}$R\x04name\x125\n" +
+	"\x06target\x18\x03 \x01(\v2\x15.berth.v1.ProxyTargetB\x06\xbaH\x03\xc8\x01\x01R\x06target\"v\n" +
+	"\x12GrantProxyResponse\x120\n" +
+	"\aoutcome\x18\x01 \x01(\x0e2\x16.berth.v1.GrantOutcomeR\aoutcome\x12.\n" +
+	"\bconsumer\x18\x02 \x01(\v2\x12.berth.v1.ConsumerR\bconsumer\"c\n" +
+	"\x12RevokeGrantRequest\x12)\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\b\x18\x80\x01R\trequestId\x12\"\n" +
+	"\bgrant_id\x18\x02 \x01(\x03B\a\xbaH\x04\"\x02 \x00R\agrantId\"A\n" +
+	"\x13RevokeGrantResponse\x12*\n" +
+	"\x05state\x18\x01 \x01(\x0e2\x14.berth.v1.GrantStateR\x05state\"y\n" +
+	"\x13RemoveSecretRequest\x12)\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\b\x18\x80\x01R\trequestId\x127\n" +
+	"\x04name\x18\x02 \x01(\tB#\xbaH r\x1e2\x1c^[a-z0-9][a-z0-9._-]{0,127}$R\x04name\"u\n" +
+	"\x14RemoveSecretResponse\x121\n" +
+	"\aoutcome\x18\x01 \x01(\x0e2\x17.berth.v1.RemoveOutcomeR\aoutcome\x12*\n" +
+	"\x11revoked_grant_ids\x18\x02 \x03(\x03R\x0frevokedGrantIds\"y\n" +
+	"\x13RotateSecretRequest\x12)\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\b\x18\x80\x01R\trequestId\x127\n" +
+	"\x04name\x18\x02 \x01(\tB#\xbaH r\x1e2\x1c^[a-z0-9][a-z0-9._-]{0,127}$R\x04name\"H\n" +
+	"\x14RotateSecretResponse\x120\n" +
+	"\aoutcome\x18\x01 \x01(\x0e2\x16.berth.v1.StoreOutcomeR\aoutcome\"\x88\x01\n" +
+	"\x15AuthorizeProxyRequest\x12)\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\b\x18\x80\x01R\trequestId\x12D\n" +
+	"\x05names\x18\x02 \x03(\tB.\xbaH+\x92\x01(\b\x01\x10\x10\x18\x01\" r\x1e2\x1c^[a-z0-9][a-z0-9._-]{0,127}$R\x05names\"\xd3\x01\n" +
+	"\x16AuthorizeProxyResponse\x12.\n" +
+	"\aoutcome\x18\x01 \x01(\x0e2\x14.berth.v1.UseOutcomeR\aoutcome\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12/\n" +
+	"\atickets\x18\x03 \x03(\v2\x15.berth.v1.ProxyTicketR\atickets\x129\n" +
+	"\n" +
+	"expires_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"h\n" +
+	"\vProxyTicket\x12\x12\n" +
+	"\x04name\x18\x01 \x01(\tR\x04name\x12\x16\n" +
+	"\x06ticket\x18\x02 \x01(\fR\x06ticket\x12-\n" +
+	"\x06target\x18\x03 \x01(\v2\x15.berth.v1.ProxyTargetR\x06target\"P\n" +
+	"\x18WatchProxySessionRequest\x124\n" +
+	"\n" +
+	"session_id\x18\x01 \x01(\tB\x15\xbaH\x12r\x102\x0e^[0-9a-f]{32}$R\tsessionId\"N\n" +
+	"\x19WatchProxySessionResponse\x121\n" +
+	"\x05event\x18\x01 \x01(\v2\x1b.berth.v1.ProxySessionEventR\x05event\"\x84\x01\n" +
+	"\x11ProxySessionEvent\x123\n" +
+	"\x04kind\x18\x01 \x01(\x0e2\x1f.berth.v1.ProxySessionEventKindR\x04kind\x12:\n" +
+	"\vstop_reason\x18\x02 \x01(\x0e2\x19.berth.v1.ProxyStopReasonR\n" +
+	"stopReason\"\xaf\x01\n" +
+	"\x16EndProxySessionRequest\x12)\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\b\x18\x80\x01R\trequestId\x124\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tB\x15\xbaH\x12r\x102\x0e^[0-9a-f]{32}$R\tsessionId\x12\x1a\n" +
+	"\binjected\x18\x03 \x01(\x04R\binjected\x12\x18\n" +
+	"\arefused\x18\x04 \x01(\x04R\arefused\"\x19\n" +
+	"\x17EndProxySessionResponse*{\n" +
 	"\fStoreOutcome\x12\x1d\n" +
 	"\x19STORE_OUTCOME_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14STORE_OUTCOME_STORED\x10\x01\x12\x18\n" +
@@ -1162,13 +2501,39 @@ const file_berth_v1_secrets_proto_rawDesc = "" +
 	"\x17USE_OUTCOME_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16USE_OUTCOME_AUTHORIZED\x10\x01\x12\x18\n" +
 	"\x14USE_OUTCOME_NO_GRANT\x10\x02\x12\x1b\n" +
-	"\x17USE_OUTCOME_STALE_GRANT\x10\x03*\x90\x01\n" +
+	"\x17USE_OUTCOME_STALE_GRANT\x10\x03*\xe0\x01\n" +
 	"\vSecretState\x12\x1c\n" +
 	"\x18SECRET_STATE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14SECRET_STATE_PENDING\x10\x01\x12\x17\n" +
 	"\x13SECRET_STATE_STORED\x10\x02\x12\x17\n" +
 	"\x13SECRET_STATE_DENIED\x10\x03\x12\x17\n" +
-	"\x13SECRET_STATE_FAILED\x10\x04*\xa4\x01\n" +
+	"\x13SECRET_STATE_FAILED\x10\x04\x12\x19\n" +
+	"\x15SECRET_STATE_ROTATING\x10\x05\x12\x19\n" +
+	"\x15SECRET_STATE_REMOVING\x10\x06\x12\x18\n" +
+	"\x14SECRET_STATE_REMOVED\x10\a*d\n" +
+	"\fConsumerKind\x12\x1d\n" +
+	"\x19CONSUMER_KIND_UNSPECIFIED\x10\x00\x12\x1c\n" +
+	"\x18CONSUMER_KIND_EXECUTABLE\x10\x01\x12\x17\n" +
+	"\x13CONSUMER_KIND_PROXY\x10\x02*\x81\x01\n" +
+	"\rRemoveOutcome\x12\x1e\n" +
+	"\x1aREMOVE_OUTCOME_UNSPECIFIED\x10\x00\x12\x1a\n" +
+	"\x16REMOVE_OUTCOME_REMOVED\x10\x01\x12\x19\n" +
+	"\x15REMOVE_OUTCOME_DENIED\x10\x02\x12\x19\n" +
+	"\x15REMOVE_OUTCOME_FAILED\x10\x03*x\n" +
+	"\fTicketAction\x12\x1d\n" +
+	"\x19TICKET_ACTION_UNSPECIFIED\x10\x00\x12\x15\n" +
+	"\x11TICKET_ACTION_USE\x10\x01\x12\x18\n" +
+	"\x14TICKET_ACTION_REMOVE\x10\x02\x12\x18\n" +
+	"\x14TICKET_ACTION_ROTATE\x10\x03*\xa6\x01\n" +
+	"\x0fProxyStopReason\x12!\n" +
+	"\x1dPROXY_STOP_REASON_UNSPECIFIED\x10\x00\x12#\n" +
+	"\x1fPROXY_STOP_REASON_GRANT_REVOKED\x10\x01\x12$\n" +
+	" PROXY_STOP_REASON_SECRET_REMOVED\x10\x02\x12%\n" +
+	"!PROXY_STOP_REASON_DAEMON_STOPPING\x10\x03*\x8a\x01\n" +
+	"\x15ProxySessionEventKind\x12(\n" +
+	"$PROXY_SESSION_EVENT_KIND_UNSPECIFIED\x10\x00\x12$\n" +
+	" PROXY_SESSION_EVENT_KIND_SERVING\x10\x01\x12!\n" +
+	"\x1dPROXY_SESSION_EVENT_KIND_STOP\x10\x02*\xa4\x01\n" +
 	"\n" +
 	"GrantState\x12\x1b\n" +
 	"\x17GRANT_STATE_UNSPECIFIED\x10\x00\x12\x19\n" +
@@ -1176,13 +2541,21 @@ const file_berth_v1_secrets_proto_rawDesc = "" +
 	"\x12GRANT_STATE_ACTIVE\x10\x02\x12\x16\n" +
 	"\x12GRANT_STATE_DENIED\x10\x03\x12\x15\n" +
 	"\x11GRANT_STATE_STALE\x10\x04\x12\x17\n" +
-	"\x13GRANT_STATE_REVOKED\x10\x052\xb3\x03\n" +
+	"\x13GRANT_STATE_REVOKED\x10\x052\x85\b\n" +
 	"\x0eSecretsService\x12V\n" +
 	"\rRequestSecret\x12\x1e.berth.v1.RequestSecretRequest\x1a\x1f.berth.v1.RequestSecretResponse\"\x04\x88\xb5\x18\x01\x12P\n" +
 	"\vListSecrets\x12\x1c.berth.v1.ListSecretsRequest\x1a\x1d.berth.v1.ListSecretsResponse\"\x04\x88\xb5\x18\x01\x12J\n" +
 	"\vGrantSecret\x12\x1c.berth.v1.GrantSecretRequest\x1a\x1d.berth.v1.GrantSecretResponse\x12S\n" +
 	"\fAuthorizeUse\x12\x1d.berth.v1.AuthorizeUseRequest\x1a\x1e.berth.v1.AuthorizeUseResponse\"\x04\x88\xb5\x18\x01\x12V\n" +
-	"\x0fRedeemUseTicket\x12 .berth.v1.RedeemUseTicketRequest\x1a!.berth.v1.RedeemUseTicketResponseBy\n" +
+	"\x0fRedeemUseTicket\x12 .berth.v1.RedeemUseTicketRequest\x1a!.berth.v1.RedeemUseTicketResponse\x12G\n" +
+	"\n" +
+	"GrantProxy\x12\x1b.berth.v1.GrantProxyRequest\x1a\x1c.berth.v1.GrantProxyResponse\x12J\n" +
+	"\vRevokeGrant\x12\x1c.berth.v1.RevokeGrantRequest\x1a\x1d.berth.v1.RevokeGrantResponse\x12M\n" +
+	"\fRemoveSecret\x12\x1d.berth.v1.RemoveSecretRequest\x1a\x1e.berth.v1.RemoveSecretResponse\x12M\n" +
+	"\fRotateSecret\x12\x1d.berth.v1.RotateSecretRequest\x1a\x1e.berth.v1.RotateSecretResponse\x12Y\n" +
+	"\x0eAuthorizeProxy\x12\x1f.berth.v1.AuthorizeProxyRequest\x1a .berth.v1.AuthorizeProxyResponse\"\x04\x88\xb5\x18\x01\x12d\n" +
+	"\x11WatchProxySession\x12\".berth.v1.WatchProxySessionRequest\x1a#.berth.v1.WatchProxySessionResponse\"\x04\x88\xb5\x18\x010\x01\x12\\\n" +
+	"\x0fEndProxySession\x12 .berth.v1.EndProxySessionRequest\x1a!.berth.v1.EndProxySessionResponse\"\x04\x88\xb5\x18\x01By\n" +
 	"\fcom.berth.v1B\fSecretsProtoP\x01Z\x1aberth/gen/berth/v1;berthv1\xa2\x02\x03BXX\xaa\x02\bBerth.V1\xca\x02\bBerth\\V1\xe2\x02\x14Berth\\V1\\GPBMetadata\xea\x02\tBerth::V1b\x06proto3"
 
 var (
@@ -1197,56 +2570,109 @@ func file_berth_v1_secrets_proto_rawDescGZIP() []byte {
 	return file_berth_v1_secrets_proto_rawDescData
 }
 
-var file_berth_v1_secrets_proto_enumTypes = make([]protoimpl.EnumInfo, 5)
-var file_berth_v1_secrets_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_berth_v1_secrets_proto_enumTypes = make([]protoimpl.EnumInfo, 10)
+var file_berth_v1_secrets_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
 var file_berth_v1_secrets_proto_goTypes = []any{
-	(StoreOutcome)(0),               // 0: berth.v1.StoreOutcome
-	(GrantOutcome)(0),               // 1: berth.v1.GrantOutcome
-	(UseOutcome)(0),                 // 2: berth.v1.UseOutcome
-	(SecretState)(0),                // 3: berth.v1.SecretState
-	(GrantState)(0),                 // 4: berth.v1.GrantState
-	(*RequestSecretRequest)(nil),    // 5: berth.v1.RequestSecretRequest
-	(*RequestSecretResponse)(nil),   // 6: berth.v1.RequestSecretResponse
-	(*ListSecretsRequest)(nil),      // 7: berth.v1.ListSecretsRequest
-	(*ListSecretsResponse)(nil),     // 8: berth.v1.ListSecretsResponse
-	(*SecretSummary)(nil),           // 9: berth.v1.SecretSummary
-	(*Consumer)(nil),                // 10: berth.v1.Consumer
-	(*GrantSecretRequest)(nil),      // 11: berth.v1.GrantSecretRequest
-	(*GrantSecretResponse)(nil),     // 12: berth.v1.GrantSecretResponse
-	(*AuthorizeUseRequest)(nil),     // 13: berth.v1.AuthorizeUseRequest
-	(*AuthorizeUseResponse)(nil),    // 14: berth.v1.AuthorizeUseResponse
-	(*RedeemUseTicketRequest)(nil),  // 15: berth.v1.RedeemUseTicketRequest
-	(*RedeemUseTicketResponse)(nil), // 16: berth.v1.RedeemUseTicketResponse
-	(*timestamppb.Timestamp)(nil),   // 17: google.protobuf.Timestamp
+	(StoreOutcome)(0),                 // 0: berth.v1.StoreOutcome
+	(GrantOutcome)(0),                 // 1: berth.v1.GrantOutcome
+	(UseOutcome)(0),                   // 2: berth.v1.UseOutcome
+	(SecretState)(0),                  // 3: berth.v1.SecretState
+	(ConsumerKind)(0),                 // 4: berth.v1.ConsumerKind
+	(RemoveOutcome)(0),                // 5: berth.v1.RemoveOutcome
+	(TicketAction)(0),                 // 6: berth.v1.TicketAction
+	(ProxyStopReason)(0),              // 7: berth.v1.ProxyStopReason
+	(ProxySessionEventKind)(0),        // 8: berth.v1.ProxySessionEventKind
+	(GrantState)(0),                   // 9: berth.v1.GrantState
+	(*RequestSecretRequest)(nil),      // 10: berth.v1.RequestSecretRequest
+	(*RequestSecretResponse)(nil),     // 11: berth.v1.RequestSecretResponse
+	(*ListSecretsRequest)(nil),        // 12: berth.v1.ListSecretsRequest
+	(*ListSecretsResponse)(nil),       // 13: berth.v1.ListSecretsResponse
+	(*SecretSummary)(nil),             // 14: berth.v1.SecretSummary
+	(*Consumer)(nil),                  // 15: berth.v1.Consumer
+	(*ProxyTarget)(nil),               // 16: berth.v1.ProxyTarget
+	(*GrantSecretRequest)(nil),        // 17: berth.v1.GrantSecretRequest
+	(*GrantSecretResponse)(nil),       // 18: berth.v1.GrantSecretResponse
+	(*AuthorizeUseRequest)(nil),       // 19: berth.v1.AuthorizeUseRequest
+	(*AuthorizeUseResponse)(nil),      // 20: berth.v1.AuthorizeUseResponse
+	(*RedeemUseTicketRequest)(nil),    // 21: berth.v1.RedeemUseTicketRequest
+	(*RedeemUseTicketResponse)(nil),   // 22: berth.v1.RedeemUseTicketResponse
+	(*GrantProxyRequest)(nil),         // 23: berth.v1.GrantProxyRequest
+	(*GrantProxyResponse)(nil),        // 24: berth.v1.GrantProxyResponse
+	(*RevokeGrantRequest)(nil),        // 25: berth.v1.RevokeGrantRequest
+	(*RevokeGrantResponse)(nil),       // 26: berth.v1.RevokeGrantResponse
+	(*RemoveSecretRequest)(nil),       // 27: berth.v1.RemoveSecretRequest
+	(*RemoveSecretResponse)(nil),      // 28: berth.v1.RemoveSecretResponse
+	(*RotateSecretRequest)(nil),       // 29: berth.v1.RotateSecretRequest
+	(*RotateSecretResponse)(nil),      // 30: berth.v1.RotateSecretResponse
+	(*AuthorizeProxyRequest)(nil),     // 31: berth.v1.AuthorizeProxyRequest
+	(*AuthorizeProxyResponse)(nil),    // 32: berth.v1.AuthorizeProxyResponse
+	(*ProxyTicket)(nil),               // 33: berth.v1.ProxyTicket
+	(*WatchProxySessionRequest)(nil),  // 34: berth.v1.WatchProxySessionRequest
+	(*WatchProxySessionResponse)(nil), // 35: berth.v1.WatchProxySessionResponse
+	(*ProxySessionEvent)(nil),         // 36: berth.v1.ProxySessionEvent
+	(*EndProxySessionRequest)(nil),    // 37: berth.v1.EndProxySessionRequest
+	(*EndProxySessionResponse)(nil),   // 38: berth.v1.EndProxySessionResponse
+	(*timestamppb.Timestamp)(nil),     // 39: google.protobuf.Timestamp
 }
 var file_berth_v1_secrets_proto_depIdxs = []int32{
 	0,  // 0: berth.v1.RequestSecretResponse.outcome:type_name -> berth.v1.StoreOutcome
-	9,  // 1: berth.v1.ListSecretsResponse.secrets:type_name -> berth.v1.SecretSummary
+	14, // 1: berth.v1.ListSecretsResponse.secrets:type_name -> berth.v1.SecretSummary
 	3,  // 2: berth.v1.SecretSummary.state:type_name -> berth.v1.SecretState
-	17, // 3: berth.v1.SecretSummary.created_at:type_name -> google.protobuf.Timestamp
-	10, // 4: berth.v1.SecretSummary.consumers:type_name -> berth.v1.Consumer
-	4,  // 5: berth.v1.Consumer.state:type_name -> berth.v1.GrantState
-	17, // 6: berth.v1.Consumer.created_at:type_name -> google.protobuf.Timestamp
-	17, // 7: berth.v1.Consumer.last_used_at:type_name -> google.protobuf.Timestamp
-	1,  // 8: berth.v1.GrantSecretResponse.outcome:type_name -> berth.v1.GrantOutcome
-	10, // 9: berth.v1.GrantSecretResponse.consumer:type_name -> berth.v1.Consumer
-	2,  // 10: berth.v1.AuthorizeUseResponse.outcome:type_name -> berth.v1.UseOutcome
-	17, // 11: berth.v1.AuthorizeUseResponse.expires_at:type_name -> google.protobuf.Timestamp
-	5,  // 12: berth.v1.SecretsService.RequestSecret:input_type -> berth.v1.RequestSecretRequest
-	7,  // 13: berth.v1.SecretsService.ListSecrets:input_type -> berth.v1.ListSecretsRequest
-	11, // 14: berth.v1.SecretsService.GrantSecret:input_type -> berth.v1.GrantSecretRequest
-	13, // 15: berth.v1.SecretsService.AuthorizeUse:input_type -> berth.v1.AuthorizeUseRequest
-	15, // 16: berth.v1.SecretsService.RedeemUseTicket:input_type -> berth.v1.RedeemUseTicketRequest
-	6,  // 17: berth.v1.SecretsService.RequestSecret:output_type -> berth.v1.RequestSecretResponse
-	8,  // 18: berth.v1.SecretsService.ListSecrets:output_type -> berth.v1.ListSecretsResponse
-	12, // 19: berth.v1.SecretsService.GrantSecret:output_type -> berth.v1.GrantSecretResponse
-	14, // 20: berth.v1.SecretsService.AuthorizeUse:output_type -> berth.v1.AuthorizeUseResponse
-	16, // 21: berth.v1.SecretsService.RedeemUseTicket:output_type -> berth.v1.RedeemUseTicketResponse
-	17, // [17:22] is the sub-list for method output_type
-	12, // [12:17] is the sub-list for method input_type
-	12, // [12:12] is the sub-list for extension type_name
-	12, // [12:12] is the sub-list for extension extendee
-	0,  // [0:12] is the sub-list for field type_name
+	39, // 3: berth.v1.SecretSummary.created_at:type_name -> google.protobuf.Timestamp
+	15, // 4: berth.v1.SecretSummary.consumers:type_name -> berth.v1.Consumer
+	9,  // 5: berth.v1.Consumer.state:type_name -> berth.v1.GrantState
+	39, // 6: berth.v1.Consumer.created_at:type_name -> google.protobuf.Timestamp
+	39, // 7: berth.v1.Consumer.last_used_at:type_name -> google.protobuf.Timestamp
+	4,  // 8: berth.v1.Consumer.kind:type_name -> berth.v1.ConsumerKind
+	16, // 9: berth.v1.Consumer.proxy:type_name -> berth.v1.ProxyTarget
+	1,  // 10: berth.v1.GrantSecretResponse.outcome:type_name -> berth.v1.GrantOutcome
+	15, // 11: berth.v1.GrantSecretResponse.consumer:type_name -> berth.v1.Consumer
+	2,  // 12: berth.v1.AuthorizeUseResponse.outcome:type_name -> berth.v1.UseOutcome
+	39, // 13: berth.v1.AuthorizeUseResponse.expires_at:type_name -> google.protobuf.Timestamp
+	4,  // 14: berth.v1.RedeemUseTicketResponse.consumer_kind:type_name -> berth.v1.ConsumerKind
+	6,  // 15: berth.v1.RedeemUseTicketResponse.action:type_name -> berth.v1.TicketAction
+	16, // 16: berth.v1.GrantProxyRequest.target:type_name -> berth.v1.ProxyTarget
+	1,  // 17: berth.v1.GrantProxyResponse.outcome:type_name -> berth.v1.GrantOutcome
+	15, // 18: berth.v1.GrantProxyResponse.consumer:type_name -> berth.v1.Consumer
+	9,  // 19: berth.v1.RevokeGrantResponse.state:type_name -> berth.v1.GrantState
+	5,  // 20: berth.v1.RemoveSecretResponse.outcome:type_name -> berth.v1.RemoveOutcome
+	0,  // 21: berth.v1.RotateSecretResponse.outcome:type_name -> berth.v1.StoreOutcome
+	2,  // 22: berth.v1.AuthorizeProxyResponse.outcome:type_name -> berth.v1.UseOutcome
+	33, // 23: berth.v1.AuthorizeProxyResponse.tickets:type_name -> berth.v1.ProxyTicket
+	39, // 24: berth.v1.AuthorizeProxyResponse.expires_at:type_name -> google.protobuf.Timestamp
+	16, // 25: berth.v1.ProxyTicket.target:type_name -> berth.v1.ProxyTarget
+	36, // 26: berth.v1.WatchProxySessionResponse.event:type_name -> berth.v1.ProxySessionEvent
+	8,  // 27: berth.v1.ProxySessionEvent.kind:type_name -> berth.v1.ProxySessionEventKind
+	7,  // 28: berth.v1.ProxySessionEvent.stop_reason:type_name -> berth.v1.ProxyStopReason
+	10, // 29: berth.v1.SecretsService.RequestSecret:input_type -> berth.v1.RequestSecretRequest
+	12, // 30: berth.v1.SecretsService.ListSecrets:input_type -> berth.v1.ListSecretsRequest
+	17, // 31: berth.v1.SecretsService.GrantSecret:input_type -> berth.v1.GrantSecretRequest
+	19, // 32: berth.v1.SecretsService.AuthorizeUse:input_type -> berth.v1.AuthorizeUseRequest
+	21, // 33: berth.v1.SecretsService.RedeemUseTicket:input_type -> berth.v1.RedeemUseTicketRequest
+	23, // 34: berth.v1.SecretsService.GrantProxy:input_type -> berth.v1.GrantProxyRequest
+	25, // 35: berth.v1.SecretsService.RevokeGrant:input_type -> berth.v1.RevokeGrantRequest
+	27, // 36: berth.v1.SecretsService.RemoveSecret:input_type -> berth.v1.RemoveSecretRequest
+	29, // 37: berth.v1.SecretsService.RotateSecret:input_type -> berth.v1.RotateSecretRequest
+	31, // 38: berth.v1.SecretsService.AuthorizeProxy:input_type -> berth.v1.AuthorizeProxyRequest
+	34, // 39: berth.v1.SecretsService.WatchProxySession:input_type -> berth.v1.WatchProxySessionRequest
+	37, // 40: berth.v1.SecretsService.EndProxySession:input_type -> berth.v1.EndProxySessionRequest
+	11, // 41: berth.v1.SecretsService.RequestSecret:output_type -> berth.v1.RequestSecretResponse
+	13, // 42: berth.v1.SecretsService.ListSecrets:output_type -> berth.v1.ListSecretsResponse
+	18, // 43: berth.v1.SecretsService.GrantSecret:output_type -> berth.v1.GrantSecretResponse
+	20, // 44: berth.v1.SecretsService.AuthorizeUse:output_type -> berth.v1.AuthorizeUseResponse
+	22, // 45: berth.v1.SecretsService.RedeemUseTicket:output_type -> berth.v1.RedeemUseTicketResponse
+	24, // 46: berth.v1.SecretsService.GrantProxy:output_type -> berth.v1.GrantProxyResponse
+	26, // 47: berth.v1.SecretsService.RevokeGrant:output_type -> berth.v1.RevokeGrantResponse
+	28, // 48: berth.v1.SecretsService.RemoveSecret:output_type -> berth.v1.RemoveSecretResponse
+	30, // 49: berth.v1.SecretsService.RotateSecret:output_type -> berth.v1.RotateSecretResponse
+	32, // 50: berth.v1.SecretsService.AuthorizeProxy:output_type -> berth.v1.AuthorizeProxyResponse
+	35, // 51: berth.v1.SecretsService.WatchProxySession:output_type -> berth.v1.WatchProxySessionResponse
+	38, // 52: berth.v1.SecretsService.EndProxySession:output_type -> berth.v1.EndProxySessionResponse
+	41, // [41:53] is the sub-list for method output_type
+	29, // [29:41] is the sub-list for method input_type
+	29, // [29:29] is the sub-list for extension type_name
+	29, // [29:29] is the sub-list for extension extendee
+	0,  // [0:29] is the sub-list for field type_name
 }
 
 func init() { file_berth_v1_secrets_proto_init() }
@@ -1260,8 +2686,8 @@ func file_berth_v1_secrets_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_berth_v1_secrets_proto_rawDesc), len(file_berth_v1_secrets_proto_rawDesc)),
-			NumEnums:      5,
-			NumMessages:   12,
+			NumEnums:      10,
+			NumMessages:   29,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

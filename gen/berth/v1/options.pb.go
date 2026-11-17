@@ -39,26 +39,39 @@ const (
 	// TICKET_INVALID covers unknown, expired and already redeemed tickets alike.
 	ErrorReason_ERROR_REASON_TICKET_INVALID ErrorReason = 7
 	// PEER_NOT_TRUSTED means the calling process is not the signed Berth binary the method
-	// needs: berth-native for RedeemUseTicket, the berth CLI for an AuthorizeUse ticket.
+	// needs: berth-native for RedeemUseTicket, the berth CLI for an AuthorizeUse ticket, and
+	// berth-proxy for AuthorizeProxy. WatchProxySession and EndProxySession also answer it for an
+	// unknown session or one another process authorized, so ids cannot be probed.
 	ErrorReason_ERROR_REASON_PEER_NOT_TRUSTED ErrorReason = 8
 	// INTERPRETER refuses a grant to an interpreter (a shell, python, a #! script) unless the
 	// request sets allow_interpreter, since anything it runs could print the secret.
 	ErrorReason_ERROR_REASON_INTERPRETER ErrorReason = 9
+	// BUSY refuses a remove or rotate while the secret is Pending or Rotating, or one of its
+	// grants waits for Touch ID.
+	ErrorReason_ERROR_REASON_BUSY ErrorReason = 10
+	// BAD_PROXY_TARGET refuses a proxy target berthd will not grant, such as an IP literal or
+	// localhost outside e2e builds.
+	ErrorReason_ERROR_REASON_BAD_PROXY_TARGET ErrorReason = 11
+	// GRANT_NOT_FOUND means no grant has that id.
+	ErrorReason_ERROR_REASON_GRANT_NOT_FOUND ErrorReason = 12
 )
 
 // Enum value maps for ErrorReason.
 var (
 	ErrorReason_name = map[int32]string{
-		0: "ERROR_REASON_UNSPECIFIED",
-		1: "ERROR_REASON_PROTOCOL_MISMATCH",
-		2: "ERROR_REASON_REQUEST_ID_REUSED",
-		3: "ERROR_REASON_NOT_SERVING",
-		4: "ERROR_REASON_SECRET_NOT_FOUND",
-		5: "ERROR_REASON_SECRET_EXISTS",
-		6: "ERROR_REASON_EXECUTABLE_NOT_FOUND",
-		7: "ERROR_REASON_TICKET_INVALID",
-		8: "ERROR_REASON_PEER_NOT_TRUSTED",
-		9: "ERROR_REASON_INTERPRETER",
+		0:  "ERROR_REASON_UNSPECIFIED",
+		1:  "ERROR_REASON_PROTOCOL_MISMATCH",
+		2:  "ERROR_REASON_REQUEST_ID_REUSED",
+		3:  "ERROR_REASON_NOT_SERVING",
+		4:  "ERROR_REASON_SECRET_NOT_FOUND",
+		5:  "ERROR_REASON_SECRET_EXISTS",
+		6:  "ERROR_REASON_EXECUTABLE_NOT_FOUND",
+		7:  "ERROR_REASON_TICKET_INVALID",
+		8:  "ERROR_REASON_PEER_NOT_TRUSTED",
+		9:  "ERROR_REASON_INTERPRETER",
+		10: "ERROR_REASON_BUSY",
+		11: "ERROR_REASON_BAD_PROXY_TARGET",
+		12: "ERROR_REASON_GRANT_NOT_FOUND",
 	}
 	ErrorReason_value = map[string]int32{
 		"ERROR_REASON_UNSPECIFIED":          0,
@@ -71,6 +84,9 @@ var (
 		"ERROR_REASON_TICKET_INVALID":       7,
 		"ERROR_REASON_PEER_NOT_TRUSTED":     8,
 		"ERROR_REASON_INTERPRETER":          9,
+		"ERROR_REASON_BUSY":                 10,
+		"ERROR_REASON_BAD_PROXY_TARGET":     11,
+		"ERROR_REASON_GRANT_NOT_FOUND":      12,
 	}
 )
 
@@ -171,7 +187,7 @@ const file_berth_v1_options_proto_rawDesc = "" +
 	"\n" +
 	"\x16berth/v1/options.proto\x12\bberth.v1\x1a google/protobuf/descriptor.proto\":\n" +
 	"\tErrorInfo\x12-\n" +
-	"\x06reason\x18\x01 \x01(\x0e2\x15.berth.v1.ErrorReasonR\x06reason*\xdd\x02\n" +
+	"\x06reason\x18\x01 \x01(\x0e2\x15.berth.v1.ErrorReasonR\x06reason*\xb9\x03\n" +
 	"\vErrorReason\x12\x1c\n" +
 	"\x18ERROR_REASON_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eERROR_REASON_PROTOCOL_MISMATCH\x10\x01\x12\"\n" +
@@ -182,7 +198,11 @@ const file_berth_v1_options_proto_rawDesc = "" +
 	"!ERROR_REASON_EXECUTABLE_NOT_FOUND\x10\x06\x12\x1f\n" +
 	"\x1bERROR_REASON_TICKET_INVALID\x10\a\x12!\n" +
 	"\x1dERROR_REASON_PEER_NOT_TRUSTED\x10\b\x12\x1c\n" +
-	"\x18ERROR_REASON_INTERPRETER\x10\t:6\n" +
+	"\x18ERROR_REASON_INTERPRETER\x10\t\x12\x15\n" +
+	"\x11ERROR_REASON_BUSY\x10\n" +
+	"\x12!\n" +
+	"\x1dERROR_REASON_BAD_PROXY_TARGET\x10\v\x12 \n" +
+	"\x1cERROR_REASON_GRANT_NOT_FOUND\x10\f:6\n" +
 	"\x05agent\x12\x1e.google.protobuf.MethodOptions\x18ц\x03 \x01(\bR\x05agentBy\n" +
 	"\fcom.berth.v1B\fOptionsProtoP\x01Z\x1aberth/gen/berth/v1;berthv1\xa2\x02\x03BXX\xaa\x02\bBerth.V1\xca\x02\bBerth\\V1\xe2\x02\x14Berth\\V1\\GPBMetadata\xea\x02\tBerth::V1b\x06proto3"
 

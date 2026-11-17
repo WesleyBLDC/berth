@@ -635,6 +635,12 @@ func secretState(s secret.State) berthv1.SecretState {
 		return berthv1.SecretState_SECRET_STATE_DENIED
 	case secret.Failed:
 		return berthv1.SecretState_SECRET_STATE_FAILED
+	case secret.Rotating:
+		return berthv1.SecretState_SECRET_STATE_ROTATING
+	case secret.Removing:
+		return berthv1.SecretState_SECRET_STATE_REMOVING
+	case secret.Removed:
+		return berthv1.SecretState_SECRET_STATE_REMOVED
 	}
 	return berthv1.SecretState_SECRET_STATE_UNSPECIFIED
 }

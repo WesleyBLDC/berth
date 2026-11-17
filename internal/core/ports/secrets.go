@@ -63,7 +63,11 @@ type StorePrompt struct {
 // PowerAction names an action that needs Touch ID.
 type PowerAction string
 
-const PowerGrant PowerAction = "grant"
+const (
+	PowerGrant PowerAction = "grant"
+	// PowerProxyGrant confirms a proxy grant; the prompt's Proxy says where the value may go.
+	PowerProxyGrant PowerAction = "proxy"
+)
 
 // PowerOutcome is the result of a Touch ID confirmation.
 type PowerOutcome string
@@ -76,9 +80,11 @@ const (
 
 // PowerPrompt is everything a Touch ID confirmation may show, all verified by berthd.
 type PowerPrompt struct {
-	Action   PowerAction
-	Secret   string
+	Action PowerAction
+	Secret string
+	// Consumer is set for PowerGrant, Proxy for PowerProxyGrant.
 	Consumer Executable
+	Proxy    ProxyTarget
 	ArgsGlob string
 	// Interpreter warns that the consumer runs other code, so it could print the secret.
 	Interpreter bool
@@ -87,15 +93,46 @@ type PowerPrompt struct {
 	Requester Requester
 }
 
+// RemoveOutcome is the only thing berth-native reports back about a remove. A Keychain item
+// that was already gone counts as removed.
+type RemoveOutcome string
+
+const (
+	RemoveRemoved RemoveOutcome = "removed"
+	RemoveDenied  RemoveOutcome = "denied"
+	RemoveFailed  RemoveOutcome = "failed"
+)
+
+// LifecyclePrompt is everything the rotate dialog or the remove Touch ID sheet may show, all
+// verified by berthd.
+type LifecyclePrompt struct {
+	Name      string
+	Requester Requester
+}
+
 // Approver asks the person, through berth-native. A non nil error comes with the Failed
 // outcome and carries detail for logs only; it never contains a value.
 type Approver interface {
 	StoreSecret(ctx context.Context, p StorePrompt) (StoreOutcome, error)
 	ConfirmPower(ctx context.Context, p PowerPrompt) (PowerOutcome, error)
+	// RotateSecret shows the store dialog in replace mode, then Touch ID, and updates the item.
+	// berth-native redeems ticket, an action ticket bound to berthd's pid, before any prompt.
+	RotateSecret(ctx context.Context, p LifecyclePrompt, ticket Ticket) (StoreOutcome, error)
+	// RemoveSecret asks Touch ID and deletes the item, after redeeming ticket like RotateSecret.
+	RemoveSecret(ctx context.Context, p LifecyclePrompt, ticket Ticket) (RemoveOutcome, error)
 }
 
-// Ticket is a single use ticket for one secret read.
+// Ticket is a single use ticket: one secret read, or one rotate or remove by berth-native.
 type Ticket [32]byte
+
+// TicketAction is what a redeemed ticket lets berth-native do.
+type TicketAction string
+
+const (
+	TicketUse    TicketAction = "use"
+	TicketRemove TicketAction = "remove"
+	TicketRotate TicketAction = "rotate"
+)
 
 // TicketSource makes tickets; the real one reads crypto/rand, the fake is deterministic.
 type TicketSource interface {

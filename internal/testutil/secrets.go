@@ -11,13 +11,69 @@ import (
 )
 
 // Approver is a scriptable ports.Approver. Queue outcomes before the call; with none queued
-// it answers stored and approved. Prompts records every prompt in order.
+// it answers stored, approved and removed. Prompts records every prompt in order.
 type Approver struct {
 	mu           sync.Mutex
 	stores       []ports.StoreOutcome
 	powers       []ports.PowerOutcome
+	rotates      []ports.StoreOutcome
+	removes      []ports.RemoveOutcome
 	storePrompts []ports.StorePrompt
 	powerPrompts []ports.PowerPrompt
+	lifecycle    []LifecycleCall
+}
+
+// LifecycleCall is one RotateSecret or RemoveSecret call as the fake saw it.
+type LifecycleCall struct {
+	Action ports.TicketAction
+	Prompt ports.LifecyclePrompt
+	Ticket ports.Ticket
+}
+
+func (a *Approver) QueueRotate(o ...ports.StoreOutcome) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.rotates = append(a.rotates, o...)
+}
+
+func (a *Approver) QueueRemove(o ...ports.RemoveOutcome) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.removes = append(a.removes, o...)
+}
+
+func (a *Approver) RotateSecret(_ context.Context, p ports.LifecyclePrompt, t ports.Ticket) (ports.StoreOutcome, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.lifecycle = append(a.lifecycle, LifecycleCall{Action: ports.TicketRotate, Prompt: p, Ticket: t})
+	o := ports.StoreStored
+	if len(a.rotates) > 0 {
+		o, a.rotates = a.rotates[0], a.rotates[1:]
+	}
+	if o == ports.StoreFailed {
+		return o, errors.New("fake approver: rotate failed")
+	}
+	return o, nil
+}
+
+func (a *Approver) RemoveSecret(_ context.Context, p ports.LifecyclePrompt, t ports.Ticket) (ports.RemoveOutcome, error) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	a.lifecycle = append(a.lifecycle, LifecycleCall{Action: ports.TicketRemove, Prompt: p, Ticket: t})
+	o := ports.RemoveRemoved
+	if len(a.removes) > 0 {
+		o, a.removes = a.removes[0], a.removes[1:]
+	}
+	if o == ports.RemoveFailed {
+		return o, errors.New("fake approver: remove failed")
+	}
+	return o, nil
+}
+
+func (a *Approver) LifecycleCalls() []LifecycleCall {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return slices.Clone(a.lifecycle)
 }
 
 func (a *Approver) QueueStore(o ...ports.StoreOutcome) {

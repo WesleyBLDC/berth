@@ -19,6 +19,7 @@ const (
 	CLISigningID    = "com.wesleybldc.berth.cli"
 	HelperSigningID = "com.wesleybldc.berth.native"
 	DaemonSigningID = "com.wesleybldc.berth.daemon"
+	ProxySigningID  = "com.wesleybldc.berth.proxy"
 )
 
 // RepinInterval is the least time between two reads of the same file, so a caller cannot make

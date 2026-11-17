@@ -25,6 +25,13 @@ type fakeSecrets struct {
 	trustErr  error
 	redeems   int
 	authorize int
+	// The E2b methods: lifecycleErr fails them, proxyTrustErr fails TrustProxy.
+	lifecycleErr   error
+	proxyTrustErr  error
+	grantTarget    *berthv1.ProxyTarget
+	removes        int
+	proxyAuthorize int
+	ends           int
 }
 
 func (f *fakeSecrets) RequestSecret(ctx context.Context, req *berthv1.RequestSecretRequest, _ ports.Peer) (*berthv1.RequestSecretResponse, error) {

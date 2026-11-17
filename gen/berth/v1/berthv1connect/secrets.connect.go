@@ -37,6 +37,25 @@ const (
 	// SecretsServiceRedeemUseTicketProcedure is the procedure name of the SecretsService's
 	// RedeemUseTicket RPC.
 	SecretsServiceRedeemUseTicketProcedure = "/berth.v1.SecretsService/RedeemUseTicket"
+	// SecretsServiceGrantProxyProcedure is the procedure name of the SecretsService's GrantProxy RPC.
+	SecretsServiceGrantProxyProcedure = "/berth.v1.SecretsService/GrantProxy"
+	// SecretsServiceRevokeGrantProcedure is the procedure name of the SecretsService's RevokeGrant RPC.
+	SecretsServiceRevokeGrantProcedure = "/berth.v1.SecretsService/RevokeGrant"
+	// SecretsServiceRemoveSecretProcedure is the procedure name of the SecretsService's RemoveSecret
+	// RPC.
+	SecretsServiceRemoveSecretProcedure = "/berth.v1.SecretsService/RemoveSecret"
+	// SecretsServiceRotateSecretProcedure is the procedure name of the SecretsService's RotateSecret
+	// RPC.
+	SecretsServiceRotateSecretProcedure = "/berth.v1.SecretsService/RotateSecret"
+	// SecretsServiceAuthorizeProxyProcedure is the procedure name of the SecretsService's
+	// AuthorizeProxy RPC.
+	SecretsServiceAuthorizeProxyProcedure = "/berth.v1.SecretsService/AuthorizeProxy"
+	// SecretsServiceWatchProxySessionProcedure is the procedure name of the SecretsService's
+	// WatchProxySession RPC.
+	SecretsServiceWatchProxySessionProcedure = "/berth.v1.SecretsService/WatchProxySession"
+	// SecretsServiceEndProxySessionProcedure is the procedure name of the SecretsService's
+	// EndProxySession RPC.
+	SecretsServiceEndProxySessionProcedure = "/berth.v1.SecretsService/EndProxySession"
 )
 
 var (
@@ -75,6 +94,55 @@ var (
 			Procedure:  SecretsServiceRedeemUseTicketProcedure,
 		}
 	})
+	secretsServiceGrantProxySpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_berth_v1_secrets_proto.Services().ByName("SecretsService").Methods().ByName("GrantProxy"),
+			Procedure:  SecretsServiceGrantProxyProcedure,
+		}
+	})
+	secretsServiceRevokeGrantSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_berth_v1_secrets_proto.Services().ByName("SecretsService").Methods().ByName("RevokeGrant"),
+			Procedure:  SecretsServiceRevokeGrantProcedure,
+		}
+	})
+	secretsServiceRemoveSecretSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_berth_v1_secrets_proto.Services().ByName("SecretsService").Methods().ByName("RemoveSecret"),
+			Procedure:  SecretsServiceRemoveSecretProcedure,
+		}
+	})
+	secretsServiceRotateSecretSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_berth_v1_secrets_proto.Services().ByName("SecretsService").Methods().ByName("RotateSecret"),
+			Procedure:  SecretsServiceRotateSecretProcedure,
+		}
+	})
+	secretsServiceAuthorizeProxySpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_berth_v1_secrets_proto.Services().ByName("SecretsService").Methods().ByName("AuthorizeProxy"),
+			Procedure:  SecretsServiceAuthorizeProxyProcedure,
+		}
+	})
+	secretsServiceWatchProxySessionSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeServer,
+			Schema:     v1.File_berth_v1_secrets_proto.Services().ByName("SecretsService").Methods().ByName("WatchProxySession"),
+			Procedure:  SecretsServiceWatchProxySessionProcedure,
+		}
+	})
+	secretsServiceEndProxySessionSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_berth_v1_secrets_proto.Services().ByName("SecretsService").Methods().ByName("EndProxySession"),
+			Procedure:  SecretsServiceEndProxySessionProcedure,
+		}
+	})
 )
 
 // SecretsServiceClient is a client for the berth.v1.SecretsService service.
@@ -91,12 +159,54 @@ type SecretsServiceClient interface {
 	AuthorizeUse(context.Context, *v1.AuthorizeUseRequest) (*v1.AuthorizeUseResponse, error)
 	// RedeemUseTicket is accepted only from the signed berth-native helper.
 	RedeemUseTicket(context.Context, *v1.RedeemUseTicketRequest) (*v1.RedeemUseTicketResponse, error)
+	// GrantProxy pins an HTTPS target as a consumer of a secret after Touch ID: berth-proxy may
+	// then write the value into one header of requests to that host.
+	GrantProxy(context.Context, *v1.GrantProxyRequest) (*v1.GrantProxyResponse, error)
+	// RevokeGrant revokes one grant without Touch ID, since it only lowers privilege, and stops
+	// running proxy sessions that hold it.
+	RevokeGrant(context.Context, *v1.RevokeGrantRequest) (*v1.RevokeGrantResponse, error)
+	// RemoveSecret deletes the Keychain item after Touch ID, then revokes every grant, drops live
+	// tickets and stops proxy sessions on the secret.
+	RemoveSecret(context.Context, *v1.RemoveSecretRequest) (*v1.RemoveSecretResponse, error)
+	// RotateSecret replaces the stored value through the store dialog and Touch ID. Grants stay
+	// Active; running proxy sessions keep the old value until they end.
+	RotateSecret(context.Context, *v1.RotateSecretRequest) (*v1.RotateSecretResponse, error)
+	// AuthorizeProxy is accepted only from the signed berth-proxy. It matches an Active proxy grant
+	// per name and returns one ticket per grant, bound to the name and the proxy's pid.
+	AuthorizeProxy(context.Context, *v1.AuthorizeProxyRequest) (*v1.AuthorizeProxyResponse, error)
+	// WatchProxySession is accepted only from the process that authorized the session. The proxy
+	// zeroes its values and exits on a stop event or when the stream breaks.
+	WatchProxySession(context.Context, *v1.WatchProxySessionRequest) (SecretsServiceWatchProxySessionClientStream, error)
+	// EndProxySession is accepted only from the process that authorized the session; it records
+	// counts, never paths, hosts beyond the grants, or values.
+	EndProxySession(context.Context, *v1.EndProxySessionRequest) (*v1.EndProxySessionResponse, error)
 }
 
 // NewSecretsServiceClient constructs a client for the berth.v1.SecretsService service. Multiple
 // service clients may share a single connect.Client.
 func NewSecretsServiceClient(client *connect.Client) SecretsServiceClient {
 	return &secretsServiceClient{client: client}
+}
+
+// SecretsServiceWatchProxySessionClientStream is the client stream for the SecretsService's
+// WatchProxySession RPC.
+type SecretsServiceWatchProxySessionClientStream struct {
+	stream connect.ClientStream
+}
+
+// Receive returns the next response message from the server.
+func (s SecretsServiceWatchProxySessionClientStream) Receive() (*v1.WatchProxySessionResponse, error) {
+	var res v1.WatchProxySessionResponse
+	if err := s.stream.Receive(&res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+// Close releases the stream's resources. It is idempotent and is typically deferred to clean up a
+// stream abandoned before io.EOF.
+func (s SecretsServiceWatchProxySessionClientStream) Close() error {
+	return s.stream.Close()
 }
 
 // SecretsServiceHandler is an implementation of the berth.v1.SecretsService service.
@@ -113,6 +223,27 @@ type SecretsServiceHandler interface {
 	AuthorizeUse(context.Context, *v1.AuthorizeUseRequest) (*v1.AuthorizeUseResponse, error)
 	// RedeemUseTicket is accepted only from the signed berth-native helper.
 	RedeemUseTicket(context.Context, *v1.RedeemUseTicketRequest) (*v1.RedeemUseTicketResponse, error)
+	// GrantProxy pins an HTTPS target as a consumer of a secret after Touch ID: berth-proxy may
+	// then write the value into one header of requests to that host.
+	GrantProxy(context.Context, *v1.GrantProxyRequest) (*v1.GrantProxyResponse, error)
+	// RevokeGrant revokes one grant without Touch ID, since it only lowers privilege, and stops
+	// running proxy sessions that hold it.
+	RevokeGrant(context.Context, *v1.RevokeGrantRequest) (*v1.RevokeGrantResponse, error)
+	// RemoveSecret deletes the Keychain item after Touch ID, then revokes every grant, drops live
+	// tickets and stops proxy sessions on the secret.
+	RemoveSecret(context.Context, *v1.RemoveSecretRequest) (*v1.RemoveSecretResponse, error)
+	// RotateSecret replaces the stored value through the store dialog and Touch ID. Grants stay
+	// Active; running proxy sessions keep the old value until they end.
+	RotateSecret(context.Context, *v1.RotateSecretRequest) (*v1.RotateSecretResponse, error)
+	// AuthorizeProxy is accepted only from the signed berth-proxy. It matches an Active proxy grant
+	// per name and returns one ticket per grant, bound to the name and the proxy's pid.
+	AuthorizeProxy(context.Context, *v1.AuthorizeProxyRequest) (*v1.AuthorizeProxyResponse, error)
+	// WatchProxySession is accepted only from the process that authorized the session. The proxy
+	// zeroes its values and exits on a stop event or when the stream breaks.
+	WatchProxySession(context.Context, *v1.WatchProxySessionRequest, SecretsServiceWatchProxySessionServerStream) error
+	// EndProxySession is accepted only from the process that authorized the session; it records
+	// counts, never paths, hosts beyond the grants, or values.
+	EndProxySession(context.Context, *v1.EndProxySessionRequest) (*v1.EndProxySessionResponse, error)
 }
 
 // RegisterSecretsServiceHandler registers svc as the berth.v1.SecretsService implementation on
@@ -125,7 +256,30 @@ func RegisterSecretsServiceHandler(server *connect.Server, svc SecretsServiceHan
 		connect.Method{Spec: secretsServiceGrantSecretSpec(), Handler: adapter.grantSecret},
 		connect.Method{Spec: secretsServiceAuthorizeUseSpec(), Handler: adapter.authorizeUse},
 		connect.Method{Spec: secretsServiceRedeemUseTicketSpec(), Handler: adapter.redeemUseTicket},
+		connect.Method{Spec: secretsServiceGrantProxySpec(), Handler: adapter.grantProxy},
+		connect.Method{Spec: secretsServiceRevokeGrantSpec(), Handler: adapter.revokeGrant},
+		connect.Method{Spec: secretsServiceRemoveSecretSpec(), Handler: adapter.removeSecret},
+		connect.Method{Spec: secretsServiceRotateSecretSpec(), Handler: adapter.rotateSecret},
+		connect.Method{Spec: secretsServiceAuthorizeProxySpec(), Handler: adapter.authorizeProxy},
+		connect.Method{Spec: secretsServiceWatchProxySessionSpec(), Handler: adapter.watchProxySession},
+		connect.Method{Spec: secretsServiceEndProxySessionSpec(), Handler: adapter.endProxySession},
 	)
+}
+
+// SecretsServiceWatchProxySessionServerStream is the server stream for the SecretsService's
+// WatchProxySession RPC.
+type SecretsServiceWatchProxySessionServerStream struct {
+	stream connect.ServerStream
+}
+
+// SendHeaders flushes the response headers without a message. The first Send does this implicitly.
+func (s SecretsServiceWatchProxySessionServerStream) SendHeaders() error {
+	return s.stream.SendHeaders()
+}
+
+// Send sends a response message to the client.
+func (s SecretsServiceWatchProxySessionServerStream) Send(res *v1.WatchProxySessionResponse) error {
+	return s.stream.Send(res)
 }
 
 // UnimplementedSecretsServiceHandler returns CodeUnimplemented from all methods.
@@ -149,6 +303,34 @@ func (UnimplementedSecretsServiceHandler) AuthorizeUse(context.Context, *v1.Auth
 
 func (UnimplementedSecretsServiceHandler) RedeemUseTicket(context.Context, *v1.RedeemUseTicketRequest) (*v1.RedeemUseTicketResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "berth.v1.SecretsService.RedeemUseTicket is not implemented")
+}
+
+func (UnimplementedSecretsServiceHandler) GrantProxy(context.Context, *v1.GrantProxyRequest) (*v1.GrantProxyResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "berth.v1.SecretsService.GrantProxy is not implemented")
+}
+
+func (UnimplementedSecretsServiceHandler) RevokeGrant(context.Context, *v1.RevokeGrantRequest) (*v1.RevokeGrantResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "berth.v1.SecretsService.RevokeGrant is not implemented")
+}
+
+func (UnimplementedSecretsServiceHandler) RemoveSecret(context.Context, *v1.RemoveSecretRequest) (*v1.RemoveSecretResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "berth.v1.SecretsService.RemoveSecret is not implemented")
+}
+
+func (UnimplementedSecretsServiceHandler) RotateSecret(context.Context, *v1.RotateSecretRequest) (*v1.RotateSecretResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "berth.v1.SecretsService.RotateSecret is not implemented")
+}
+
+func (UnimplementedSecretsServiceHandler) AuthorizeProxy(context.Context, *v1.AuthorizeProxyRequest) (*v1.AuthorizeProxyResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "berth.v1.SecretsService.AuthorizeProxy is not implemented")
+}
+
+func (UnimplementedSecretsServiceHandler) WatchProxySession(context.Context, *v1.WatchProxySessionRequest, SecretsServiceWatchProxySessionServerStream) error {
+	return connect.NewError(connect.CodeUnimplemented, "berth.v1.SecretsService.WatchProxySession is not implemented")
+}
+
+func (UnimplementedSecretsServiceHandler) EndProxySession(context.Context, *v1.EndProxySessionRequest) (*v1.EndProxySessionResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "berth.v1.SecretsService.EndProxySession is not implemented")
 }
 
 type secretsServiceClient struct {
@@ -190,6 +372,62 @@ func (c *secretsServiceClient) AuthorizeUse(ctx context.Context, req *v1.Authori
 func (c *secretsServiceClient) RedeemUseTicket(ctx context.Context, req *v1.RedeemUseTicketRequest) (*v1.RedeemUseTicketResponse, error) {
 	var res v1.RedeemUseTicketResponse
 	if err := c.client.CallUnary(ctx, secretsServiceRedeemUseTicketSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *secretsServiceClient) GrantProxy(ctx context.Context, req *v1.GrantProxyRequest) (*v1.GrantProxyResponse, error) {
+	var res v1.GrantProxyResponse
+	if err := c.client.CallUnary(ctx, secretsServiceGrantProxySpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *secretsServiceClient) RevokeGrant(ctx context.Context, req *v1.RevokeGrantRequest) (*v1.RevokeGrantResponse, error) {
+	var res v1.RevokeGrantResponse
+	if err := c.client.CallUnary(ctx, secretsServiceRevokeGrantSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *secretsServiceClient) RemoveSecret(ctx context.Context, req *v1.RemoveSecretRequest) (*v1.RemoveSecretResponse, error) {
+	var res v1.RemoveSecretResponse
+	if err := c.client.CallUnary(ctx, secretsServiceRemoveSecretSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *secretsServiceClient) RotateSecret(ctx context.Context, req *v1.RotateSecretRequest) (*v1.RotateSecretResponse, error) {
+	var res v1.RotateSecretResponse
+	if err := c.client.CallUnary(ctx, secretsServiceRotateSecretSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *secretsServiceClient) AuthorizeProxy(ctx context.Context, req *v1.AuthorizeProxyRequest) (*v1.AuthorizeProxyResponse, error) {
+	var res v1.AuthorizeProxyResponse
+	if err := c.client.CallUnary(ctx, secretsServiceAuthorizeProxySpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *secretsServiceClient) WatchProxySession(ctx context.Context, req *v1.WatchProxySessionRequest) (SecretsServiceWatchProxySessionClientStream, error) {
+	stream, err := c.client.CallServerStream(ctx, secretsServiceWatchProxySessionSpec(), req)
+	if err != nil {
+		return SecretsServiceWatchProxySessionClientStream{}, err
+	}
+	return SecretsServiceWatchProxySessionClientStream{stream: stream}, nil
+}
+
+func (c *secretsServiceClient) EndProxySession(ctx context.Context, req *v1.EndProxySessionRequest) (*v1.EndProxySessionResponse, error) {
+	var res v1.EndProxySessionResponse
+	if err := c.client.CallUnary(ctx, secretsServiceEndProxySessionSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -251,6 +489,86 @@ func (h secretsServiceHandler) redeemUseTicket(ctx context.Context, _ connect.Sp
 		return err
 	}
 	res, err := h.svc.RedeemUseTicket(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h secretsServiceHandler) grantProxy(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.GrantProxyRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.GrantProxy(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h secretsServiceHandler) revokeGrant(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RevokeGrantRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RevokeGrant(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h secretsServiceHandler) removeSecret(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RemoveSecretRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RemoveSecret(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h secretsServiceHandler) rotateSecret(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.RotateSecretRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.RotateSecret(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h secretsServiceHandler) authorizeProxy(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.AuthorizeProxyRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.AuthorizeProxy(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h secretsServiceHandler) watchProxySession(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.WatchProxySessionRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	return h.svc.WatchProxySession(ctx, &req, SecretsServiceWatchProxySessionServerStream{stream: stream})
+}
+
+func (h secretsServiceHandler) endProxySession(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.EndProxySessionRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.EndProxySession(ctx, &req)
 	if err != nil {
 		return err
 	}
