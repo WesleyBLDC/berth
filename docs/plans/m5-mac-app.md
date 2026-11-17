@@ -169,7 +169,7 @@ Items 2 to 5 are built in this pass; the rest follow.
 **Item 2 tests:**
 
 - `BerthSocket`: the moved tests still pass in `native/`.
-- Client (Swift, against a fake server on a socketpair, never a real socket): a unary call's exact request bytes; a 200 answer decoded; a Connect error with a typed reason; a stream of envelopes split across reads and chunks, ending cleanly; an end of stream with an error; a malformed chunk, an oversized envelope and an early close each end the stream with an error; a peer that fails the trust check gets nothing written.
+- Client (Swift, against a scripted in memory connection): a unary call's exact request bytes; a 200 answer decoded; a Connect error with a typed reason; a stream of envelopes split across reads and chunks, ending cleanly; an end of stream with an error; a malformed chunk, an oversized envelope and an early close each end the stream with an error; and the real dialer, against a listening socket this unsigned test process owns, refuses it and writes nothing.
 - Models: the fixture a Go test writes with `protojson` from a `WatchSessionsResponse` that sets every `Session` field decodes into the Swift models with every field read back; unknown enum names decode as unknown; 64 bit ids as strings.
 - `shown`: every fixture case equals the Go output.
 - Store: snapshot replaces, change upserts, a state only change keeps the facts, stopped trimmed at 200, counts by state, cursor after each message.

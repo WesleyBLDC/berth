@@ -1,0 +1,114 @@
+[
+  {
+    "in": "",
+    "out": ""
+  },
+  {
+    "in": "claude",
+    "out": "claude"
+  },
+  {
+    "in": "Ghostty",
+    "out": "Ghostty"
+  },
+  {
+    "in": "a b",
+    "out": "a b"
+  },
+  {
+    "in": "café",
+    "out": "café"
+  },
+  {
+    "in": "日本語",
+    "out": "日本語"
+  },
+  {
+    "in": "emoji 🙂",
+    "out": "emoji 🙂"
+  },
+  {
+    "in": "quote\"back\\slash",
+    "out": "quote\"back\\slash"
+  },
+  {
+    "in": "tab\there",
+    "out": "\"tab\\there\""
+  },
+  {
+    "in": "line\nbreak",
+    "out": "\"line\\nbreak\""
+  },
+  {
+    "in": "cr\rlf",
+    "out": "\"cr\\rlf\""
+  },
+  {
+    "in": "\u001b[31mred",
+    "out": "\"\\x1b[31mred\""
+  },
+  {
+    "in": "bell\u0007",
+    "out": "\"bell\\a\""
+  },
+  {
+    "in": "bs\b",
+    "out": "\"bs\\b\""
+  },
+  {
+    "in": "ff\f",
+    "out": "\"ff\\f\""
+  },
+  {
+    "in": "vt\u000b",
+    "out": "\"vt\\v\""
+  },
+  {
+    "in": "del",
+    "out": "\"del\\x7f\""
+  },
+  {
+    "in": "nul\u0000x",
+    "out": "\"nul\\x00x\""
+  },
+  {
+    "in": "rtl‮abc",
+    "out": "\"rtl\\u202eabc\""
+  },
+  {
+    "in": "nel",
+    "out": "\"nel\\u0085\""
+  },
+  {
+    "in": "zwsp​",
+    "out": "\"zwsp\\u200b\""
+  },
+  {
+    "in": "bom﻿",
+    "out": "\"bom\\ufeff\""
+  },
+  {
+    "in": "ls\u2028",
+    "out": "\"ls\\u2028\""
+  },
+  {
+    "in": "ps\u2029",
+    "out": "\"ps\\u2029\""
+  },
+  {
+    "in": "quote\" and \u001b",
+    "out": "\"quote\\\" and \\x1b\""
+  },
+  {
+    "in": "private",
+    "out": "\"private\\ue000\""
+  },
+  {
+    "in": "tag󠀁",
+    "out": "\"tag\\U000e0001\""
+  },
+  {
+    "in": "supp private󰀀",
+    "out": "\"supp private\\U000f0000\""
+  }
+]
