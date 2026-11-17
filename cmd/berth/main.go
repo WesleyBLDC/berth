@@ -36,6 +36,7 @@ func main() {
 		ConnectTrusted: connectTrusted,
 		Read:           read,
 		StartProxy:     startProxy,
+		Agent:          os.Getenv("BERTH_AGENT_SOCKET") != "",
 		BeforeStart:    beforeStart,
 	}))
 }

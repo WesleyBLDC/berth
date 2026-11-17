@@ -24,6 +24,7 @@ import (
 	"berth/internal/core/ports"
 	"berth/internal/core/proxysession"
 	"berth/internal/core/secret"
+	"berth/internal/proxyproc"
 )
 
 const (
@@ -84,6 +85,8 @@ type secretsDeps struct {
 	Exits func(ctx context.Context, pid int) (<-chan struct{}, error)
 	// AllowLocalTargets accepts localhost and IP literal proxy grants; only berth_e2e builds.
 	AllowLocalTargets bool
+	// StartProxyProcess starts the berth-proxy beside berthd for StartProxy; nil refuses it.
+	StartProxyProcess func(ctx context.Context) (*proxyproc.Process, error)
 	// AgentLive reports whether an agent session still serves calls; nil means none ever does.
 	// berthd sets it once both secrets and agents exist, before serving.
 	AgentLive func(ctx context.Context, id string) bool
@@ -108,6 +111,10 @@ type secrets struct {
 	flights map[string]*flight
 	live    map[ports.Ticket]liveTicket
 	running map[string]*proxySession
+	// started maps the pid of each berth-proxy berthd started to the agent session it started
+	// it for ("" for the owner); starting counts each agent session's starts, for its limit.
+	started  map[int]string
+	starting map[string]int
 }
 
 type flight struct {
@@ -168,6 +175,7 @@ func newSecrets(ctx context.Context, d secretsDeps) *secrets {
 	s := &secrets{
 		secretsDeps: d, ctx: ctx, stopping: make(chan struct{}), readyTimeout: proxyReadyTimeout,
 		flights: map[string]*flight{}, live: map[ports.Ticket]liveTicket{}, running: map[string]*proxySession{},
+		started: map[int]string{}, starting: map[string]int{},
 	}
 	s.secrets = &actors[secret.State, secret.Event, secret.Effect]{
 		ctx: ctx, log: d.Log, store: d.Store, clock: d.Clock,

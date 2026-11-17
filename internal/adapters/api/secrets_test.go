@@ -32,6 +32,9 @@ type fakeSecrets struct {
 	removes        int
 	proxyAuthorize int
 	ends           int
+	// startErr fails StartProxy; starts counts the calls that reached it.
+	startErr error
+	starts   int
 }
 
 func (f *fakeSecrets) RequestSecret(ctx context.Context, req *berthv1.RequestSecretRequest, _ ports.Peer) (*berthv1.RequestSecretResponse, error) {

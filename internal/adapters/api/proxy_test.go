@@ -72,6 +72,18 @@ func (f *fakeSecrets) EndProxySession(context.Context, *berthv1.EndProxySessionR
 	return &berthv1.EndProxySessionResponse{}, nil
 }
 
+func (f *fakeSecrets) StartProxy(ctx context.Context, _ *berthv1.StartProxyRequest, send func(*berthv1.StartProxyResponse) error) error {
+	f.starts++
+	if f.startErr != nil {
+		return f.startErr
+	}
+	if err := send(&berthv1.StartProxyResponse{Outcome: berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED, SessionId: sessionID, Port: 4123}); err != nil {
+		return err
+	}
+	<-ctx.Done()
+	return nil
+}
+
 func target() *berthv1.ProxyTarget {
 	return &berthv1.ProxyTarget{Host: "api.example.com", HeaderName: "Authorization", ValuePrefix: "Bearer ", Methods: []string{"GET", "POST"}, PlaceholderEnv: "OPENAI_API_KEY"}
 }
@@ -241,4 +253,43 @@ func TestWatchProxySessionStreamsEvents(t *testing.T) {
 	if connect.CodeOf(err) != connect.CodeInvalidArgument {
 		t.Fatalf("malformed session id: %v", err)
 	}
+}
+
+func TestStartProxyStreamsAndTypesItsErrors(t *testing.T) {
+	fake := &fakeSecrets{}
+	f := setupSecrets(t, fake)
+	if _, err := receiveFirst(t, f, &berthv1.StartProxyRequest{RequestId: "req-start-01"}); connect.CodeOf(err) != connect.CodeInvalidArgument || fake.starts != 0 {
+		t.Fatalf("no names: %v, %d starts", err, fake.starts)
+	}
+	resp, err := receiveFirst(t, f, &berthv1.StartProxyRequest{RequestId: "req-start-02", Names: []string{"gh-token"}})
+	if err != nil || resp.GetSessionId() != sessionID || resp.GetPort() != 4123 {
+		t.Fatalf("first message %v %v", resp, err)
+	}
+	for _, tc := range []struct {
+		err    error
+		code   connect.Code
+		reason berthv1.ErrorReason
+	}{
+		{api.ErrRateLimited, connect.CodeResourceExhausted, berthv1.ErrorReason_ERROR_REASON_RATE_LIMITED},
+		{api.ErrProxyNotStarted, connect.CodeUnavailable, berthv1.ErrorReason_ERROR_REASON_UNSPECIFIED},
+	} {
+		fake.startErr = tc.err
+		_, err := receiveFirst(t, f, &berthv1.StartProxyRequest{RequestId: "req-start-" + tc.code.String(), Names: []string{"gh-token"}})
+		if connect.CodeOf(err) != tc.code || api.ReasonOf(err) != tc.reason {
+			t.Errorf("%v: got %v (%v)", tc.err, err, api.ReasonOf(err))
+		}
+	}
+}
+
+// receiveFirst opens a StartProxy stream, takes its first message and closes it.
+func receiveFirst(t *testing.T, f secretsFixture, req *berthv1.StartProxyRequest) (*berthv1.StartProxyResponse, error) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	stream, err := f.secrets.StartProxy(ctx, req)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = stream.Close() }()
+	return stream.Receive()
 }

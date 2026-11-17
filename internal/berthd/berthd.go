@@ -27,6 +27,7 @@ import (
 	"berth/internal/core/machine"
 	"berth/internal/core/ports"
 	"berth/internal/paths"
+	"berth/internal/proxyproc"
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
@@ -270,6 +271,7 @@ func newSecretsFor(ctx context.Context, cfg Config, store *sqlite.Store) (*secre
 		Approver: native.New(helper), Execs: execs, Peers: peer.New(), Tickets: ticket.New(),
 		CLI: trusted(cli, codetrust.CLISigningID), Helper: trusted(helper, codetrust.HelperSigningID),
 		Proxy: trusted(proxy, codetrust.ProxySigningID), PID: os.Getpid(), Exits: procscan.WatchPID,
+		StartProxyProcess: func(ctx context.Context) (*proxyproc.Process, error) { return proxyproc.Start(ctx, proxy, os.Stderr) },
 		AllowLocalTargets: cfg.AllowLocalProxyTargets,
 	}), nil
 }

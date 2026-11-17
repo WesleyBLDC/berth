@@ -172,6 +172,10 @@ func (s *secrets) openSession(ctx context.Context, peer ports.Peer, grants []por
 		return nil, api.ErrPeerNotTrusted
 	}
 	agent := api.AgentSession(ctx)
+	if agent == "" {
+		// A proxy berthd started for an agent session calls on the owner socket, as every proxy does.
+		agent = s.startedFor(peer.PID)
+	}
 	rec := ports.ProxySessionRecord{ID: hex.EncodeToString(raw), PID: peer.PID, CreatedAt: s.Clock.Now(), AgentSession: agent}
 	for _, g := range grants {
 		rec.Grants = append(rec.Grants, g.ID)

@@ -35,6 +35,10 @@ type Secrets interface {
 	WatchProxySession(ctx context.Context, sessionID string, peer ports.Peer, send func(*berthv1.ProxySessionEvent) error) error
 	// EndProxySession returns ErrPeerNotTrusted like WatchProxySession.
 	EndProxySession(ctx context.Context, req *berthv1.EndProxySessionRequest, peer ports.Peer) (*berthv1.EndProxySessionResponse, error)
+	// StartProxy starts berth-proxy for the caller and sends its facts once it serves, then
+	// returns when ctx ends or the proxy exits. It returns ErrRateLimited beyond an agent
+	// session's limit, and ErrProxyNotStarted when the proxy did not come up.
+	StartProxy(ctx context.Context, req *berthv1.StartProxyRequest, send func(*berthv1.StartProxyResponse) error) error
 }
 
 // Errors Secrets returns for outcomes a client must react to; anything else is internal.
@@ -50,6 +54,7 @@ var (
 	ErrBusy               = errors.New("secret busy")
 	ErrBadProxyTarget     = errors.New("proxy target not grantable")
 	ErrGrantNotFound      = errors.New("grant not found")
+	ErrProxyNotStarted    = errors.New("proxy not started")
 )
 
 type peerKey struct{}
@@ -235,6 +240,20 @@ func (h *handlers) EndProxySession(ctx context.Context, req *berthv1.EndProxySes
 	})
 }
 
+func (h *handlers) StartProxy(ctx context.Context, req *berthv1.StartProxyRequest, stream berthv1connect.SecretsServiceStartProxyServerStream) error {
+	if err := validate(req); err != nil {
+		return err
+	}
+	// A stream cannot be replayed, and the proxy lives only as long as it, so the request id
+	// only holds back a retry while the stream it repeats still runs.
+	release, err := h.claim(ctx, Principal(ctx)+"\x00"+req.GetRequestId())
+	if err != nil {
+		return connect.NewError(connect.CodeCanceled, "gave up waiting for an earlier call with this request id")
+	}
+	defer release()
+	return secretsError(h.d.Secrets.StartProxy(ctx, req, stream.Send))
+}
+
 // secretsError maps the Secrets errors to typed Connect errors. Messages are fixed text, so no
 // detail from deeper layers (paths, helper output) reaches a caller.
 func secretsError(err error) error {
@@ -270,6 +289,11 @@ func secretsError(err error) error {
 			berthv1.ErrorReason_ERROR_REASON_GRANT_NOT_FOUND)
 	case errors.Is(err, ErrAgentTokenInvalid):
 		return agentsError(err)
+	case errors.Is(err, ErrRateLimited):
+		return withReason(connect.NewError(connect.CodeResourceExhausted, "this agent session already has as many proxies running as berthd starts for one; let one end first"),
+			berthv1.ErrorReason_ERROR_REASON_RATE_LIMITED)
+	case errors.Is(err, ErrProxyNotStarted):
+		return connect.NewError(connect.CodeUnavailable, "berthd could not start berth-proxy; berthd's log says why")
 	case errors.Is(err, ErrBadGlob):
 		return connect.NewError(connect.CodeInvalidArgument, "args_glob is not a valid pattern")
 	case errors.Is(err, ErrCallerUnknown):

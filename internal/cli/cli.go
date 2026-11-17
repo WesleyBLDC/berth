@@ -115,6 +115,9 @@ type Env struct {
 	Read ValueReader
 	// StartProxy starts berth-proxy for berth run --proxy, which refuses without it.
 	StartProxy ProxyStarter
+	// Agent is set when Connect reaches the agent socket; berth run --proxy then asks berthd to
+	// start berth-proxy instead of starting it itself.
+	Agent bool
 	// BeforeStart runs just before berth run --env starts its child; only berth_e2e builds set
 	// it, so the end to end tests can swap the file after berthd checked it.
 	BeforeStart func(exe string) error

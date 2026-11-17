@@ -2,15 +2,25 @@ package cli
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connectinprocess"
+	"connectrpc.com/connect/v2/connectproto"
+
+	berthv1 "berth/gen/berth/v1"
+	"berth/gen/berth/v1/berthv1connect"
+	"berth/internal/client"
 )
 
 // fakeCredential is low entropy on purpose, so secret scanners do not flag it.
@@ -210,4 +220,133 @@ func TestExecProxyScrubsTheEnvironment(t *testing.T) {
 	if !strings.Contains(string(b), "BERTH_HOME=/tmp/berth-home") {
 		t.Fatalf("BERTH_HOME missing:\n%s", b)
 	}
+}
+
+const agentCA = "-----BEGIN CERTIFICATE-----\nMIIB\n-----END CERTIFICATE-----\n"
+
+// agentProxy is berthd's side of StartProxy for the agent mode tests: it answers resp, or err,
+// and records whether the stream was still open when the child had run.
+type agentProxy struct {
+	berthv1connect.UnimplementedSecretsServiceHandler
+	resp   *berthv1.StartProxyResponse
+	err    error
+	names  []string
+	marker string
+	closed chan bool
+}
+
+func (a *agentProxy) StartProxy(ctx context.Context, req *berthv1.StartProxyRequest, stream berthv1connect.SecretsServiceStartProxyServerStream) error {
+	a.names = req.GetNames()
+	if a.err != nil {
+		return a.err
+	}
+	if err := stream.Send(a.resp); err != nil {
+		return err
+	}
+	<-ctx.Done()
+	_, err := os.Stat(a.marker)
+	a.closed <- err == nil
+	return nil
+}
+
+func invokeAgent(t *testing.T, a *agentProxy, args ...string) result {
+	t.Helper()
+	server := connect.NewServer()
+	berthv1connect.RegisterSecretsServiceHandler(server, a)
+	cl := &client.Client{Secrets: berthv1connect.NewSecretsServiceClient(connect.NewClient(connectinprocess.New(server)))}
+	var out, errOut bytes.Buffer
+	code := Run(t.Context(), args, Env{
+		Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errOut, Agent: true,
+		Connect: func(context.Context) (*client.Client, error) { return cl, nil },
+		StartProxy: func(context.Context) (*ProxyProcess, error) {
+			t.Error("agent mode started berth-proxy itself")
+			return nil, errors.New("no")
+		},
+	})
+	return result{code: code, stdout: out.String(), stderr: errOut.String()}
+}
+
+func authorizedStart() *berthv1.StartProxyResponse {
+	return &berthv1.StartProxyResponse{
+		Outcome: berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED, SessionId: strings.Repeat("a", 32), Port: 4123,
+		Credential: fakeCredential, CaPem: agentCA, Placeholders: map[string]string{"OPENAI_API_KEY": "berth-placeholder-openai"},
+	}
+}
+
+// TestAgentRunProxyUsesBerthdsProxy: in agent mode berth never starts berth-proxy; it writes the
+// CA berthd sent into a folder of its own for the child, and closes the stream only after the
+// child ran, which is what stops berthd's proxy.
+func TestAgentRunProxyUsesBerthdsProxy(t *testing.T) {
+	t.Setenv("HTTPS_PROXY", "http://evil.example:8080")
+	t.Setenv("NO_PROXY", "*")
+	marker := filepath.Join(t.TempDir(), "child-ran")
+	a := &agentProxy{resp: authorizedStart(), marker: marker, closed: make(chan bool, 1)}
+	r := invokeAgent(t, a, "run", "--proxy", "openai-key", "--", "/bin/sh", "-c",
+		`/usr/bin/env; echo CA; cat "$NODE_EXTRA_CA_CERTS"; echo BUNDLE; cat "$SSL_CERT_FILE"; touch "$1"; exit 7`, "sh", marker)
+	if r.code != 7 {
+		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+	}
+	if !slices.Equal(a.names, []string{"openai-key"}) {
+		t.Fatalf("asked berthd for %v", a.names)
+	}
+	if !<-a.closed {
+		t.Fatal("the stream closed before the child ran")
+	}
+	env := map[string]string{}
+	for line := range strings.SplitSeq(r.stdout, "\n") {
+		if k, v, ok := strings.Cut(line, "="); ok {
+			env[k] = v
+		}
+	}
+	if env["HTTPS_PROXY"] != "http://berth:"+fakeCredential+"@127.0.0.1:4123" || env["OPENAI_API_KEY"] != "berth-placeholder-openai" {
+		t.Fatalf("child environment %v", env)
+	}
+	if _, ok := env["NO_PROXY"]; ok {
+		t.Fatal("NO_PROXY reached the child")
+	}
+	ca, bundle, _ := strings.Cut(strings.SplitN(r.stdout, "\nCA\n", 2)[1], "BUNDLE\n")
+	if ca != agentCA || !strings.HasSuffix(bundle, agentCA) || len(bundle) <= len(agentCA)+1 {
+		t.Fatalf("CA file %q, bundle of %d bytes", ca, len(bundle))
+	}
+	if _, err := os.Stat(filepath.Dir(env["SSL_CERT_FILE"])); !os.IsNotExist(err) {
+		t.Fatalf("the CA folder outlived the run: %v", err)
+	}
+}
+
+func TestAgentRunProxyRefusalsNeverStartTheChild(t *testing.T) {
+	owned := authorizedStart()
+	owned.Placeholders = map[string]string{"SSL_CERT_FILE": "x"}
+	noCA := authorizedStart()
+	noCA.CaPem = "not a certificate"
+	for name, tc := range map[string]struct {
+		a    *agentProxy
+		want string
+	}{
+		"no grant":       {&agentProxy{resp: &berthv1.StartProxyResponse{Outcome: berthv1.UseOutcome_USE_OUTCOME_NO_GRANT}}, "no active proxy grant"},
+		"rate limited":   {&agentProxy{err: withReasonErr(t, connect.CodeResourceExhausted, berthv1.ErrorReason_ERROR_REASON_RATE_LIMITED)}, "berthd did not start berth-proxy"},
+		"owned name":     {&agentProxy{resp: owned}, "invalid placeholder SSL_CERT_FILE"},
+		"no CA":          {&agentProxy{resp: noCA}, "no CA certificate"},
+		"bad credential": {&agentProxy{resp: &berthv1.StartProxyResponse{Outcome: berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED, Port: 1, CaPem: agentCA}}, "no valid credential"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			marker := filepath.Join(t.TempDir(), "child-ran")
+			tc.a.marker, tc.a.closed = marker, make(chan bool, 1)
+			r := invokeAgent(t, tc.a, "run", "--proxy", "k", "--", "/usr/bin/touch", marker)
+			if r.code != ExitProxyFailed || !strings.Contains(r.stderr, tc.want) || !strings.Contains(r.stderr, "the command did not start") {
+				t.Fatalf("code %d, stderr %q", r.code, r.stderr)
+			}
+			if _, err := os.Stat(marker); !os.IsNotExist(err) {
+				t.Fatalf("the child ran: %v", err)
+			}
+		})
+	}
+}
+
+func withReasonErr(t *testing.T, code connect.Code, reason berthv1.ErrorReason) error {
+	t.Helper()
+	detail, err := connectproto.NewErrorDetail(&berthv1.ErrorInfo{Reason: reason})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return connect.NewError(code, "refused").WithDetail(detail)
 }

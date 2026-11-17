@@ -65,7 +65,8 @@ const (
 	// unknown, expired or revoked, whose session ended, or that comes from a process outside the
 	// session's process tree; one reason for all, so a copied token learns nothing.
 	ErrorReason_ERROR_REASON_AGENT_TOKEN_INVALID ErrorReason = 16
-	// RATE_LIMITED refuses a store request beyond an agent session's limit on store dialogs.
+	// RATE_LIMITED refuses a store request beyond an agent session's limit on store dialogs, and a
+	// StartProxy beyond its limit on proxies berthd runs for it at once.
 	ErrorReason_ERROR_REASON_RATE_LIMITED ErrorReason = 17
 	// AGENT_SESSION_NOT_FOUND means no agent session has that id.
 	ErrorReason_ERROR_REASON_AGENT_SESSION_NOT_FOUND ErrorReason = 18
