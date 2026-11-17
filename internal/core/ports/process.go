@@ -55,7 +55,8 @@ type ProcessSource interface {
 	// CPUTime is the user plus system time the process has used, or ErrOpaqueProcess.
 	CPUTime(ctx context.Context, p ProcessRef) (time.Duration, error)
 	// WatchExit returns a channel closed when the process exits, registered before it returns
-	// so an exit right after the call is never missed.
+	// so an exit right after the call is never missed. It answers ErrProcessGone only when the
+	// process is gone; any other error means it cannot be watched now.
 	WatchExit(ctx context.Context, p ProcessRef) (<-chan struct{}, error)
 	// Signal sends sig after checking the pid still names this process instance.
 	Signal(ctx context.Context, p ProcessRef, sig Signal) error

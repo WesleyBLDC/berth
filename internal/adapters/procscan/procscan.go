@@ -125,7 +125,12 @@ func (*Source) WatchExit(ctx context.Context, p ports.ProcessRef) (<-chan struct
 	exited, err := WatchPID(watchCtx, p.PID)
 	if err != nil {
 		cancel()
-		return nil, ports.ErrProcessGone
+		// Only ESRCH means the process is gone; EMFILE and the like mean only that it cannot be
+		// watched now, and must not end whatever the process stands for.
+		if errors.Is(err, unix.ESRCH) {
+			return nil, ports.ErrProcessGone
+		}
+		return nil, fmt.Errorf("watch pid %d: %w", p.PID, err)
 	}
 	// Checked after the watch is registered, so a pid reused before the watch is caught here
 	// and one reused after it fires the watch. A refused watch ends at once, kqueue and all.

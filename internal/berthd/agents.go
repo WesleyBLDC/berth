@@ -47,7 +47,7 @@ type agentsDeps struct {
 	// context like StopProxies.
 	CloseBrowsers func(ctx context.Context, agentSession string)
 	// WatchExit returns a channel closed when the process instance exits (kqueue NOTE_EXIT), or
-	// ports.ErrProcessGone when it already has.
+	// ports.ErrProcessGone when it already has; any other error means it cannot be watched now.
 	WatchExit func(ctx context.Context, p ports.ProcessRef) (<-chan struct{}, error)
 	// After runs f once d has passed and returns a function that cancels it; nil means
 	// time.AfterFunc.
@@ -164,9 +164,21 @@ func (a *agents) watchRoot(id string, root ports.ProcessRef) bool {
 	a.mu.Unlock()
 	ev := agentsession.Event{Kind: agentsession.RootExited, Note: "root pid " + strconv.Itoa(root.PID)}
 	exited, err := a.WatchExit(ctx, root)
-	if err != nil {
+	if errors.Is(err, ports.ErrProcessGone) {
 		a.background(id, ev)
 		return false
+	}
+	if err != nil {
+		// The root may still run, as when berthd is out of descriptors, so the session goes on
+		// unwatched and the next call tries again.
+		a.Log.Warn("cannot watch an agent session's root", "session", id, "pid", root.PID, "err", err)
+		cancel()
+		a.mu.Lock()
+		if w := a.watches[id]; w != nil {
+			w.stopRoot = nil
+		}
+		a.mu.Unlock()
+		return true
 	}
 	go func() {
 		select {
@@ -331,9 +343,10 @@ func (a *agents) Authenticate(ctx context.Context, token string, peer ports.Peer
 		if now != agentsession.Bound {
 			return "", a.refuse("session "+string(now), rec.ID, peer)
 		}
-		if !a.watchRoot(rec.ID, root) { //nolint:contextcheck // the watch outlives this call and runs on berthd's context
-			return "", a.refuse("session root exited", rec.ID, peer)
-		}
+	}
+	// A watch already running makes this a no op; one that could not start is tried again.
+	if !a.watchRoot(rec.ID, root) { //nolint:contextcheck // the watch outlives this call and runs on berthd's context
+		return "", a.refuse("session root exited", rec.ID, peer)
 	}
 	if !agentsession.Descends(lineage, root) {
 		rec.Root = root

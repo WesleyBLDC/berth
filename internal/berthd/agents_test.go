@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 
@@ -147,6 +148,8 @@ type fakeExits struct {
 	byPID map[int]chan struct{}
 	// gone pids exited before the watch, which then answers ErrProcessGone.
 	gone map[int]bool
+	// err, when set, is what every watch answers, as when berthd is out of descriptors.
+	err error
 }
 
 func (e *fakeExits) watch(_ context.Context, p ports.ProcessRef) (<-chan struct{}, error) {
@@ -154,6 +157,9 @@ func (e *fakeExits) watch(_ context.Context, p ports.ProcessRef) (<-chan struct{
 	defer e.mu.Unlock()
 	if e.gone[p.PID] {
 		return nil, ports.ErrProcessGone
+	}
+	if e.err != nil {
+		return nil, e.err
 	}
 	if _, ok := e.byPID[p.PID]; !ok {
 		e.byPID[p.PID] = make(chan struct{})
@@ -593,4 +599,31 @@ func TestFirstCallWhoseRootIsAlreadyGoneIsRefused(t *testing.T) {
 		t.Fatalf("state %s, want Ended", f.state(t, id))
 	}
 	f.waitStopped(t, id)
+}
+
+// A root that cannot be watched, as when berthd is out of descriptors, still runs: the session
+// stays Bound, and the next call starts the watch.
+func TestAgentRootWatchFailureIsNotAnExit(t *testing.T) {
+	f := newAgentsFixture(t)
+	id, token := f.create(t, 0)
+	f.exits.mu.Lock()
+	f.exits.err = syscall.EMFILE
+	f.exits.mu.Unlock()
+	if err := f.auth(t, token, 22); err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	if st := f.state(t, id); st != agentsession.Bound {
+		t.Fatalf("a watch that could not start made the session %s", st)
+	}
+	f.exits.mu.Lock()
+	f.exits.err = nil
+	f.exits.mu.Unlock()
+	if err := f.auth(t, token, 22); err != nil {
+		t.Fatalf("second call: %v", err)
+	}
+	f.exits.exit(t, 20)
+	f.waitStopped(t, id)
+	if st := f.state(t, id); st != agentsession.Ended {
+		t.Fatalf("after the root exited the session is %s", st)
+	}
 }
