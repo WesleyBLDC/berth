@@ -80,6 +80,12 @@ const usage = `usage:
                                                 default ttl 12h, at most 168h
   berth agent session ls [--json]               list agent sessions, never tokens
   berth agent session revoke <id>               end an agent session; its token is refused
+  berth browser launch <profile> [--headless] [--executable <path>] [--token-file <path>]
+                                                start Chromium over a private pipe on a Berth
+                                                profile; prints its CDP proxy endpoint and the
+                                                token, which goes in the X-Berth-Token header
+  berth browser ls [--all] [--json]             list the browsers Berth launched
+  berth browser close <browser id>              close one: Browser.close, then SIGKILL after 5 s
 
 agent mode: with BERTH_AGENT_SOCKET set, berth talks to that agent socket and sends the token
 read from the file BERTH_AGENT_TOKEN_FILE names (only its owner may read it); the token is never
@@ -163,6 +169,8 @@ func Run(ctx context.Context, args []string, env Env) int {
 		return top(ctx, env)
 	case len(args) >= 1 && args[0] == "agent":
 		return agentCommand(ctx, args[1:], env)
+	case len(args) >= 1 && args[0] == "browser":
+		return browserCommand(ctx, args[1:], env)
 	}
 	fmt.Fprint(env.Stderr, usage)
 	return ExitUsage
@@ -299,6 +307,12 @@ func reportError(w io.Writer, err error, name, target string) int {
 		line = "this agent session has too many store requests waiting for the person, or made 10 in the last hour; wait, then try again"
 	case berthv1.ErrorReason_ERROR_REASON_AGENT_SESSION_NOT_FOUND:
 		line = fmt.Sprintf("no agent session has id %s; berth agent session ls lists them", target)
+	case berthv1.ErrorReason_ERROR_REASON_PROFILE_BUSY:
+		line = fmt.Sprintf("profile %s is in use by a live browser; berth browser ls lists them", target)
+	case berthv1.ErrorReason_ERROR_REASON_BROWSER_NOT_FOUND:
+		line = fmt.Sprintf("no managed browser has id %s; berth browser ls lists them", target)
+	case berthv1.ErrorReason_ERROR_REASON_BROWSER_LAUNCH_FAILED:
+		line = err.Error()
 	case berthv1.ErrorReason_ERROR_REASON_UNSPECIFIED:
 		line = err.Error()
 	}

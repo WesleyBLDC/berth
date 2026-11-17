@@ -42,6 +42,8 @@ type Deps struct {
 	// Agents runs AgentService and checks agent tokens; nil leaves it unimplemented, and the
 	// agent socket then refuses every call.
 	Agents Agents
+	// Browsers runs BrowsersService; nil leaves it unimplemented.
+	Browsers Browsers
 }
 
 type handlers struct {
@@ -50,6 +52,7 @@ type handlers struct {
 	berthv1connect.UnimplementedSecretsServiceHandler
 	berthv1connect.UnimplementedSessionsServiceHandler
 	berthv1connect.UnimplementedAgentServiceHandler
+	berthv1connect.UnimplementedBrowsersServiceHandler
 	d Deps
 	// inFlight holds the request IDs being served, so a retry waits for the first call while
 	// calls with other IDs (a store dialog can stay open for minutes) carry on.
@@ -72,6 +75,9 @@ func Register(d Deps, servers ...*connect.Server) {
 		}
 		if d.Agents != nil {
 			berthv1connect.RegisterAgentServiceHandler(server, h)
+		}
+		if d.Browsers != nil {
+			berthv1connect.RegisterBrowsersServiceHandler(server, h)
 		}
 	}
 }

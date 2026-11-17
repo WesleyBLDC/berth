@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"berth/internal/adapters/api"
+	"berth/internal/adapters/cdppipe"
 	"berth/internal/adapters/clock"
 	"berth/internal/adapters/execid"
 	"berth/internal/adapters/native"
@@ -53,6 +54,8 @@ type Config struct {
 	AllowLocalProxyTargets bool
 	// Agent turns on the agent socket; nil leaves it off.
 	Agent *AgentSocket
+	// Browser is the Chromium executable managed browsers run; empty means the first one found.
+	Browser string
 }
 
 // AgentSocket is the second socket, for the agent user: only peers with UID connect, and only
@@ -100,6 +103,7 @@ type shell struct {
 	secrets    *secrets
 	browsers   *browsers
 	agents     *agents
+	managed    *managed
 	// stopScans ends the browser scan loop StartServing began.
 	stopScans context.CancelFunc
 }
@@ -147,6 +151,10 @@ func Run(ctx context.Context, cfg Config) (int, error) {
 		Log: cfg.Log, Source: procs, Store: store, List: store, Events: store, Clock: clock.System{},
 		UID: uint32(os.Getuid()), //nolint:gosec // user IDs fit in 32 bits
 	})
+	s.managed = newManaged(machineCtx, managedDeps{
+		Log: cfg.Log, Store: store, List: store, Clock: clock.System{}, Driver: cdppipe.Driver{},
+		Seen: s.browsers, Home: cfg.Home, Browser: cfg.Browser,
+	})
 	s.actor, err = machine.NewActor(ctx, machine.Config[daemon.State, daemon.Event, daemon.Effect]{
 		Entity: daemon.Entity, Kind: daemon.Kind, Initial: daemon.Starting,
 		Transition: daemon.Transition, Run: s.run, Store: store, Clock: clock.System{},
@@ -191,6 +199,9 @@ func (s *shell) run(ctx context.Context, effect daemon.Effect) ([]daemon.Event, 
 		if err := s.browsers.recover(ctx); err != nil {
 			return []daemon.Event{{Kind: daemon.Failed, Note: "recover browser sessions: " + err.Error()}}, nil
 		}
+		if err := s.managed.recover(ctx); err != nil {
+			return []daemon.Event{{Kind: daemon.Failed, Note: "recover managed browsers: " + err.Error()}}, nil
+		}
 		note := fmt.Sprintf("previous run ended in %s", effect.Previous)
 		if effect.Unclean {
 			note += ": unclean shutdown"
@@ -210,6 +221,9 @@ func (s *shell) run(ctx context.Context, effect daemon.Effect) ([]daemon.Event, 
 		if s.stopScans != nil {
 			s.stopScans()
 		}
+		// Managed browsers close while their exits can still be recorded; launchd's SIGTERM must
+		// not leave a Chrome process group behind.
+		s.managed.stop(ctx, managedStopTimeout)
 		// Open session streams end first, or the server shutdown below would wait out its grace.
 		s.browsers.closeWatches()
 		// Proxy sessions are told to stop and open prompts end first, while the server still
@@ -238,6 +252,10 @@ func (s *shell) run(ctx context.Context, effect daemon.Effect) ([]daemon.Event, 
 	}
 	return nil, fmt.Errorf("unknown effect %q", effect.Kind)
 }
+
+// managedStopTimeout bounds how long a stop waits for managed browsers to close before it kills
+// their process groups.
+const managedStopTimeout = 5 * time.Second
 
 // stopPromptsTimeout bounds how long a stop waits for open prompts to record their ending.
 const stopPromptsTimeout = 5 * time.Second
@@ -299,7 +317,7 @@ func (s *shell) serve(ctx context.Context) error {
 		RequestStop: func(ctx context.Context) error {
 			return s.actor.Send(ctx, daemon.Event{Kind: daemon.StopRequested, Note: "Shutdown call"})
 		},
-		Secrets: s.secrets, Sessions: s.browsers, Agents: s.agents,
+		Secrets: s.secrets, Sessions: s.browsers, Agents: s.agents, Browsers: s.managed,
 	}, servers...)
 	s.listen(ln, s.sock, owner, false)
 	if agent != nil {

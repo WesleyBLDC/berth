@@ -701,3 +701,34 @@ var (
 		ownerchain.None: berthv1.OwnerKind_OWNER_KIND_NONE, ownerchain.Process: berthv1.OwnerKind_OWNER_KIND_PROCESS,
 	}
 )
+
+// ProfileInUse reports whether a live browser the scan saw uses dir as its profile folder.
+func (b *browsers) ProfileInUse(dir string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	for _, t := range b.live {
+		if t.disc.State != session.Stopping && t.obs.Signature.UserDataDir == dir {
+			return true
+		}
+	}
+	return false
+}
+
+// StopUnder stops every live browser of this user whose profile folder is inside root, as a
+// forced stop, and returns how many it asked to stop. Boot recovery uses it for the browsers a
+// previous berthd launched on Berth's profiles and lost.
+func (b *browsers) StopUnder(ctx context.Context, root string) int {
+	prefix := strings.TrimSuffix(root, "/") + "/"
+	b.mu.Lock()
+	var ids []string
+	for id, t := range b.live {
+		if !t.obs.OtherUser && strings.HasPrefix(t.obs.Signature.UserDataDir, prefix) {
+			ids = append(ids, id)
+		}
+	}
+	b.mu.Unlock()
+	for _, id := range ids {
+		b.send(ctx, id, session.Event{Kind: session.StopRequested, Note: "left on a Berth profile"})
+	}
+	return len(ids)
+}

@@ -504,3 +504,23 @@ func TestSnapshotReadsOnlyLiveSessions(t *testing.T) {
 		t.Fatalf("snapshot %v", snap)
 	}
 }
+
+// A browser on a Berth profile that no managed browser holds was left by a previous berthd; boot
+// stops it, and only it, and a profile a scanned browser uses counts as in use.
+func TestBrowsersOnBerthProfilesAreFoundAndStopped(t *testing.T) {
+	f := newBrowsersFixture(t)
+	const root = "/Users/u/Library/Application Support/Berth/profiles"
+	f.set(t, append(slices.Clone(f.rows),
+		row(400, 1, testUID, shellPath, shellPath, "--remote-debugging-pipe", "--user-data-dir="+root+"/work"),
+		row(500, 1, testUID, shellPath, shellPath, "--remote-debugging-pipe", "--user-data-dir="+root+"-not/work"),
+	)...)
+	if !f.b.ProfileInUse(root+"/work") || f.b.ProfileInUse(root+"/other") {
+		t.Fatal("ProfileInUse must name exactly the profile a scanned browser uses")
+	}
+	if n := f.b.StopUnder(t.Context(), root); n != 1 {
+		t.Fatalf("StopUnder asked %d browsers to stop, want 1", n)
+	}
+	if got := f.procs.Signals(); !slices.Equal(got, []testutil.SentSignal{{PID: 400, Signal: ports.SignalTerm}}) {
+		t.Fatalf("signals %v, want SIGTERM to 400 only", got)
+	}
+}
