@@ -2,9 +2,11 @@ package cdppolicy_test
 
 import (
 	"errors"
+	"fmt"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"berth/internal/core/cdppolicy"
 )
@@ -49,6 +51,70 @@ func TestParseRefusesWhatGoAndChromeReadDifferently(t *testing.T) {
 	} {
 		if _, err := cdppolicy.Parse([]byte(raw)); !errors.Is(err, cdppolicy.ErrMalformed) {
 			t.Errorf("parse %s = %v, want ErrMalformed", raw, err)
+		}
+	}
+}
+
+// manyKeys is a message whose params hold n distinct keys, at a level the policy reads.
+func manyKeys(n int) []byte {
+	var b strings.Builder
+	b.WriteString(`{"id":1,"method":"Runtime.evaluate","params":{`)
+	for i := range n {
+		if i > 0 {
+			b.WriteByte(',')
+		}
+		fmt.Fprintf(&b, `"k%d":%d`, i, i)
+	}
+	b.WriteString(`}}`)
+	return []byte(b.String())
+}
+
+// One message of 80,000 keys once took 22.6 seconds, since every key was compared with every
+// key before it. Keys are now checked in constant time each, and an object past the limit is
+// refused.
+func TestParseIsLinearInTheKeyCount(t *testing.T) {
+	start := time.Now()
+	if _, err := cdppolicy.Parse(manyKeys(cdppolicy.MaxKeys)); err != nil {
+		t.Fatalf("an object at the key limit must parse: %v", err)
+	}
+	if _, err := cdppolicy.Parse(manyKeys(80_000)); !errors.Is(err, cdppolicy.ErrMalformed) {
+		t.Fatalf("an object past the key limit = %v, want ErrMalformed", err)
+	}
+	if took := time.Since(start); took > 2*time.Second {
+		t.Fatalf("parsing took %v; it must be linear in the key count", took)
+	}
+	// Folding still catches a late key that differs only by case from an early one.
+	late := strings.Replace(string(manyKeys(cdppolicy.MaxKeys)), `}}`, `,"K0":0}}`, 1)
+	if _, err := cdppolicy.Parse([]byte(strings.Replace(late, `"k9999":9999,`, ``, 1))); !errors.Is(err, cdppolicy.ErrMalformed) {
+		t.Fatalf("a key folding onto an earlier one = %v, want ErrMalformed", err)
+	}
+}
+
+func TestParseRefusesDeepNesting(t *testing.T) {
+	nest := func(depth int, open, closing string) []byte {
+		// The message object and params are two levels; the rest nest inside params.
+		inner := strings.Repeat(open, depth-2) + "1" + strings.Repeat(closing, depth-2)
+		if open == "{" {
+			inner = strings.Repeat(`{"a":`, depth-2) + "1" + strings.Repeat("}", depth-2)
+		}
+		return []byte(`{"id":1,"method":"Runtime.evaluate","params":{"x":` + inner + `}}`)
+	}
+	for _, open := range []string{"[", "{"} {
+		closing := map[string]string{"[": "]", "{": "}"}[open]
+		if _, err := cdppolicy.Parse(nest(cdppolicy.MaxDepth, open, closing)); err != nil {
+			t.Fatalf("%s nesting at the limit must parse: %v", open, err)
+		}
+		if _, err := cdppolicy.Parse(nest(cdppolicy.MaxDepth+1, open, closing)); !errors.Is(err, cdppolicy.ErrMalformed) {
+			t.Fatalf("%s nesting past the limit = %v, want ErrMalformed", open, err)
+		}
+	}
+}
+
+func BenchmarkParseManyKeys(b *testing.B) {
+	raw := manyKeys(cdppolicy.MaxKeys)
+	for b.Loop() {
+		if _, err := cdppolicy.Parse(raw); err != nil {
+			b.Fatal(err)
 		}
 	}
 }

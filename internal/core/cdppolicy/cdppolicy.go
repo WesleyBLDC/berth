@@ -15,6 +15,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"unicode"
 )
 
 // FirstBerthID is where Berth's own ids on the pipe start; agent ids must stay below it.
@@ -42,8 +43,16 @@ var readFields = map[string][]string{
 	"params.data": {"files"},
 }
 
-// Parse reads an agent message strictly: no key repeats anywhere, and the levels the policy
-// reads hold no key that Go and Chrome would match differently.
+// MaxKeys bounds the keys of one object and MaxDepth how deeply objects and arrays nest, so a
+// message costs time in proportion to its size; Chrome's own parser stops at a depth of 200.
+const (
+	MaxKeys  = 10_000
+	MaxDepth = 200
+)
+
+// Parse reads an agent message strictly: no key repeats anywhere, the levels the policy reads
+// hold no key that Go and Chrome would match differently, and no object or nesting passes the
+// limits.
 func Parse(raw []byte) (Message, error) {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
@@ -51,7 +60,7 @@ func Parse(raw []byte) (Message, error) {
 	if err != nil || first != json.Delim('{') {
 		return Message{}, ErrMalformed
 	}
-	if err := walkObject(dec, ""); err != nil {
+	if err := walkObject(dec, "", 1); err != nil {
 		return Message{}, fmt.Errorf("%w: %w", ErrMalformed, err)
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
@@ -80,32 +89,47 @@ func Parse(raw []byte) (Message, error) {
 	return msg, nil
 }
 
-// walkObject reads the rest of an object whose '{' was just read.
-func walkObject(dec *json.Decoder, path string) error {
-	known := readFields[path]
-	var seen []string
+// walkObject reads the rest of an object whose '{' was just read. Keys are looked up in maps,
+// exact and folded, so each costs the same however many came before it.
+func walkObject(dec *json.Decoder, path string, depth int) error {
+	if depth > MaxDepth {
+		return fmt.Errorf("nested deeper than %d", MaxDepth)
+	}
+	seen := map[string]bool{}
+	// folded maps each key's case fold to the key, from the known fields on, at the levels the
+	// policy reads.
+	var folded map[string]string
+	if known, ok := readFields[path]; ok {
+		folded = make(map[string]string, len(known))
+		for _, k := range known {
+			folded[fold(k)] = k
+		}
+	}
 	for dec.More() {
+		if len(seen) == MaxKeys {
+			return fmt.Errorf("more than %d keys in one object", MaxKeys)
+		}
 		tok, err := dec.Token()
 		if err != nil {
 			return err
 		}
 		key, _ := tok.(string)
-		if slices.Contains(seen, key) {
+		if seen[key] {
 			return fmt.Errorf("duplicate key %q", key)
 		}
-		if known != nil {
-			for _, other := range append(slices.Clone(known), seen...) {
-				if other != key && strings.EqualFold(other, key) {
-					return fmt.Errorf("key %q differs from %q only by case", key, other)
-				}
+		seen[key] = true
+		if folded != nil {
+			f := fold(key)
+			if other, ok := folded[f]; ok && other != key {
+				return fmt.Errorf("key %q differs from %q only by case", key, other)
 			}
+			folded[f] = key
 		}
-		seen = append(seen, key)
 		child := key
 		if path != "" {
 			child = path + "." + key
 		}
-		if err := walkValue(dec, child); err != nil {
+		if err := walkValue(dec, child, depth); err != nil {
 			return err
 		}
 	}
@@ -113,17 +137,32 @@ func walkObject(dec *json.Decoder, path string) error {
 	return err
 }
 
-func walkValue(dec *json.Decoder, path string) error {
+// fold maps a key to one spelling per class of strings.EqualFold: each rune becomes the lowest
+// rune of its simple case folding orbit, so two keys fold alike exactly when EqualFold matches.
+func fold(s string) string {
+	return strings.Map(func(r rune) rune {
+		lowest := r
+		for f := unicode.SimpleFold(r); f != r; f = unicode.SimpleFold(f) {
+			lowest = min(lowest, f)
+		}
+		return lowest
+	}, s)
+}
+
+func walkValue(dec *json.Decoder, path string, depth int) error {
 	tok, err := dec.Token()
 	if err != nil {
 		return err
 	}
 	switch tok {
 	case json.Delim('{'):
-		return walkObject(dec, path)
+		return walkObject(dec, path, depth+1)
 	case json.Delim('['):
+		if depth+1 > MaxDepth {
+			return fmt.Errorf("nested deeper than %d", MaxDepth)
+		}
 		for dec.More() {
-			if err := walkValue(dec, path+"[]"); err != nil {
+			if err := walkValue(dec, path+"[]", depth+1); err != nil {
 				return err
 			}
 		}
