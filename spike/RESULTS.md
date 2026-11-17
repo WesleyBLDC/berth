@@ -7,6 +7,7 @@ Run on macOS 26.5, Go 1.27.4, Swift 6.3.3, Xcode 26.6, Chrome 157.
 | 1 | Swift streams from Connect in Go over a Unix socket | Pass |
 | 2 | Playwright MCP through the token gated CDP proxy | Pass |
 | 3 | Chrome screencast frames shown in SwiftUI | Pass |
+| 4 | Touch ID and a Keychain read from a signed helper | Pass |
 
 ## 1. Swift streaming over the Unix socket
 
@@ -49,3 +50,16 @@ Findings for the real build:
 - Headless Chrome only sends frames when the page repaints, so a still page sends almost none. Live view must keep the last frame and not treat silence as a failure.
 - The daemon must handle SIGTERM (launchd sends it) and stop every Chrome process group it owns. Without a handler, a killed server left Chrome running; with `signal.NotifyContext` the group is gone after SIGTERM.
 - Not measured yet: CPU cost of 60 fps decode in the app; the real app should let the client choose a frame rate.
+
+## 4. Touch ID and a Keychain read from a signed helper
+
+- `NativeProof`, a first sketch of `berth-native`: a Swift command line tool signed with a free Apple ID (Personal Team, team `XPJ7XA42J4`) and the hardened runtime, identifier `dev.berth.spike.native`.
+- It created a fake generic password `berth-spike-test`, showed a Touch ID prompt with custom text through `LAContext.evaluatePolicy(.deviceOwnerAuthentication)`, read the item with `SecItemCopyMatching`, wrote the bytes only to stdout, and zeroed its copy.
+- The caller read 29 bytes from the pipe, matching the fake value exactly. The item was deleted afterwards. No real secret was used.
+
+Findings for the real build:
+
+- Free signing is enough for Touch ID and the login keychain from a command line helper.
+- Items the helper creates itself trust it without an extra Keychain dialog. Existing items (made by `security` or other apps) will show the macOS "allow access" dialog the first time; Berth should tell the person to choose Always Allow.
+- The data protection keychain needs a keychain access group entitlement and a provisioning profile; the helper uses the login keychain until the paid program at M8.
+- The signing certificate needed Apple's WWDR G3 intermediate in the login keychain (see `docs/setup.md`).

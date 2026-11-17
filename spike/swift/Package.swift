@@ -35,5 +35,6 @@ let package = Package(
                 .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
             ]
         ),
+        .executableTarget(name: "NativeProof"),
     ]
 )
