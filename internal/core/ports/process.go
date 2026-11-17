@@ -63,3 +63,11 @@ type ProcessSource interface {
 type EntityLister interface {
 	EntitiesOfKind(ctx context.Context, kind string) ([]EntityState, error)
 }
+
+// ProcessLineage reads one process and its parents from the kernel's process table, which the
+// kernel shows for every user.
+type ProcessLineage interface {
+	// Lineage returns pid's process first, then each parent, ending with launchd or with the
+	// last parent still running; ErrProcessGone when pid itself is gone.
+	Lineage(ctx context.Context, pid int) ([]ProcessInfo, error)
+}

@@ -22,9 +22,9 @@ type actors[S ~string, E machine.Event, F any] struct {
 	initial    S
 	transition machine.Transition[S, E, F]
 	run        func(entity string) machine.Runner[E, F]
-	// final, when set, is a state no event leaves: an actor stops once it reaches it, and none
-	// is started for an entity already in it, so no path leaves a goroutine behind for it.
-	final S
+	// final lists the states no event leaves: an actor stops once it reaches one, and none is
+	// started for an entity already in one, so no path leaves a goroutine behind for it.
+	final []S
 	// saved, when set, is told about every transition once it is saved and its effects have run.
 	// It must not block, since it runs on the actor's goroutine.
 	saved func(ports.TransitionRecord)
@@ -83,7 +83,7 @@ func (a *actors[S, E, F]) get(ctx context.Context, entity string) (*slot[S, E, F
 			if a.saved != nil {
 				a.saved(rec)
 			}
-			if a.final != "" && S(rec.To) == a.final {
+			if slices.Contains(a.final, S(rec.To)) {
 				a.drop(entity, sl)
 			}
 		},
@@ -91,8 +91,8 @@ func (a *actors[S, E, F]) get(ctx context.Context, entity string) (*slot[S, E, F
 	if err != nil {
 		return nil, err
 	}
-	if a.final != "" && actor.State() == a.final {
-		return nil, fmt.Errorf("%w: %s is %s", machine.ErrIllegal, entity, a.final)
+	if slices.Contains(a.final, actor.State()) {
+		return nil, fmt.Errorf("%w: %s is %s", machine.ErrIllegal, entity, actor.State())
 	}
 	sl.actor = actor
 	a.live[entity] = sl

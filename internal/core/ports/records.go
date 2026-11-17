@@ -96,3 +96,30 @@ type ProxySessionRecords interface {
 	// EndProxySession records the counts and the end time once; a second call is an error.
 	EndProxySession(ctx context.Context, id string, injected, refused int64, at time.Time) error
 }
+
+// AgentSessionRecord is one agent session; its state lives in the agent session machine. It
+// holds the SHA-256 of the token, never the token.
+type AgentSessionRecord struct {
+	// ID is 32 lowercase hex characters, random and not derived from the token; the entity is
+	// agent/<ID>.
+	ID        string
+	Name      string
+	TokenHash [32]byte
+	CreatedAt time.Time
+	ExpiresAt time.Time
+	// Root is the process tree the session is bound to; zero until the first accepted call.
+	Root ProcessRef
+}
+
+// AgentSessionRecords keeps agent session facts.
+type AgentSessionRecords interface {
+	// AddAgentSession stores r; Root is ignored.
+	AddAgentSession(ctx context.Context, r AgentSessionRecord) error
+	AgentSession(ctx context.Context, id string) (AgentSessionRecord, bool, error)
+	AgentSessionByToken(ctx context.Context, hash [32]byte) (AgentSessionRecord, bool, error)
+	// AgentSessions lists every session, oldest first.
+	AgentSessions(ctx context.Context) ([]AgentSessionRecord, error)
+	// BindAgentSession records root unless the session already has one, and returns the root the
+	// session holds afterwards, so of two first calls racing only one tree wins.
+	BindAgentSession(ctx context.Context, id string, root ProcessRef) (ProcessRef, error)
+}

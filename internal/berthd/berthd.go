@@ -98,6 +98,7 @@ type shell struct {
 	machineCtx context.Context
 	secrets    *secrets
 	browsers   *browsers
+	agents     *agents
 	// stopScans ends the browser scan loop StartServing began.
 	stopScans context.CancelFunc
 }
@@ -132,6 +133,13 @@ func Run(ctx context.Context, cfg Config) (int, error) {
 	if err != nil {
 		return 1, err
 	}
+	var agentUID uint32
+	if cfg.Agent != nil {
+		agentUID = cfg.Agent.UID
+	}
+	s.agents = newAgents(machineCtx, agentsDeps{
+		Log: cfg.Log, Store: store, Records: store, Clock: clock.System{}, Lineage: procs, Code: peer.NewCode(), AgentUID: agentUID,
+	})
 	s.browsers = newBrowsers(machineCtx, browsersDeps{
 		Log: cfg.Log, Source: procs, Store: store, List: store, Events: store, Clock: clock.System{},
 		UID: uint32(os.Getuid()), //nolint:gosec // user IDs fit in 32 bits
@@ -273,7 +281,7 @@ func (s *shell) serve(ctx context.Context) error {
 			_ = ln.Close()
 			return fmt.Errorf("agent socket: %w", err)
 		}
-		agent = connect.NewServer(api.AgentOnly())
+		agent = connect.NewServer(api.AgentOnly(), api.AgentToken(s.agents))
 		servers = append(servers, agent)
 	}
 	api.Register(api.Deps{
@@ -282,7 +290,7 @@ func (s *shell) serve(ctx context.Context) error {
 		RequestStop: func(ctx context.Context) error {
 			return s.actor.Send(ctx, daemon.Event{Kind: daemon.StopRequested, Note: "Shutdown call"})
 		},
-		Secrets: s.secrets, Sessions: s.browsers,
+		Secrets: s.secrets, Sessions: s.browsers, Agents: s.agents,
 	}, servers...)
 	s.listen(ln, s.sock, owner, false)
 	if agent != nil {

@@ -20,6 +20,13 @@ func main() {
 		Stdout: os.Stdout,
 		Stderr: os.Stderr,
 		Connect: func(ctx context.Context) (*client.Client, error) {
+			if sock := os.Getenv("BERTH_AGENT_SOCKET"); sock != "" {
+				token, err := client.ReadAgentToken(os.Getenv("BERTH_AGENT_TOKEN_FILE"))
+				if err != nil {
+					return nil, err
+				}
+				return client.ConnectAgent(ctx, sock, "berth-cli", token)
+			}
 			home, err := paths.Home()
 			if err != nil {
 				return nil, err

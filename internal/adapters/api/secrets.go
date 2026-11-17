@@ -69,6 +69,12 @@ func (h *handlers) RequestSecret(ctx context.Context, req *berthv1.RequestSecret
 		return nil, err
 	}
 	return once(ctx, h, "RequestSecret", req.GetRequestId(), &berthv1.RequestSecretResponse{}, func() (*berthv1.RequestSecretResponse, error) {
+		// Inside once, so a retry that replays the stored reply opens nothing and costs nothing.
+		release, err := h.admitStore(ctx)
+		if err != nil {
+			return nil, err
+		}
+		defer release()
 		resp, err := h.d.Secrets.RequestSecret(ctx, req, peerOf(ctx))
 		return resp, secretsError(err)
 	})

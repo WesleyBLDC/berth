@@ -101,7 +101,7 @@ func newBrowsers(ctx context.Context, d browsersDeps) *browsers {
 	}
 	b.actors = &actors[session.State, session.Event, session.Effect]{
 		ctx: ctx, log: d.Log, store: d.Store, clock: d.Clock,
-		kind: session.Kind, initial: session.Initial, final: session.Stopped, transition: session.Transition, run: b.runSession,
+		kind: session.Kind, initial: session.Initial, final: []session.State{session.Stopped}, transition: session.Transition, run: b.runSession,
 		live:  map[string]*slot[session.State, session.Event, session.Effect]{},
 		saved: func(ports.TransitionRecord) { b.wakeWatchers() },
 	}

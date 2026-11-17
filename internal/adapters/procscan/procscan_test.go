@@ -239,3 +239,30 @@ func BenchmarkScan(b *testing.B) {
 		}
 	})
 }
+
+func TestLineageOfAChildReachesLaunchd(t *testing.T) {
+	s := source(t)
+	cmd := exec.CommandContext(t.Context(), "/bin/sleep", "5")
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = cmd.Process.Kill(); _ = cmd.Wait() })
+	got, err := s.Lineage(t.Context(), cmd.Process.Pid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(got) < 3 || got[0].PID != cmd.Process.Pid || got[1].PID != os.Getpid() || got[len(got)-1].PID != 1 {
+		t.Fatalf("lineage %+v: want the child, this test, ..., launchd", got)
+	}
+	if got[0].PPID != os.Getpid() || got[0].UID != uint32(os.Getuid()) || got[1].Start.IsZero() { //nolint:gosec // user IDs fit in 32 bits
+		t.Fatalf("lineage facts %+v", got[:2])
+	}
+	if !got[1].Same(find(t, s, os.Getpid()).ProcessRef) {
+		t.Fatal("lineage and List disagree about this process's start time")
+	}
+	_ = cmd.Process.Kill()
+	_ = cmd.Wait()
+	if _, err := s.Lineage(t.Context(), cmd.Process.Pid); !errors.Is(err, ports.ErrProcessGone) {
+		t.Fatalf("lineage of an exited child: %v", err)
+	}
+}

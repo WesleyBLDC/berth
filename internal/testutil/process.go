@@ -2,6 +2,7 @@ package testutil
 
 import (
 	"context"
+	"slices"
 	"sync"
 	"time"
 
@@ -106,4 +107,28 @@ func (p *Processes) Signal(_ context.Context, ref ports.ProcessRef, sig ports.Si
 	}
 	p.signals = append(p.signals, SentSignal{PID: ref.PID, Signal: sig})
 	return nil
+}
+
+var _ ports.ProcessLineage = (*Processes)(nil)
+
+// Lineage walks the table by parent pid, as the kernel would.
+func (p *Processes) Lineage(_ context.Context, pid int) ([]ports.ProcessInfo, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var out []ports.ProcessInfo
+	for cur := pid; len(out) < 64; {
+		i := slices.IndexFunc(p.table, func(f FakeProcess) bool { return f.PID == cur })
+		if i < 0 {
+			break
+		}
+		out = append(out, p.table[i].ProcessInfo)
+		if cur == 1 {
+			break
+		}
+		cur = p.table[i].PPID
+	}
+	if len(out) == 0 {
+		return nil, ports.ErrProcessGone
+	}
+	return out, nil
 }

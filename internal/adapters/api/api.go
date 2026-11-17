@@ -39,6 +39,9 @@ type Deps struct {
 	Secrets Secrets
 	// Sessions runs SessionsService; nil leaves it unimplemented.
 	Sessions Sessions
+	// Agents runs AgentService and checks agent tokens; nil leaves it unimplemented, and the
+	// agent socket then refuses every call.
+	Agents Agents
 }
 
 type handlers struct {
@@ -46,6 +49,7 @@ type handlers struct {
 	berthv1connect.UnimplementedDebugServiceHandler
 	berthv1connect.UnimplementedSecretsServiceHandler
 	berthv1connect.UnimplementedSessionsServiceHandler
+	berthv1connect.UnimplementedAgentServiceHandler
 	d Deps
 	// inFlight holds the request IDs being served, so a retry waits for the first call while
 	// calls with other IDs (a store dialog can stay open for minutes) carry on.
@@ -65,6 +69,9 @@ func Register(d Deps, servers ...*connect.Server) {
 		}
 		if d.Sessions != nil {
 			berthv1connect.RegisterSessionsServiceHandler(server, h)
+		}
+		if d.Agents != nil {
+			berthv1connect.RegisterAgentServiceHandler(server, h)
 		}
 	}
 }
@@ -209,10 +216,10 @@ func WithCaller(ctx context.Context, c Caller) context.Context {
 	return context.WithValue(ctx, callerKey{}, c)
 }
 
-// Principal names who a request ID belongs to: the socket, the peer uid and the process (its
-// audit token, which a retry from the same process repeats and no other process shares), so a
-// stored reply is only ever replayed to the caller that made the call. A context without a
-// caller (in process tests) is its own principal.
+// Principal names who a request ID belongs to: the socket, the peer uid, the agent session on
+// the agent socket, and the process (its audit token, which a retry from the same process
+// repeats and no other process shares), so a stored reply is only ever replayed to the caller
+// that made the call. A context without a caller (in process tests) is its own principal.
 func Principal(ctx context.Context) string {
 	kind := "none"
 	c, ok := ctx.Value(callerKey{}).(Caller)
@@ -221,6 +228,9 @@ func Principal(ctx context.Context) string {
 		kind = "agent"
 	case ok:
 		kind = "owner"
+	}
+	if session := sessionOf(ctx); session != "" {
+		kind += "/" + session
 	}
 	return fmt.Sprintf("%s:%d:%x", kind, c.UID, peerOf(ctx).AuditToken)
 }

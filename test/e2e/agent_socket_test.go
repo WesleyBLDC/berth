@@ -51,7 +51,8 @@ func TestAgentSocketServesOnlyAgentMethods(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 
-	agent, err := client.Connect(ctx, sock, "e2e-agent")
+	_, token, _ := newAgentSession(t, h)
+	agent, err := client.ConnectAgent(ctx, sock, "e2e-agent", token)
 	if err != nil {
 		t.Fatalf("Handshake, an agent method, failed on the agent socket: %v", err)
 	}
@@ -131,7 +132,8 @@ func TestRequestLogKeepsEachCallersReplies(t *testing.T) {
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
 	owner := waitServing(t, h)
-	agent, err := client.Connect(ctx, sock, "e2e-agent")
+	_, token, _ := newAgentSession(t, h)
+	agent, err := client.ConnectAgent(ctx, sock, "e2e-agent", token)
 	if err != nil {
 		t.Fatal(err)
 	}

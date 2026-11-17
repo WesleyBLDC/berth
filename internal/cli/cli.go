@@ -76,6 +76,14 @@ const usage = `usage:
   berth leftovers [--stop [--force]]           list, or stop, browsers whose owner exited
   berth top                                     a live full screen view of every browser session:
                                                 inspect, stop (after a confirmation) and filter
+  berth agent session new [--name N] [--ttl D]  issue an agent session and print its token once;
+                                                default ttl 12h, at most 168h
+  berth agent session ls [--json]               list agent sessions, never tokens
+  berth agent session revoke <id>               end an agent session; its token is refused
+
+agent mode: with BERTH_AGENT_SOCKET set, berth talks to that agent socket and sends the token
+read from the file BERTH_AGENT_TOKEN_FILE names (only its owner may read it); the token is never
+an argument
 
 exit codes:
   0  success
@@ -150,6 +158,8 @@ func Run(ctx context.Context, args []string, env Env) int {
 		return sessionLeftovers(ctx, args[1:], env)
 	case len(args) == 1 && args[0] == "top":
 		return top(ctx, env)
+	case len(args) >= 1 && args[0] == "agent":
+		return agentCommand(ctx, args[1:], env)
 	}
 	fmt.Fprint(env.Stderr, usage)
 	return ExitUsage
@@ -280,6 +290,12 @@ func reportError(w io.Writer, err error, name, target string) int {
 		line = fmt.Sprintf("no browser session has id %s; berth ps lists them", target)
 	case berthv1.ErrorReason_ERROR_REASON_SESSION_NOT_STOPPABLE:
 		line = fmt.Sprintf("berth will not stop session %s: it belongs to another user, or to the person or an app and needs --force", target)
+	case berthv1.ErrorReason_ERROR_REASON_AGENT_TOKEN_INVALID:
+		line = "berthd refused the agent token: it is missing, unknown, expired or revoked, or this process is outside the session's process tree; ask the person for a new session"
+	case berthv1.ErrorReason_ERROR_REASON_RATE_LIMITED:
+		line = "this agent session has too many store requests waiting for the person, or made 10 in the last hour; wait, then try again"
+	case berthv1.ErrorReason_ERROR_REASON_AGENT_SESSION_NOT_FOUND:
+		line = fmt.Sprintf("no agent session has id %s; berth agent session ls lists them", target)
 	case berthv1.ErrorReason_ERROR_REASON_UNSPECIFIED:
 		line = err.Error()
 	}
