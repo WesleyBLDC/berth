@@ -34,7 +34,7 @@ var _ ports.ExecIdentity = (*Identity)(nil)
 
 // Identify resolves path, hashes the file, and reads its signature and cdhash. A missing file
 // returns an error wrapping os.ErrNotExist; a file that is not signed, or whose signature does not
-// verify, has empty TeamID and SigningID. A #! script's CDHash is its interpreter's, since that is
+// verify, has SignatureUnsigned and empty TeamID and SigningID. A #! script's CDHash is its interpreter's, since that is
 // the image the kernel runs; a file with no code directory has a zero CDHash.
 func (x *Identity) Identify(ctx context.Context, path string) (ports.Executable, error) {
 	abs, err := filepath.Abs(path)
@@ -49,7 +49,7 @@ func (x *Identity) Identify(ctx context.Context, path string) (ports.Executable,
 	if err != nil {
 		return ports.Executable{}, err
 	}
-	team, signing, err := x.signature(ctx, resolved)
+	team, signing, signature, err := x.signature(ctx, resolved)
 	if err != nil {
 		return ports.Executable{}, err
 	}
@@ -63,7 +63,7 @@ func (x *Identity) Identify(ctx context.Context, path string) (ports.Executable,
 			cdhash = ports.CDHash{}
 		}
 	}
-	return ports.Executable{Path: resolved, SHA256: sum, TeamID: team, SigningID: signing, Shebang: shebang, CDHash: cdhash}, nil
+	return ports.Executable{Path: resolved, SHA256: sum, TeamID: team, SigningID: signing, Signature: signature, Shebang: shebang, CDHash: cdhash}, nil
 }
 
 // hashFile hashes the file and, for a #! script, returns the interpreter path its first line
@@ -135,25 +135,40 @@ func (x *Identity) CDHash(ctx context.Context, path string) (ports.CDHash, error
 
 // signature verifies the code signature before trusting what it names: codesign -dv alone
 // prints the identifiers of a binary that was modified after signing.
-func (x *Identity) signature(ctx context.Context, path string) (team, signing string, err error) {
+func (x *Identity) signature(ctx context.Context, path string) (team, signing string, kind ports.Signature, err error) {
 	verify := exec.CommandContext(ctx, x.codesign, "--verify", "--strict", path) //nolint:gosec // fixed tool, path is an argument
 	if err := verify.Run(); err != nil {
 		if unsigned(ctx, err) {
-			return "", "", nil
+			return "", "", ports.SignatureUnsigned, nil
 		}
-		return "", "", fmt.Errorf("codesign verify: %w", err)
+		return "", "", "", fmt.Errorf("codesign verify: %w", err)
 	}
 	var stderr bytes.Buffer
 	show := exec.CommandContext(ctx, x.codesign, "-d", "--verbose=2", path) //nolint:gosec // fixed tool, path is an argument
 	show.Stderr = &stderr
 	if err := show.Run(); err != nil {
 		if unsigned(ctx, err) {
-			return "", "", nil
+			return "", "", ports.SignatureUnsigned, nil
 		}
-		return "", "", fmt.Errorf("codesign display: %w", err)
+		return "", "", "", fmt.Errorf("codesign display: %w", err)
 	}
-	team, signing = parseDisplay(stderr.Bytes())
-	return team, signing, nil
+	team, signing, adhoc := parseDisplay(stderr.Bytes())
+	switch {
+	case team != "":
+		return team, signing, ports.SignatureTeam, nil
+	case adhoc:
+		return "", signing, ports.SignatureAdHoc, nil
+	}
+	// Authority names are certificate subjects anyone can copy into a self signed certificate, so
+	// Apple is recognised by its anchor, never by the "Software Signing" name codesign prints.
+	apple, err := x.Satisfies(ctx, path, "anchor apple")
+	if err != nil {
+		return "", "", "", err
+	}
+	if apple {
+		return "", signing, ports.SignatureApple, nil
+	}
+	return "", signing, ports.SignatureOther, nil
 }
 
 // Satisfies reports whether the file at path verifies against a code requirement, for example
@@ -177,9 +192,9 @@ func unsigned(ctx context.Context, err error) bool {
 	return ctx.Err() == nil && errors.As(err, &exit) && exit.ExitCode() > 0
 }
 
-// parseDisplay reads Identifier and TeamIdentifier from codesign -dv output. Platform and ad
-// hoc signatures say "TeamIdentifier=not set", which is an empty team.
-func parseDisplay(out []byte) (team, signing string) {
+// parseDisplay reads Identifier, TeamIdentifier and the ad hoc marker from codesign -dv output.
+// Platform and ad hoc signatures say "TeamIdentifier=not set", which is an empty team.
+func parseDisplay(out []byte) (team, signing string, adhoc bool) {
 	sc := bufio.NewScanner(bytes.NewReader(out))
 	for sc.Scan() {
 		k, v, ok := strings.Cut(sc.Text(), "=")
@@ -193,9 +208,11 @@ func parseDisplay(out []byte) (team, signing string) {
 			if v != "not set" {
 				team = v
 			}
+		case "Signature":
+			adhoc = v == "adhoc"
 		}
 	}
-	return team, signing
+	return team, signing, adhoc
 }
 
 // PinSigned copies the file at path into a private folder, checks the copy against

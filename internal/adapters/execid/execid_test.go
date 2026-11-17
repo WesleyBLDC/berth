@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"berth/internal/core/ports"
 )
 
 func TestHashFollowsContentAndSymlinks(t *testing.T) {
@@ -33,7 +35,7 @@ func TestHashFollowsContentAndSymlinks(t *testing.T) {
 	if first.SHA256 != sha256.Sum256([]byte("#!/bin/sh\necho one\n")) {
 		t.Fatalf("hash is not the file's SHA-256")
 	}
-	if first.Signed() || first.SigningID != "" {
+	if first.Signed() || first.SigningID != "" || first.Signature != ports.SignatureUnsigned {
 		t.Fatalf("an unsigned script has signature facts: %+v", first)
 	}
 	if err := os.WriteFile(file, []byte("#!/bin/sh\necho two\n"), 0o700); err != nil { //nolint:gosec // an executable fixture
@@ -66,9 +68,9 @@ func TestSignedSystemBinary(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	// Apple platform binaries carry an identifier but no team.
-	if got.SigningID != "com.apple.ls" {
-		t.Fatalf("SigningID %q, want com.apple.ls", got.SigningID)
+	// Apple platform binaries carry an identifier but no team, and are signed, not unsigned.
+	if got.SigningID != "com.apple.ls" || got.TeamID != "" || got.Signature != ports.SignatureApple {
+		t.Fatalf("got %+v, want com.apple.ls with an Apple signature and no team", got)
 	}
 	if got.Path != "/bin/ls" {
 		t.Fatalf("path %q", got.Path)
@@ -89,16 +91,33 @@ func TestBrokenCodesignIsAnError(t *testing.T) {
 func TestParseDisplay(t *testing.T) {
 	cases := []struct {
 		out, team, signing string
+		adhoc              bool
 	}{
-		{"Executable=/x\nIdentifier=com.github.gh\nTeamIdentifier=ABCDE12345\n", "ABCDE12345", "com.github.gh"},
-		{"Identifier=xadhoc\nSignature=adhoc\nTeamIdentifier=not set\n", "", "xadhoc"},
-		{"", "", ""},
+		{"Executable=/x\nIdentifier=com.github.gh\nTeamIdentifier=ABCDE12345\n", "ABCDE12345", "com.github.gh", false},
+		{"Identifier=xadhoc\nSignature=adhoc\nTeamIdentifier=not set\n", "", "xadhoc", true},
+		{"Identifier=com.apple.printenv\nPlatform identifier=26\nSignature size=4442\nAuthority=Software Signing\nTeamIdentifier=not set\n", "", "com.apple.printenv", false},
+		{"", "", "", false},
 	}
 	for _, c := range cases {
-		team, signing := parseDisplay([]byte(c.out))
-		if team != c.team || signing != c.signing {
-			t.Fatalf("%q: got %q %q", c.out, team, signing)
+		team, signing, adhoc := parseDisplay([]byte(c.out))
+		if team != c.team || signing != c.signing || adhoc != c.adhoc {
+			t.Fatalf("%q: got %q %q %v", c.out, team, signing, adhoc)
 		}
+	}
+}
+
+func TestAdHocBinaryIsAdHocNotApple(t *testing.T) {
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The Go linker signs ad hoc.
+	got, err := New(DefaultCodesign).Identify(t.Context(), self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Signature != ports.SignatureAdHoc || got.TeamID != "" {
+		t.Fatalf("got %q team %q, want an ad hoc signature", got.Signature, got.TeamID)
 	}
 }
 
@@ -116,7 +135,7 @@ func TestTamperedSignedBinaryLosesSignature(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.SigningID != "" || got.TeamID != "" {
+	if got.SigningID != "" || got.TeamID != "" || got.Signature != ports.SignatureUnsigned {
 		t.Fatalf("a tampered binary kept its signature facts: %+v", got)
 	}
 }

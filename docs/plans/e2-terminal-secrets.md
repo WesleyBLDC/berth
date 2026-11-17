@@ -62,6 +62,24 @@ Touch ID and the dialog need a person, so e2e uses a test approver selected only
 
 `make check` passes with the canary e2e, the manual Touch ID check is recorded here, the agent safety checklist is walked for E2a, and the wiki plan is updated.
 
+E2a is done: the manual check below passed.
+
+### Manual check (2026-11-17)
+
+The maintainer ran it on real hardware with real signing and Touch ID; every step passed.
+
+1. `make build` built and signed `berth`, `berthd` and `berth-native`.
+2. `berthd` trusted the signed binaries beside it.
+3. A secret was stored through the `berth-native` dialog and Touch ID.
+4. `berth secret ls` showed it `stored`, with no value.
+5. It was granted to `/usr/bin/printenv`, after Touch ID.
+6. `berth run --env` printed `****` in place of the value.
+7. A copied `berth` and `berthd` with a wrapper `berth-native` got "helper refused the ticket", and the wrapper's leak file stayed empty.
+8. `security add-trusted-cert` into the user trust domain asked for authorization, which was cancelled; this answers the E2b question on user trust settings (see [the E2b plan](e2b-header-proxy.md#e2b-exit-gate)).
+
+Found during the check: `berth secret grant` showed `team unsigned` for `/usr/bin/printenv`, an Apple platform binary that is signed but names no team.
+Grants now record the signature kind `berthd` verified (migration 0007), and the grant output, `berth secret ls` and the Touch ID prompt show `Apple (platform)`; only code with no valid signature reads `unsigned`, and ad hoc code reads `ad hoc`.
+
 ## Native helper protocol (items 2, 4 and 6 must match it exactly)
 
 `berth-native <command>` reads one JSON object on one line from stdin and writes one JSON object on one line to stdout, except `read`.
@@ -72,7 +90,7 @@ stderr carries short diagnostics and never a value.
 | Command | stdin | stdout |
 |---|---|---|
 | `store` | `{"name":"...","reason":"...","requester":{"pid":1,"executable":"/path","tree":[{"pid":1,"executable":"/path"}],"working_dir":"/path"}}` | `{"outcome":"stored"}`, `"denied"` or `"failed"`, with optional `"error":"<short text>"` |
-| `confirm` | `{"action":"grant","secret":"...","consumer":{"path":"/path","sha256":"<64 hex>","team_id":"","signing_id":""},"args_glob":"","requester":{...}}` | `{"outcome":"approved"}`, `"denied"` or `"failed"` |
+| `confirm` | `{"action":"grant","secret":"...","consumer":{"path":"/path","sha256":"<64 hex>","team_id":"","signing_id":"","signature":"unsigned"},"args_glob":"","requester":{...}}` | `{"outcome":"approved"}`, `"denied"` or `"failed"` |
 | `read` | the ticket as 64 lowercase hex characters and a newline | nothing on stdout; the raw value bytes go to fd 3 (a socketpair end from `berth run`, checked by the kernel to belong to the signed `berth` parent) on any failure nothing is written and exit 3 |
 
 - Keychain item: generic password, service `berth.<name>`, account `berth`, login keychain.

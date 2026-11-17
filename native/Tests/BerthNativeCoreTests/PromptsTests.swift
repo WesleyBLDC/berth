@@ -50,7 +50,8 @@ let requester = Requester(
     let request = ConfirmRequest(
         action: "grant", secret: "github-token",
         consumer: Consumer(
-            path: "/opt/homebrew/bin/gh", sha256: hash64, teamID: "ABCDE12345", signingID: "com.github.gh"),
+            path: "/opt/homebrew/bin/gh", sha256: hash64, teamID: "ABCDE12345", signingID: "com.github.gh",
+            signature: "team"),
         argsGlob: "pr *", requester: requester)
     #expect(
         confirmTouchIDReason(request)
@@ -69,6 +70,32 @@ let requester = Requester(
         reason
             == "let /usr/local/bin/tool (sha256 abababababab, any arguments) use secret k, requested by /opt/agents/claude"
     )
+}
+
+@Test func confirmReasonNamesAPlatformBinaryAsApple() {
+    let request = ConfirmRequest(
+        action: "grant", secret: "k",
+        consumer: Consumer(
+            path: "/usr/bin/printenv", sha256: hash64, teamID: "", signingID: "com.apple.printenv", signature: "apple"),
+        argsGlob: "", requester: requester)
+    #expect(
+        confirmTouchIDReason(request)
+            == "let /usr/bin/printenv (Apple (platform), sha256 abababababab, any arguments) use secret k, "
+            + "requested by /opt/agents/claude")
+}
+
+@Test func confirmReasonSaysUnsignedOrAdHocOnlyWhenBerthdDid() {
+    func reason(_ signature: String) -> String {
+        confirmTouchIDReason(
+            ConfirmRequest(
+                action: "grant", secret: "k",
+                consumer: Consumer(path: "/tmp/x", sha256: hash64, teamID: "", signingID: "", signature: signature),
+                argsGlob: "", requester: requester))
+    }
+    #expect(reason("unsigned").hasPrefix("let /tmp/x (unsigned, sha256"))
+    #expect(reason("adhoc").hasPrefix("let /tmp/x (ad hoc, sha256"))
+    #expect(reason("other").hasPrefix("let /tmp/x (no team, sha256"))
+    #expect(reason("").hasPrefix("let /tmp/x (sha256"))
 }
 
 @Test func confirmReasonWarnsAboutAnInterpreter() {

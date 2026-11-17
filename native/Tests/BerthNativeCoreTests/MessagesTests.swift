@@ -12,7 +12,7 @@ let storeLine = #"""
 
 let confirmLine = """
     {"action":"grant","secret":"github-token","consumer":{"path":"/opt/homebrew/bin/gh","sha256":"\(hash64)",\
-    "team_id":"ABCDE12345","signing_id":"com.github.gh"},"args_glob":"pr *","requester":{"pid":42,\
+    "team_id":"ABCDE12345","signing_id":"com.github.gh","signature":"team"},"args_glob":"pr *","requester":{"pid":42,\
     "executable":"/usr/local/bin/claude","tree":[],"working_dir":"/tmp"}}
     """
 
@@ -38,7 +38,7 @@ let confirmLine = """
         request.consumer
             == Consumer(
                 path: "/opt/homebrew/bin/gh", sha256: hash64, teamID: "ABCDE12345",
-                signingID: "com.github.gh"))
+                signingID: "com.github.gh", signature: "team"))
     #expect(request.argsGlob == "pr *")
     #expect(request.requester.executable == "/usr/local/bin/claude")
 }

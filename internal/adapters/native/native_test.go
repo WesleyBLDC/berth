@@ -118,7 +118,7 @@ func TestConfirmPowerSendsConsumerFacts(t *testing.T) {
 	p := ports.PowerPrompt{
 		Action:      ports.PowerGrant,
 		Secret:      "gh-token",
-		Consumer:    ports.Executable{Path: "/usr/local/bin/gh", SHA256: sum, TeamID: "TEAM123456", SigningID: "com.github.gh"},
+		Consumer:    ports.Executable{Path: "/usr/local/bin/gh", SHA256: sum, TeamID: "TEAM123456", SigningID: "com.github.gh", Signature: ports.SignatureTeam},
 		ArgsGlob:    "pr *",
 		Interpreter: true,
 		PassEnv:     []string{"GH_HOST"},
@@ -128,7 +128,7 @@ func TestConfirmPowerSendsConsumerFacts(t *testing.T) {
 	if err != nil || got != ports.PowerApproved {
 		t.Fatalf("got %q, %v; want approved", got, err)
 	}
-	want := `{"action":"grant","args_glob":"pr *","consumer":{"path":"/usr/local/bin/gh","sha256":"ab` + strings.Repeat("0", 60) + `01","signing_id":"com.github.gh","team_id":"TEAM123456"},"interpreter":true,"pass_env":["GH_HOST"],"requester":{"executable":"/x","pid":9,"tree":[],"working_dir":"/"},"secret":"gh-token"}`
+	want := `{"action":"grant","args_glob":"pr *","consumer":{"path":"/usr/local/bin/gh","sha256":"ab` + strings.Repeat("0", 60) + `01","signature":"team","signing_id":"com.github.gh","team_id":"TEAM123456"},"interpreter":true,"pass_env":["GH_HOST"],"requester":{"executable":"/x","pid":9,"tree":[],"working_dir":"/"},"secret":"gh-token"}`
 	if got := string(requests(t, home)[0].Request); got != want {
 		t.Fatalf("request\n got %s\nwant %s", got, want)
 	}

@@ -46,18 +46,31 @@ public struct Consumer: Codable, Equatable, Sendable {
     public var sha256: String
     public var teamID: String
     public var signingID: String
+    /// The signature kind berthd verified: "team", "apple" (a platform binary, which has no team),
+    /// "adhoc", "unsigned" or "other". Absent or empty means berthd did not record it.
+    public var signature: String
 
     enum CodingKeys: String, CodingKey {
-        case path, sha256
+        case path, sha256, signature
         case teamID = "team_id"
         case signingID = "signing_id"
     }
 
-    public init(path: String, sha256: String, teamID: String, signingID: String) {
+    public init(path: String, sha256: String, teamID: String, signingID: String, signature: String = "") {
         self.path = path
         self.sha256 = sha256
         self.teamID = teamID
         self.signingID = signingID
+        self.signature = signature
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        path = try c.decode(String.self, forKey: .path)
+        sha256 = try c.decode(String.self, forKey: .sha256)
+        teamID = try c.decode(String.self, forKey: .teamID)
+        signingID = try c.decode(String.self, forKey: .signingID)
+        signature = try c.decodeIfPresent(String.self, forKey: .signature) ?? ""
     }
 }
 

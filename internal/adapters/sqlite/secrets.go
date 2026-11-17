@@ -56,10 +56,10 @@ func (s *Store) AddGrant(ctx context.Context, g ports.GrantRecord) (int64, error
 	res, err := s.db.ExecContext(ctx,
 		`INSERT INTO grants (secret_name, kind, exe_path, sha256, team_id, signing_id, args_glob, pass_env,
 		 proxy_host, proxy_port, proxy_header, proxy_value_prefix, proxy_value_suffix, proxy_path_glob, proxy_methods,
-		 proxy_placeholder_env, created_at, cdhash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 proxy_placeholder_env, created_at, cdhash, signature) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		g.Secret, string(kind), g.Exe.Path, sum, g.Exe.TeamID, g.Exe.SigningID, g.ArgsGlob, strings.Join(g.PassEnv, ","),
 		p.Host, p.Port, p.HeaderName, p.ValuePrefix, p.ValueSuffix, p.PathGlob, strings.Join(p.Methods, ","),
-		p.PlaceholderEnv, g.CreatedAt.UnixMicro(), cdhash)
+		p.PlaceholderEnv, g.CreatedAt.UnixMicro(), cdhash, string(g.Exe.Signature))
 	if err != nil {
 		return 0, err
 	}
@@ -68,20 +68,21 @@ func (s *Store) AddGrant(ctx context.Context, g ports.GrantRecord) (int64, error
 
 const grantColumns = `id, secret_name, kind, exe_path, sha256, team_id, signing_id, args_glob, pass_env,
 	proxy_host, proxy_port, proxy_header, proxy_value_prefix, proxy_value_suffix, proxy_path_glob, proxy_methods,
-	proxy_placeholder_env, created_at, last_used_at, use_count, cdhash`
+	proxy_placeholder_env, created_at, last_used_at, use_count, cdhash, signature`
 
 func scanGrant(row interface{ Scan(...any) error }) (ports.GrantRecord, error) {
 	var g ports.GrantRecord
-	var kind, sum, passEnv, methods, cdhash string
+	var kind, sum, passEnv, methods, cdhash, signature string
 	var created int64
 	var lastUsed sql.NullInt64
 	p := &g.Proxy
 	if err := row.Scan(&g.ID, &g.Secret, &kind, &g.Exe.Path, &sum, &g.Exe.TeamID, &g.Exe.SigningID, &g.ArgsGlob, &passEnv,
 		&p.Host, &p.Port, &p.HeaderName, &p.ValuePrefix, &p.ValueSuffix, &p.PathGlob, &methods,
-		&p.PlaceholderEnv, &created, &lastUsed, &g.UseCount, &cdhash); err != nil {
+		&p.PlaceholderEnv, &created, &lastUsed, &g.UseCount, &cdhash, &signature); err != nil {
 		return g, err
 	}
 	g.Kind = ports.ConsumerKind(kind)
+	g.Exe.Signature = ports.Signature(signature)
 	if g.Kind == ports.ConsumerExe {
 		raw, err := hex.DecodeString(sum)
 		if err != nil || len(raw) != len(g.Exe.SHA256) {

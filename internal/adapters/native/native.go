@@ -71,6 +71,7 @@ type consumer struct {
 	SHA256    string `json:"sha256"`
 	TeamID    string `json:"team_id"`
 	SigningID string `json:"signing_id"`
+	Signature string `json:"signature"`
 }
 
 type confirmRequest struct {
@@ -154,6 +155,7 @@ func confirmLine(p ports.PowerPrompt) any {
 			SHA256:    hex.EncodeToString(p.Consumer.SHA256[:]),
 			TeamID:    p.Consumer.TeamID,
 			SigningID: p.Consumer.SigningID,
+			Signature: string(p.Consumer.Signature),
 		},
 		ArgsGlob:    p.ArgsGlob,
 		Interpreter: p.Interpreter,

@@ -27,7 +27,9 @@ func TestSecretAndGrantRecordsRoundTrip(t *testing.T) {
 	if err := s.AddSecret(ctx, "gh-token", first.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	exe := ports.Executable{Path: "/usr/bin/true", SHA256: [32]byte{0xab, 1}, TeamID: "T", SigningID: "S", CDHash: ports.CDHash{0xcd, 2}}
+	exe := ports.Executable{
+		Path: "/usr/bin/true", SHA256: [32]byte{0xab, 1}, TeamID: "T", SigningID: "S", Signature: ports.SignatureTeam, CDHash: ports.CDHash{0xcd, 2},
+	}
 	unpinned := exe
 	unpinned.CDHash = ports.CDHash{}
 	id1, err := s.AddGrant(ctx, ports.GrantRecord{Secret: "gh-token", Exe: exe, ArgsGlob: "-c *", PassEnv: []string{"GH_HOST", "AWS_REGION"}, CreatedAt: first})

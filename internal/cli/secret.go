@@ -327,11 +327,26 @@ func shortHash(h string) string {
 	return h
 }
 
+// teamOf names who signed an executable consumer. Apple's platform binaries carry no team but
+// are signed, so only code with no valid signature reads as unsigned.
 func teamOf(c *berthv1.Consumer) string {
-	if c.GetTeamId() == "" {
+	switch c.GetSignature() {
+	case berthv1.SignatureKind_SIGNATURE_KIND_TEAM:
+		return c.GetTeamId()
+	case berthv1.SignatureKind_SIGNATURE_KIND_APPLE_PLATFORM:
+		return "Apple (platform)"
+	case berthv1.SignatureKind_SIGNATURE_KIND_AD_HOC:
+		return "ad hoc"
+	case berthv1.SignatureKind_SIGNATURE_KIND_UNSIGNED:
 		return "unsigned"
+	case berthv1.SignatureKind_SIGNATURE_KIND_OTHER:
+		return "no team"
+	case berthv1.SignatureKind_SIGNATURE_KIND_UNSPECIFIED:
 	}
-	return c.GetTeamId()
+	if c.GetTeamId() != "" {
+		return c.GetTeamId()
+	}
+	return "unknown"
 }
 
 func argsOf(glob string) string {

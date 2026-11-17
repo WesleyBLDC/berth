@@ -45,6 +45,12 @@ type fakeSecrets struct {
 	remove    *berthv1.RemoveSecretResponse
 	rotate    berthv1.StoreOutcome
 	lifeErr   error
+	// grantSecret is what GrantSecret answers.
+	grantSecret *berthv1.GrantSecretResponse
+}
+
+func (f *fakeSecrets) GrantSecret(context.Context, *berthv1.GrantSecretRequest) (*berthv1.GrantSecretResponse, error) {
+	return f.grantSecret, nil
 }
 
 func (f *fakeSecrets) GrantProxy(_ context.Context, req *berthv1.GrantProxyRequest) (*berthv1.GrantProxyResponse, error) {
@@ -207,6 +213,38 @@ func TestRequestWithoutWhyIsUsage(t *testing.T) {
 	}
 }
 
+func TestTeamOfNamesTheSigner(t *testing.T) {
+	cases := []struct {
+		kind berthv1.SignatureKind
+		team string
+		want string
+	}{
+		{berthv1.SignatureKind_SIGNATURE_KIND_TEAM, "ABCDE12345", "ABCDE12345"},
+		{berthv1.SignatureKind_SIGNATURE_KIND_APPLE_PLATFORM, "", "Apple (platform)"},
+		{berthv1.SignatureKind_SIGNATURE_KIND_AD_HOC, "", "ad hoc"},
+		{berthv1.SignatureKind_SIGNATURE_KIND_UNSIGNED, "", "unsigned"},
+		{berthv1.SignatureKind_SIGNATURE_KIND_OTHER, "", "no team"},
+		{berthv1.SignatureKind_SIGNATURE_KIND_UNSPECIFIED, "ABCDE12345", "ABCDE12345"},
+		{berthv1.SignatureKind_SIGNATURE_KIND_UNSPECIFIED, "", "unknown"},
+	}
+	for _, c := range cases {
+		if got := teamOf(&berthv1.Consumer{Signature: c.kind, TeamId: c.team}); got != c.want {
+			t.Errorf("%v %q: got %q, want %q", c.kind, c.team, got, c.want)
+		}
+	}
+}
+
+func TestGrantNamesAPlatformBinaryAsApple(t *testing.T) {
+	fake := &fakeSecrets{grantSecret: &berthv1.GrantSecretResponse{Outcome: berthv1.GrantOutcome_GRANT_OUTCOME_GRANTED, Consumer: &berthv1.Consumer{
+		ExePath: "/usr/bin/printenv", Sha256: strings.Repeat("ab", 32), SigningId: "com.apple.printenv",
+		Signature: berthv1.SignatureKind_SIGNATURE_KIND_APPLE_PLATFORM,
+	}}}
+	r := invoke(t, fake, nil, "secret", "grant", "gh-token", "--exe", "/usr/bin/printenv")
+	if r.code != ExitOK || !strings.Contains(r.stdout, "  team    Apple (platform)\n") || strings.Contains(r.stdout, "unsigned") {
+		t.Fatalf("code %d, stderr %q, stdout:\n%s", r.code, r.stderr, r.stdout)
+	}
+}
+
 func TestSecretListGolden(t *testing.T) {
 	at := func(s string) *timestamppb.Timestamp {
 		ts, err := time.Parse(time.DateTime, s)
@@ -220,11 +258,13 @@ func TestSecretListGolden(t *testing.T) {
 			{
 				GrantId: 1, State: berthv1.GrantState_GRANT_STATE_ACTIVE, ExePath: "/opt/homebrew/bin/gh",
 				Sha256: strings.Repeat("ab", 32), TeamId: "XPJ7XA42J4", ArgsGlob: "pr *",
+				Signature:  berthv1.SignatureKind_SIGNATURE_KIND_TEAM,
 				LastUsedAt: at("2026-11-16 09:30:00"), UseCount: 3,
 			},
 			{
 				GrantId: 2, State: berthv1.GrantState_GRANT_STATE_STALE, ExePath: "/usr/local/bin/deploy",
 				Sha256: strings.Repeat("0f", 32), LastUsedAt: at("2026-11-16 10:45:00"), UseCount: 2,
+				Signature: berthv1.SignatureKind_SIGNATURE_KIND_UNSIGNED,
 			},
 		}},
 		{Name: "openai-key", State: berthv1.SecretState_SECRET_STATE_ROTATING, Consumers: []*berthv1.Consumer{

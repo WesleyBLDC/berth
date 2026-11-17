@@ -90,7 +90,7 @@ public func proxyTouchIDReason(_ request: ProxyConfirmRequest) -> String {
 public func confirmTouchIDReason(_ request: ConfirmRequest) -> String {
     let consumer = request.consumer
     var facts = ["sha256 \(consumer.sha256.prefix(12))"]
-    if !consumer.teamID.isEmpty { facts.insert("team \(oneLine(consumer.teamID))", at: 0) }
+    if let signer = signer(consumer) { facts.insert(signer, at: 0) }
     facts.append(request.argsGlob.isEmpty ? "any arguments" : "arguments \(quoted(request.argsGlob))")
     if !request.passEnv.isEmpty {
         facts.append("also environment \(request.passEnv.map { oneLine($0, limit: 64) }.joined(separator: " "))")
@@ -100,6 +100,19 @@ public func confirmTouchIDReason(_ request: ConfirmRequest) -> String {
         + "requested by \(oneLine(request.requester.executable))"
     guard request.interpreter else { return grant }
     return "\(oneLine(consumer.path)) is an interpreter and can print this secret. " + grant
+}
+
+/// Names who signed the consumer from berthd's verified signature kind. Apple's platform binaries
+/// have no team but are signed, so only code with no valid signature reads as unsigned.
+func signer(_ consumer: Consumer) -> String? {
+    switch consumer.signature {
+    case "team": "team \(oneLine(consumer.teamID))"
+    case "apple": "Apple (platform)"
+    case "adhoc": "ad hoc"
+    case "unsigned": "unsigned"
+    case "other": "no team"
+    default: consumer.teamID.isEmpty ? nil : "team \(oneLine(consumer.teamID))"
+    }
 }
 
 /// Agent controlled text is folded onto one line and capped, so it cannot fake extra lines

@@ -7,9 +7,10 @@ type Executable struct {
 	// Path is absolute with every symlink resolved.
 	Path   string
 	SHA256 [32]byte
-	// TeamID and SigningID are empty when the file is not validly signed.
+	// TeamID is set only for SignatureTeam; SigningID is empty when the file is not validly signed.
 	TeamID    string
 	SigningID string
+	Signature Signature
 	// Shebang is true when the file starts with #!, so it runs under an interpreter.
 	Shebang bool
 	// CDHash is what the kernel reports for a process started from the file: the file's own code
@@ -19,6 +20,21 @@ type Executable struct {
 
 // Signed reports whether the code signature named a team.
 func (e Executable) Signed() bool { return e.TeamID != "" }
+
+// Signature is what kind of code signature berthd verified on a file; the values are stored data
+// in grants.signature, where an empty value marks a grant made before the kind was read.
+type Signature string
+
+const (
+	SignatureUnsigned Signature = "unsigned"
+	SignatureAdHoc    Signature = "adhoc"
+	// SignatureApple is code Apple signed itself (the requirement "anchor apple"), as macOS
+	// platform binaries are; they carry no team.
+	SignatureApple Signature = "apple"
+	SignatureTeam  Signature = "team"
+	// SignatureOther is a valid signature from a certificate that is neither Apple's nor a team's.
+	SignatureOther Signature = "other"
+)
 
 // ExecIdentity identifies an executable by reading it, never by trusting a caller's claim.
 type ExecIdentity interface {

@@ -145,6 +145,13 @@ var (
 		ports.ConsumerExe:   berthv1.ConsumerKind_CONSUMER_KIND_EXECUTABLE,
 		ports.ConsumerProxy: berthv1.ConsumerKind_CONSUMER_KIND_PROXY,
 	}
+	signatureKinds = map[ports.Signature]berthv1.SignatureKind{
+		ports.SignatureUnsigned: berthv1.SignatureKind_SIGNATURE_KIND_UNSIGNED,
+		ports.SignatureAdHoc:    berthv1.SignatureKind_SIGNATURE_KIND_AD_HOC,
+		ports.SignatureApple:    berthv1.SignatureKind_SIGNATURE_KIND_APPLE_PLATFORM,
+		ports.SignatureTeam:     berthv1.SignatureKind_SIGNATURE_KIND_TEAM,
+		ports.SignatureOther:    berthv1.SignatureKind_SIGNATURE_KIND_OTHER,
+	}
 	ticketActions = map[ports.TicketAction]berthv1.TicketAction{
 		ports.TicketUse:    berthv1.TicketAction_TICKET_ACTION_USE,
 		ports.TicketRemove: berthv1.TicketAction_TICKET_ACTION_REMOVE,
@@ -756,6 +763,7 @@ func consumer(g ports.GrantRecord, st grant.State) *berthv1.Consumer {
 		c.Proxy = proxyTarget(g.Proxy)
 	} else {
 		c.Sha256 = hex.EncodeToString(g.Exe.SHA256[:])
+		c.Signature = signatureKinds[g.Exe.Signature]
 	}
 	if !g.LastUsedAt.IsZero() {
 		c.LastUsedAt = timestamppb.New(g.LastUsedAt)

@@ -299,6 +299,71 @@ func (ConsumerKind) EnumDescriptor() ([]byte, []int) {
 	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{4}
 }
 
+// SignatureKind is what berthd verified about an executable's code signature. UNSPECIFIED means
+// the grant predates the field and the kind was never read.
+type SignatureKind int32
+
+const (
+	SignatureKind_SIGNATURE_KIND_UNSPECIFIED SignatureKind = 0
+	// No valid signature.
+	SignatureKind_SIGNATURE_KIND_UNSIGNED SignatureKind = 1
+	// A valid ad hoc signature, which names no signer.
+	SignatureKind_SIGNATURE_KIND_AD_HOC SignatureKind = 2
+	// Signed by Apple itself (the requirement "anchor apple"), as macOS platform binaries are.
+	SignatureKind_SIGNATURE_KIND_APPLE_PLATFORM SignatureKind = 3
+	// Signed by a certificate that names a team; team_id holds it.
+	SignatureKind_SIGNATURE_KIND_TEAM SignatureKind = 4
+	// A valid signature from a certificate that is neither Apple's nor a team's, such as self signed.
+	SignatureKind_SIGNATURE_KIND_OTHER SignatureKind = 5
+)
+
+// Enum value maps for SignatureKind.
+var (
+	SignatureKind_name = map[int32]string{
+		0: "SIGNATURE_KIND_UNSPECIFIED",
+		1: "SIGNATURE_KIND_UNSIGNED",
+		2: "SIGNATURE_KIND_AD_HOC",
+		3: "SIGNATURE_KIND_APPLE_PLATFORM",
+		4: "SIGNATURE_KIND_TEAM",
+		5: "SIGNATURE_KIND_OTHER",
+	}
+	SignatureKind_value = map[string]int32{
+		"SIGNATURE_KIND_UNSPECIFIED":    0,
+		"SIGNATURE_KIND_UNSIGNED":       1,
+		"SIGNATURE_KIND_AD_HOC":         2,
+		"SIGNATURE_KIND_APPLE_PLATFORM": 3,
+		"SIGNATURE_KIND_TEAM":           4,
+		"SIGNATURE_KIND_OTHER":          5,
+	}
+)
+
+func (x SignatureKind) Enum() *SignatureKind {
+	p := new(SignatureKind)
+	*p = x
+	return p
+}
+
+func (x SignatureKind) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SignatureKind) Descriptor() protoreflect.EnumDescriptor {
+	return file_berth_v1_secrets_proto_enumTypes[5].Descriptor()
+}
+
+func (SignatureKind) Type() protoreflect.EnumType {
+	return &file_berth_v1_secrets_proto_enumTypes[5]
+}
+
+func (x SignatureKind) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SignatureKind.Descriptor instead.
+func (SignatureKind) EnumDescriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{5}
+}
+
 // RemoveOutcome is all a caller learns about a remove.
 type RemoveOutcome int32
 
@@ -336,11 +401,11 @@ func (x RemoveOutcome) String() string {
 }
 
 func (RemoveOutcome) Descriptor() protoreflect.EnumDescriptor {
-	return file_berth_v1_secrets_proto_enumTypes[5].Descriptor()
+	return file_berth_v1_secrets_proto_enumTypes[6].Descriptor()
 }
 
 func (RemoveOutcome) Type() protoreflect.EnumType {
-	return &file_berth_v1_secrets_proto_enumTypes[5]
+	return &file_berth_v1_secrets_proto_enumTypes[6]
 }
 
 func (x RemoveOutcome) Number() protoreflect.EnumNumber {
@@ -349,7 +414,7 @@ func (x RemoveOutcome) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use RemoveOutcome.Descriptor instead.
 func (RemoveOutcome) EnumDescriptor() ([]byte, []int) {
-	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{5}
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{6}
 }
 
 // TicketAction says what berth-native may do with a redeemed ticket.
@@ -390,11 +455,11 @@ func (x TicketAction) String() string {
 }
 
 func (TicketAction) Descriptor() protoreflect.EnumDescriptor {
-	return file_berth_v1_secrets_proto_enumTypes[6].Descriptor()
+	return file_berth_v1_secrets_proto_enumTypes[7].Descriptor()
 }
 
 func (TicketAction) Type() protoreflect.EnumType {
-	return &file_berth_v1_secrets_proto_enumTypes[6]
+	return &file_berth_v1_secrets_proto_enumTypes[7]
 }
 
 func (x TicketAction) Number() protoreflect.EnumNumber {
@@ -403,7 +468,7 @@ func (x TicketAction) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use TicketAction.Descriptor instead.
 func (TicketAction) EnumDescriptor() ([]byte, []int) {
-	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{6}
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{7}
 }
 
 // ProxyStopReason tells berth-proxy why berthd ended its session.
@@ -443,11 +508,11 @@ func (x ProxyStopReason) String() string {
 }
 
 func (ProxyStopReason) Descriptor() protoreflect.EnumDescriptor {
-	return file_berth_v1_secrets_proto_enumTypes[7].Descriptor()
+	return file_berth_v1_secrets_proto_enumTypes[8].Descriptor()
 }
 
 func (ProxyStopReason) Type() protoreflect.EnumType {
-	return &file_berth_v1_secrets_proto_enumTypes[7]
+	return &file_berth_v1_secrets_proto_enumTypes[8]
 }
 
 func (x ProxyStopReason) Number() protoreflect.EnumNumber {
@@ -456,7 +521,7 @@ func (x ProxyStopReason) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ProxyStopReason.Descriptor instead.
 func (ProxyStopReason) EnumDescriptor() ([]byte, []int) {
-	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{7}
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{8}
 }
 
 type ProxySessionEventKind int32
@@ -494,11 +559,11 @@ func (x ProxySessionEventKind) String() string {
 }
 
 func (ProxySessionEventKind) Descriptor() protoreflect.EnumDescriptor {
-	return file_berth_v1_secrets_proto_enumTypes[8].Descriptor()
+	return file_berth_v1_secrets_proto_enumTypes[9].Descriptor()
 }
 
 func (ProxySessionEventKind) Type() protoreflect.EnumType {
-	return &file_berth_v1_secrets_proto_enumTypes[8]
+	return &file_berth_v1_secrets_proto_enumTypes[9]
 }
 
 func (x ProxySessionEventKind) Number() protoreflect.EnumNumber {
@@ -507,7 +572,7 @@ func (x ProxySessionEventKind) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use ProxySessionEventKind.Descriptor instead.
 func (ProxySessionEventKind) EnumDescriptor() ([]byte, []int) {
-	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{8}
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{9}
 }
 
 // GrantState mirrors the grant machine's states.
@@ -553,11 +618,11 @@ func (x GrantState) String() string {
 }
 
 func (GrantState) Descriptor() protoreflect.EnumDescriptor {
-	return file_berth_v1_secrets_proto_enumTypes[9].Descriptor()
+	return file_berth_v1_secrets_proto_enumTypes[10].Descriptor()
 }
 
 func (GrantState) Type() protoreflect.EnumType {
-	return &file_berth_v1_secrets_proto_enumTypes[9]
+	return &file_berth_v1_secrets_proto_enumTypes[10]
 }
 
 func (x GrantState) Number() protoreflect.EnumNumber {
@@ -566,7 +631,7 @@ func (x GrantState) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use GrantState.Descriptor instead.
 func (GrantState) EnumDescriptor() ([]byte, []int) {
-	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{9}
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{10}
 }
 
 type RequestSecretRequest struct {
@@ -839,7 +904,8 @@ type Consumer struct {
 	ExePath string                 `protobuf:"bytes,3,opt,name=exe_path,json=exePath,proto3" json:"exe_path,omitempty"`
 	// sha256 is the executable's hash as 64 lowercase hex characters.
 	Sha256 string `protobuf:"bytes,4,opt,name=sha256,proto3" json:"sha256,omitempty"`
-	// team_id and signing_id are empty when the executable is not signed.
+	// team_id is set only for a TEAM signature; signing_id is empty when the executable is not
+	// validly signed.
 	TeamId    string `protobuf:"bytes,5,opt,name=team_id,json=teamId,proto3" json:"team_id,omitempty"`
 	SigningId string `protobuf:"bytes,6,opt,name=signing_id,json=signingId,proto3" json:"signing_id,omitempty"`
 	// args_glob is empty when the grant allows any arguments.
@@ -852,8 +918,10 @@ type Consumer struct {
 	// passes from its own environment to this consumer.
 	PassEnv []string `protobuf:"bytes,11,rep,name=pass_env,json=passEnv,proto3" json:"pass_env,omitempty"`
 	// kind is EXECUTABLE for the exe fields above and PROXY for proxy, never both.
-	Kind          ConsumerKind `protobuf:"varint,12,opt,name=kind,proto3,enum=berth.v1.ConsumerKind" json:"kind,omitempty"`
-	Proxy         *ProxyTarget `protobuf:"bytes,13,opt,name=proxy,proto3" json:"proxy,omitempty"`
+	Kind  ConsumerKind `protobuf:"varint,12,opt,name=kind,proto3,enum=berth.v1.ConsumerKind" json:"kind,omitempty"`
+	Proxy *ProxyTarget `protobuf:"bytes,13,opt,name=proxy,proto3" json:"proxy,omitempty"`
+	// signature is set for EXECUTABLE consumers.
+	Signature     SignatureKind `protobuf:"varint,14,opt,name=signature,proto3,enum=berth.v1.SignatureKind" json:"signature,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -977,6 +1045,13 @@ func (x *Consumer) GetProxy() *ProxyTarget {
 		return x.Proxy
 	}
 	return nil
+}
+
+func (x *Consumer) GetSignature() SignatureKind {
+	if x != nil {
+		return x.Signature
+	}
+	return SignatureKind_SIGNATURE_KIND_UNSPECIFIED
 }
 
 // ProxyTarget is where berth-proxy may write a secret: one header on requests to one HTTPS host
@@ -2367,7 +2442,7 @@ const file_berth_v1_secrets_proto_rawDesc = "" +
 	"\x05state\x18\x02 \x01(\x0e2\x15.berth.v1.SecretStateR\x05state\x129\n" +
 	"\n" +
 	"created_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x120\n" +
-	"\tconsumers\x18\x04 \x03(\v2\x12.berth.v1.ConsumerR\tconsumers\"\xe3\x03\n" +
+	"\tconsumers\x18\x04 \x03(\v2\x12.berth.v1.ConsumerR\tconsumers\"\x9a\x04\n" +
 	"\bConsumer\x12\x19\n" +
 	"\bgrant_id\x18\x01 \x01(\x03R\agrantId\x12*\n" +
 	"\x05state\x18\x02 \x01(\x0e2\x14.berth.v1.GrantStateR\x05state\x12\x19\n" +
@@ -2385,7 +2460,8 @@ const file_berth_v1_secrets_proto_rawDesc = "" +
 	" \x01(\x03R\buseCount\x12\x19\n" +
 	"\bpass_env\x18\v \x03(\tR\apassEnv\x12*\n" +
 	"\x04kind\x18\f \x01(\x0e2\x16.berth.v1.ConsumerKindR\x04kind\x12+\n" +
-	"\x05proxy\x18\r \x01(\v2\x15.berth.v1.ProxyTargetR\x05proxy\"\x97\x06\n" +
+	"\x05proxy\x18\r \x01(\v2\x15.berth.v1.ProxyTargetR\x05proxy\x125\n" +
+	"\tsignature\x18\x0e \x01(\x0e2\x17.berth.v1.SignatureKindR\tsignature\"\x97\x06\n" +
 	"\vProxyTarget\x12j\n" +
 	"\x04host\x18\x01 \x01(\tBV\xbaHSrQ\x18\xfd\x012L^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?[.])*[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$R\x04host\x12\x1d\n" +
 	"\x04port\x18\x02 \x01(\rB\t\xbaH\x06*\x04\x18\xff\xff\x03R\x04port\x12\xc6\x02\n" +
@@ -2526,7 +2602,14 @@ const file_berth_v1_secrets_proto_rawDesc = "" +
 	"\fConsumerKind\x12\x1d\n" +
 	"\x19CONSUMER_KIND_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18CONSUMER_KIND_EXECUTABLE\x10\x01\x12\x17\n" +
-	"\x13CONSUMER_KIND_PROXY\x10\x02*\x81\x01\n" +
+	"\x13CONSUMER_KIND_PROXY\x10\x02*\xbd\x01\n" +
+	"\rSignatureKind\x12\x1e\n" +
+	"\x1aSIGNATURE_KIND_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17SIGNATURE_KIND_UNSIGNED\x10\x01\x12\x19\n" +
+	"\x15SIGNATURE_KIND_AD_HOC\x10\x02\x12!\n" +
+	"\x1dSIGNATURE_KIND_APPLE_PLATFORM\x10\x03\x12\x17\n" +
+	"\x13SIGNATURE_KIND_TEAM\x10\x04\x12\x18\n" +
+	"\x14SIGNATURE_KIND_OTHER\x10\x05*\x81\x01\n" +
 	"\rRemoveOutcome\x12\x1e\n" +
 	"\x1aREMOVE_OUTCOME_UNSPECIFIED\x10\x00\x12\x1a\n" +
 	"\x16REMOVE_OUTCOME_REMOVED\x10\x01\x12\x19\n" +
@@ -2582,7 +2665,7 @@ func file_berth_v1_secrets_proto_rawDescGZIP() []byte {
 	return file_berth_v1_secrets_proto_rawDescData
 }
 
-var file_berth_v1_secrets_proto_enumTypes = make([]protoimpl.EnumInfo, 10)
+var file_berth_v1_secrets_proto_enumTypes = make([]protoimpl.EnumInfo, 11)
 var file_berth_v1_secrets_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
 var file_berth_v1_secrets_proto_goTypes = []any{
 	(StoreOutcome)(0),                 // 0: berth.v1.StoreOutcome
@@ -2590,101 +2673,103 @@ var file_berth_v1_secrets_proto_goTypes = []any{
 	(UseOutcome)(0),                   // 2: berth.v1.UseOutcome
 	(SecretState)(0),                  // 3: berth.v1.SecretState
 	(ConsumerKind)(0),                 // 4: berth.v1.ConsumerKind
-	(RemoveOutcome)(0),                // 5: berth.v1.RemoveOutcome
-	(TicketAction)(0),                 // 6: berth.v1.TicketAction
-	(ProxyStopReason)(0),              // 7: berth.v1.ProxyStopReason
-	(ProxySessionEventKind)(0),        // 8: berth.v1.ProxySessionEventKind
-	(GrantState)(0),                   // 9: berth.v1.GrantState
-	(*RequestSecretRequest)(nil),      // 10: berth.v1.RequestSecretRequest
-	(*RequestSecretResponse)(nil),     // 11: berth.v1.RequestSecretResponse
-	(*ListSecretsRequest)(nil),        // 12: berth.v1.ListSecretsRequest
-	(*ListSecretsResponse)(nil),       // 13: berth.v1.ListSecretsResponse
-	(*SecretSummary)(nil),             // 14: berth.v1.SecretSummary
-	(*Consumer)(nil),                  // 15: berth.v1.Consumer
-	(*ProxyTarget)(nil),               // 16: berth.v1.ProxyTarget
-	(*GrantSecretRequest)(nil),        // 17: berth.v1.GrantSecretRequest
-	(*GrantSecretResponse)(nil),       // 18: berth.v1.GrantSecretResponse
-	(*AuthorizeUseRequest)(nil),       // 19: berth.v1.AuthorizeUseRequest
-	(*AuthorizeUseResponse)(nil),      // 20: berth.v1.AuthorizeUseResponse
-	(*RedeemUseTicketRequest)(nil),    // 21: berth.v1.RedeemUseTicketRequest
-	(*RedeemUseTicketResponse)(nil),   // 22: berth.v1.RedeemUseTicketResponse
-	(*GrantProxyRequest)(nil),         // 23: berth.v1.GrantProxyRequest
-	(*GrantProxyResponse)(nil),        // 24: berth.v1.GrantProxyResponse
-	(*RevokeGrantRequest)(nil),        // 25: berth.v1.RevokeGrantRequest
-	(*RevokeGrantResponse)(nil),       // 26: berth.v1.RevokeGrantResponse
-	(*RemoveSecretRequest)(nil),       // 27: berth.v1.RemoveSecretRequest
-	(*RemoveSecretResponse)(nil),      // 28: berth.v1.RemoveSecretResponse
-	(*RotateSecretRequest)(nil),       // 29: berth.v1.RotateSecretRequest
-	(*RotateSecretResponse)(nil),      // 30: berth.v1.RotateSecretResponse
-	(*AuthorizeProxyRequest)(nil),     // 31: berth.v1.AuthorizeProxyRequest
-	(*AuthorizeProxyResponse)(nil),    // 32: berth.v1.AuthorizeProxyResponse
-	(*ProxyTicket)(nil),               // 33: berth.v1.ProxyTicket
-	(*WatchProxySessionRequest)(nil),  // 34: berth.v1.WatchProxySessionRequest
-	(*WatchProxySessionResponse)(nil), // 35: berth.v1.WatchProxySessionResponse
-	(*ProxySessionEvent)(nil),         // 36: berth.v1.ProxySessionEvent
-	(*EndProxySessionRequest)(nil),    // 37: berth.v1.EndProxySessionRequest
-	(*EndProxySessionResponse)(nil),   // 38: berth.v1.EndProxySessionResponse
-	(*timestamppb.Timestamp)(nil),     // 39: google.protobuf.Timestamp
+	(SignatureKind)(0),                // 5: berth.v1.SignatureKind
+	(RemoveOutcome)(0),                // 6: berth.v1.RemoveOutcome
+	(TicketAction)(0),                 // 7: berth.v1.TicketAction
+	(ProxyStopReason)(0),              // 8: berth.v1.ProxyStopReason
+	(ProxySessionEventKind)(0),        // 9: berth.v1.ProxySessionEventKind
+	(GrantState)(0),                   // 10: berth.v1.GrantState
+	(*RequestSecretRequest)(nil),      // 11: berth.v1.RequestSecretRequest
+	(*RequestSecretResponse)(nil),     // 12: berth.v1.RequestSecretResponse
+	(*ListSecretsRequest)(nil),        // 13: berth.v1.ListSecretsRequest
+	(*ListSecretsResponse)(nil),       // 14: berth.v1.ListSecretsResponse
+	(*SecretSummary)(nil),             // 15: berth.v1.SecretSummary
+	(*Consumer)(nil),                  // 16: berth.v1.Consumer
+	(*ProxyTarget)(nil),               // 17: berth.v1.ProxyTarget
+	(*GrantSecretRequest)(nil),        // 18: berth.v1.GrantSecretRequest
+	(*GrantSecretResponse)(nil),       // 19: berth.v1.GrantSecretResponse
+	(*AuthorizeUseRequest)(nil),       // 20: berth.v1.AuthorizeUseRequest
+	(*AuthorizeUseResponse)(nil),      // 21: berth.v1.AuthorizeUseResponse
+	(*RedeemUseTicketRequest)(nil),    // 22: berth.v1.RedeemUseTicketRequest
+	(*RedeemUseTicketResponse)(nil),   // 23: berth.v1.RedeemUseTicketResponse
+	(*GrantProxyRequest)(nil),         // 24: berth.v1.GrantProxyRequest
+	(*GrantProxyResponse)(nil),        // 25: berth.v1.GrantProxyResponse
+	(*RevokeGrantRequest)(nil),        // 26: berth.v1.RevokeGrantRequest
+	(*RevokeGrantResponse)(nil),       // 27: berth.v1.RevokeGrantResponse
+	(*RemoveSecretRequest)(nil),       // 28: berth.v1.RemoveSecretRequest
+	(*RemoveSecretResponse)(nil),      // 29: berth.v1.RemoveSecretResponse
+	(*RotateSecretRequest)(nil),       // 30: berth.v1.RotateSecretRequest
+	(*RotateSecretResponse)(nil),      // 31: berth.v1.RotateSecretResponse
+	(*AuthorizeProxyRequest)(nil),     // 32: berth.v1.AuthorizeProxyRequest
+	(*AuthorizeProxyResponse)(nil),    // 33: berth.v1.AuthorizeProxyResponse
+	(*ProxyTicket)(nil),               // 34: berth.v1.ProxyTicket
+	(*WatchProxySessionRequest)(nil),  // 35: berth.v1.WatchProxySessionRequest
+	(*WatchProxySessionResponse)(nil), // 36: berth.v1.WatchProxySessionResponse
+	(*ProxySessionEvent)(nil),         // 37: berth.v1.ProxySessionEvent
+	(*EndProxySessionRequest)(nil),    // 38: berth.v1.EndProxySessionRequest
+	(*EndProxySessionResponse)(nil),   // 39: berth.v1.EndProxySessionResponse
+	(*timestamppb.Timestamp)(nil),     // 40: google.protobuf.Timestamp
 }
 var file_berth_v1_secrets_proto_depIdxs = []int32{
 	0,  // 0: berth.v1.RequestSecretResponse.outcome:type_name -> berth.v1.StoreOutcome
-	14, // 1: berth.v1.ListSecretsResponse.secrets:type_name -> berth.v1.SecretSummary
+	15, // 1: berth.v1.ListSecretsResponse.secrets:type_name -> berth.v1.SecretSummary
 	3,  // 2: berth.v1.SecretSummary.state:type_name -> berth.v1.SecretState
-	39, // 3: berth.v1.SecretSummary.created_at:type_name -> google.protobuf.Timestamp
-	15, // 4: berth.v1.SecretSummary.consumers:type_name -> berth.v1.Consumer
-	9,  // 5: berth.v1.Consumer.state:type_name -> berth.v1.GrantState
-	39, // 6: berth.v1.Consumer.created_at:type_name -> google.protobuf.Timestamp
-	39, // 7: berth.v1.Consumer.last_used_at:type_name -> google.protobuf.Timestamp
+	40, // 3: berth.v1.SecretSummary.created_at:type_name -> google.protobuf.Timestamp
+	16, // 4: berth.v1.SecretSummary.consumers:type_name -> berth.v1.Consumer
+	10, // 5: berth.v1.Consumer.state:type_name -> berth.v1.GrantState
+	40, // 6: berth.v1.Consumer.created_at:type_name -> google.protobuf.Timestamp
+	40, // 7: berth.v1.Consumer.last_used_at:type_name -> google.protobuf.Timestamp
 	4,  // 8: berth.v1.Consumer.kind:type_name -> berth.v1.ConsumerKind
-	16, // 9: berth.v1.Consumer.proxy:type_name -> berth.v1.ProxyTarget
-	1,  // 10: berth.v1.GrantSecretResponse.outcome:type_name -> berth.v1.GrantOutcome
-	15, // 11: berth.v1.GrantSecretResponse.consumer:type_name -> berth.v1.Consumer
-	2,  // 12: berth.v1.AuthorizeUseResponse.outcome:type_name -> berth.v1.UseOutcome
-	39, // 13: berth.v1.AuthorizeUseResponse.expires_at:type_name -> google.protobuf.Timestamp
-	4,  // 14: berth.v1.RedeemUseTicketResponse.consumer_kind:type_name -> berth.v1.ConsumerKind
-	6,  // 15: berth.v1.RedeemUseTicketResponse.action:type_name -> berth.v1.TicketAction
-	16, // 16: berth.v1.GrantProxyRequest.target:type_name -> berth.v1.ProxyTarget
-	1,  // 17: berth.v1.GrantProxyResponse.outcome:type_name -> berth.v1.GrantOutcome
-	15, // 18: berth.v1.GrantProxyResponse.consumer:type_name -> berth.v1.Consumer
-	9,  // 19: berth.v1.RevokeGrantResponse.state:type_name -> berth.v1.GrantState
-	5,  // 20: berth.v1.RemoveSecretResponse.outcome:type_name -> berth.v1.RemoveOutcome
-	0,  // 21: berth.v1.RotateSecretResponse.outcome:type_name -> berth.v1.StoreOutcome
-	2,  // 22: berth.v1.AuthorizeProxyResponse.outcome:type_name -> berth.v1.UseOutcome
-	33, // 23: berth.v1.AuthorizeProxyResponse.tickets:type_name -> berth.v1.ProxyTicket
-	39, // 24: berth.v1.AuthorizeProxyResponse.expires_at:type_name -> google.protobuf.Timestamp
-	16, // 25: berth.v1.ProxyTicket.target:type_name -> berth.v1.ProxyTarget
-	36, // 26: berth.v1.WatchProxySessionResponse.event:type_name -> berth.v1.ProxySessionEvent
-	8,  // 27: berth.v1.ProxySessionEvent.kind:type_name -> berth.v1.ProxySessionEventKind
-	7,  // 28: berth.v1.ProxySessionEvent.stop_reason:type_name -> berth.v1.ProxyStopReason
-	10, // 29: berth.v1.SecretsService.RequestSecret:input_type -> berth.v1.RequestSecretRequest
-	12, // 30: berth.v1.SecretsService.ListSecrets:input_type -> berth.v1.ListSecretsRequest
-	17, // 31: berth.v1.SecretsService.GrantSecret:input_type -> berth.v1.GrantSecretRequest
-	19, // 32: berth.v1.SecretsService.AuthorizeUse:input_type -> berth.v1.AuthorizeUseRequest
-	21, // 33: berth.v1.SecretsService.RedeemUseTicket:input_type -> berth.v1.RedeemUseTicketRequest
-	23, // 34: berth.v1.SecretsService.GrantProxy:input_type -> berth.v1.GrantProxyRequest
-	25, // 35: berth.v1.SecretsService.RevokeGrant:input_type -> berth.v1.RevokeGrantRequest
-	27, // 36: berth.v1.SecretsService.RemoveSecret:input_type -> berth.v1.RemoveSecretRequest
-	29, // 37: berth.v1.SecretsService.RotateSecret:input_type -> berth.v1.RotateSecretRequest
-	31, // 38: berth.v1.SecretsService.AuthorizeProxy:input_type -> berth.v1.AuthorizeProxyRequest
-	34, // 39: berth.v1.SecretsService.WatchProxySession:input_type -> berth.v1.WatchProxySessionRequest
-	37, // 40: berth.v1.SecretsService.EndProxySession:input_type -> berth.v1.EndProxySessionRequest
-	11, // 41: berth.v1.SecretsService.RequestSecret:output_type -> berth.v1.RequestSecretResponse
-	13, // 42: berth.v1.SecretsService.ListSecrets:output_type -> berth.v1.ListSecretsResponse
-	18, // 43: berth.v1.SecretsService.GrantSecret:output_type -> berth.v1.GrantSecretResponse
-	20, // 44: berth.v1.SecretsService.AuthorizeUse:output_type -> berth.v1.AuthorizeUseResponse
-	22, // 45: berth.v1.SecretsService.RedeemUseTicket:output_type -> berth.v1.RedeemUseTicketResponse
-	24, // 46: berth.v1.SecretsService.GrantProxy:output_type -> berth.v1.GrantProxyResponse
-	26, // 47: berth.v1.SecretsService.RevokeGrant:output_type -> berth.v1.RevokeGrantResponse
-	28, // 48: berth.v1.SecretsService.RemoveSecret:output_type -> berth.v1.RemoveSecretResponse
-	30, // 49: berth.v1.SecretsService.RotateSecret:output_type -> berth.v1.RotateSecretResponse
-	32, // 50: berth.v1.SecretsService.AuthorizeProxy:output_type -> berth.v1.AuthorizeProxyResponse
-	35, // 51: berth.v1.SecretsService.WatchProxySession:output_type -> berth.v1.WatchProxySessionResponse
-	38, // 52: berth.v1.SecretsService.EndProxySession:output_type -> berth.v1.EndProxySessionResponse
-	41, // [41:53] is the sub-list for method output_type
-	29, // [29:41] is the sub-list for method input_type
-	29, // [29:29] is the sub-list for extension type_name
-	29, // [29:29] is the sub-list for extension extendee
-	0,  // [0:29] is the sub-list for field type_name
+	17, // 9: berth.v1.Consumer.proxy:type_name -> berth.v1.ProxyTarget
+	5,  // 10: berth.v1.Consumer.signature:type_name -> berth.v1.SignatureKind
+	1,  // 11: berth.v1.GrantSecretResponse.outcome:type_name -> berth.v1.GrantOutcome
+	16, // 12: berth.v1.GrantSecretResponse.consumer:type_name -> berth.v1.Consumer
+	2,  // 13: berth.v1.AuthorizeUseResponse.outcome:type_name -> berth.v1.UseOutcome
+	40, // 14: berth.v1.AuthorizeUseResponse.expires_at:type_name -> google.protobuf.Timestamp
+	4,  // 15: berth.v1.RedeemUseTicketResponse.consumer_kind:type_name -> berth.v1.ConsumerKind
+	7,  // 16: berth.v1.RedeemUseTicketResponse.action:type_name -> berth.v1.TicketAction
+	17, // 17: berth.v1.GrantProxyRequest.target:type_name -> berth.v1.ProxyTarget
+	1,  // 18: berth.v1.GrantProxyResponse.outcome:type_name -> berth.v1.GrantOutcome
+	16, // 19: berth.v1.GrantProxyResponse.consumer:type_name -> berth.v1.Consumer
+	10, // 20: berth.v1.RevokeGrantResponse.state:type_name -> berth.v1.GrantState
+	6,  // 21: berth.v1.RemoveSecretResponse.outcome:type_name -> berth.v1.RemoveOutcome
+	0,  // 22: berth.v1.RotateSecretResponse.outcome:type_name -> berth.v1.StoreOutcome
+	2,  // 23: berth.v1.AuthorizeProxyResponse.outcome:type_name -> berth.v1.UseOutcome
+	34, // 24: berth.v1.AuthorizeProxyResponse.tickets:type_name -> berth.v1.ProxyTicket
+	40, // 25: berth.v1.AuthorizeProxyResponse.expires_at:type_name -> google.protobuf.Timestamp
+	17, // 26: berth.v1.ProxyTicket.target:type_name -> berth.v1.ProxyTarget
+	37, // 27: berth.v1.WatchProxySessionResponse.event:type_name -> berth.v1.ProxySessionEvent
+	9,  // 28: berth.v1.ProxySessionEvent.kind:type_name -> berth.v1.ProxySessionEventKind
+	8,  // 29: berth.v1.ProxySessionEvent.stop_reason:type_name -> berth.v1.ProxyStopReason
+	11, // 30: berth.v1.SecretsService.RequestSecret:input_type -> berth.v1.RequestSecretRequest
+	13, // 31: berth.v1.SecretsService.ListSecrets:input_type -> berth.v1.ListSecretsRequest
+	18, // 32: berth.v1.SecretsService.GrantSecret:input_type -> berth.v1.GrantSecretRequest
+	20, // 33: berth.v1.SecretsService.AuthorizeUse:input_type -> berth.v1.AuthorizeUseRequest
+	22, // 34: berth.v1.SecretsService.RedeemUseTicket:input_type -> berth.v1.RedeemUseTicketRequest
+	24, // 35: berth.v1.SecretsService.GrantProxy:input_type -> berth.v1.GrantProxyRequest
+	26, // 36: berth.v1.SecretsService.RevokeGrant:input_type -> berth.v1.RevokeGrantRequest
+	28, // 37: berth.v1.SecretsService.RemoveSecret:input_type -> berth.v1.RemoveSecretRequest
+	30, // 38: berth.v1.SecretsService.RotateSecret:input_type -> berth.v1.RotateSecretRequest
+	32, // 39: berth.v1.SecretsService.AuthorizeProxy:input_type -> berth.v1.AuthorizeProxyRequest
+	35, // 40: berth.v1.SecretsService.WatchProxySession:input_type -> berth.v1.WatchProxySessionRequest
+	38, // 41: berth.v1.SecretsService.EndProxySession:input_type -> berth.v1.EndProxySessionRequest
+	12, // 42: berth.v1.SecretsService.RequestSecret:output_type -> berth.v1.RequestSecretResponse
+	14, // 43: berth.v1.SecretsService.ListSecrets:output_type -> berth.v1.ListSecretsResponse
+	19, // 44: berth.v1.SecretsService.GrantSecret:output_type -> berth.v1.GrantSecretResponse
+	21, // 45: berth.v1.SecretsService.AuthorizeUse:output_type -> berth.v1.AuthorizeUseResponse
+	23, // 46: berth.v1.SecretsService.RedeemUseTicket:output_type -> berth.v1.RedeemUseTicketResponse
+	25, // 47: berth.v1.SecretsService.GrantProxy:output_type -> berth.v1.GrantProxyResponse
+	27, // 48: berth.v1.SecretsService.RevokeGrant:output_type -> berth.v1.RevokeGrantResponse
+	29, // 49: berth.v1.SecretsService.RemoveSecret:output_type -> berth.v1.RemoveSecretResponse
+	31, // 50: berth.v1.SecretsService.RotateSecret:output_type -> berth.v1.RotateSecretResponse
+	33, // 51: berth.v1.SecretsService.AuthorizeProxy:output_type -> berth.v1.AuthorizeProxyResponse
+	36, // 52: berth.v1.SecretsService.WatchProxySession:output_type -> berth.v1.WatchProxySessionResponse
+	39, // 53: berth.v1.SecretsService.EndProxySession:output_type -> berth.v1.EndProxySessionResponse
+	42, // [42:54] is the sub-list for method output_type
+	30, // [30:42] is the sub-list for method input_type
+	30, // [30:30] is the sub-list for extension type_name
+	30, // [30:30] is the sub-list for extension extendee
+	0,  // [0:30] is the sub-list for field type_name
 }
 
 func init() { file_berth_v1_secrets_proto_init() }
@@ -2698,7 +2783,7 @@ func file_berth_v1_secrets_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_berth_v1_secrets_proto_rawDesc), len(file_berth_v1_secrets_proto_rawDesc)),
-			NumEnums:      10,
+			NumEnums:      11,
 			NumMessages:   29,
 			NumExtensions: 0,
 			NumServices:   1,

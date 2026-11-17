@@ -11,7 +11,8 @@ Berth is a local app for macOS that lists every browser your agents, tests and s
 
 Status: pre release, in active development, with no releases yet.
 M0 (spike) and M1 (skeleton) are done.
-E2a (terminal secrets) and E2b (header proxy and secret lifecycle) are built and await the maintainer's manual check.
+E2a (terminal secrets) is done: the maintainer's manual check passed on 2026-11-17.
+E2b (header proxy and secret lifecycle) is built and awaits the maintainer's manual check.
 E3 (isolated agents) is next, then M2 (see every browser).
 The full status is in [ARCHITECTURE.md](ARCHITECTURE.md#milestones).
 

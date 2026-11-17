@@ -6,7 +6,7 @@ Every check rests on kernel facts (audit tokens, live cdhash), never on paths or
 
 ## Defaults chosen (Wesley can override)
 
-1. **Per run CA passed through environment variables**, not a persistent CA in the login keychain: no global trust change, no admin prompt. Trade: tools that only use the macOS trust store (Go binaries, Swift `URLSession`) cannot use the proxy in E2b.
+1. **Per run CA passed through environment variables**, not a persistent CA in the login keychain: no global trust change, no admin prompt. Trade: tools that only use the macOS trust store (Go binaries, Swift `URLSession`) cannot use the proxy in E2b. Checked on 2026-11-17 during the E2a manual check: even the user trust domain prompts, since `security add-trusted-cert` into it asked for authorization on macOS 26, so a persistent CA could never be added without a person.
 2. **`copy` is deferred** to E3 or the M5 app: any agent can poll the clipboard while a person approves, and without E3 the "refused for agents" check is only a process tree heuristic.
 3. **Scope moves:** MCP tools to M4 (with `berth-mcp` and session tokens), adopting existing Keychain items to after E3 (and only as a copy into `berth.<name>`, never by reference), the Always Allow audit, Herdr labels and `--from-clipboard` to later. The cdhash pinned suspended exec that narrows the E2a hash to exec race is item 7, after integration.
 
@@ -181,5 +181,7 @@ OWASP agentic risks after E2b:
 | ASI10 Rogue agents | Partly: revoke and rm stop running proxies at once; the kill switch is still planned |
 
 Known limits carried forward, all in the honest limits of `ARCHITECTURE.md`: the proxy credential in the child's environment, use through the granted API, the echoed header string, the redaction timing channel, and the suspended start's `SIGCONT` race against an agent that signals the processes (the header proxy is the mode for that).
+
+Review question on user trust settings, answered on 2026-11-17 during the E2a manual check: `security add-trusted-cert` into the user domain asks for authorization on macOS 26 (the maintainer cancelled it), so no process can add a CA to the user trust settings without a person, and the per run CA through environment variables stays the design.
 
 Remaining for the exit gate: Wesley's manual check with real signing, Touch ID and a real API with a test key.
