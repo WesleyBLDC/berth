@@ -79,6 +79,9 @@ func fakeChrome() {
 			write(map[string]any{"method": p.Method, "sessionId": p.SessionID, "params": map[string]any{"sessionId": "own-1"}})
 			write(map[string]any{"id": m.ID, "result": map[string]any{}})
 		case "Hang":
+		case "Stall":
+			// It stops reading, as a wedged browser does, until it is killed.
+			time.Sleep(time.Hour)
 		default:
 			write(map[string]any{"id": m.ID, "result": map[string]any{"method": m.Method}})
 		}
@@ -204,6 +207,32 @@ func TestKillEndsPendingCalls(t *testing.T) {
 	<-c.Done()
 	if _, err := c.Call(t.Context(), "", "Browser.getVersion", nil); !errors.Is(err, ports.ErrBrowserGone) {
 		t.Fatalf("call after exit = %v", err)
+	}
+}
+
+// A browser that stops reading its pipe fills it; the write then times out instead of holding
+// every writer, and the browser is ended, since part of the message may be on the pipe.
+func TestAWriteToAStalledBrowserTimesOut(t *testing.T) {
+	defer cdppipe.ShortenWrites(200 * time.Millisecond)()
+	c := launchFake(t)
+	if err := c.Send([]byte(`{"id":1,"method":"Stall"}`)); err != nil {
+		t.Fatal(err)
+	}
+	big := []byte(`{"id":2,"method":"Page.enable","params":{"pad":"` + strings.Repeat("x", 4<<20) + `"}}`)
+	errs := make(chan error, 1)
+	go func() { errs <- c.Send(big) }()
+	select {
+	case err := <-errs:
+		if !errors.Is(err, ports.ErrBrowserGone) {
+			t.Fatalf("a write to a stalled browser = %v, want ErrBrowserGone", err)
+		}
+	case <-time.After(10 * time.Second):
+		t.Fatal("a write to a browser that stopped reading never returned")
+	}
+	select {
+	case <-c.Done():
+	case <-time.After(10 * time.Second):
+		t.Fatal("a browser whose pipe is out of step must be ended")
 	}
 }
 

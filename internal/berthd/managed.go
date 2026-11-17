@@ -227,17 +227,21 @@ func (m *managed) runBrowser(entity string) machine.Runner[browser.Event, browse
 			m.mu.Lock()
 			conn := b.conn
 			m.mu.Unlock()
-			if conn != nil {
-				callCtx, cancel := context.WithTimeout(ctx, time.Second)
-				// The reply never matters: the exit watch reports the outcome.
-				_, _ = conn.Call(callCtx, "", "Browser.close", nil)
-				cancel()
-			}
+			// The grace starts before the close is written, and the write runs beside the actor, so a
+			// browser that stopped reading its pipe is still killed on time.
 			time.AfterFunc(m.grace, func() {
 				if st, found, err := m.Store.LoadState(m.ctx, entity); err == nil && found && browser.State(st.State) == browser.Closing {
 					m.send(m.ctx, id, browser.Event{Kind: browser.CloseTimedOut})
 				}
 			})
+			if conn != nil {
+				go func() {
+					callCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), time.Second)
+					defer cancel()
+					// The reply never matters: the exit watch reports the outcome.
+					_, _ = conn.Call(callCtx, "", "Browser.close", nil)
+				}()
+			}
 		case browser.KillGroup:
 			m.mu.Lock()
 			conn := b.conn

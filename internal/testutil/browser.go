@@ -15,10 +15,12 @@ import (
 type Browsers struct {
 	mu sync.Mutex
 	// LaunchErr fails every launch; Silent launches browsers that never answer over the pipe;
-	// Stubborn ones ignore Browser.close.
+	// Stubborn ones ignore Browser.close; Wedged ones hold a Browser.close call, whatever its
+	// context, until they exit, as a browser that stopped reading its pipe holds the write.
 	LaunchErr error
 	Silent    bool
 	Stubborn  bool
+	Wedged    bool
 	// Hold, when set, makes each launch wait until it is closed or the launch's context ends.
 	Hold     chan struct{}
 	launched []*FakeBrowser
@@ -46,7 +48,7 @@ func (d *Browsers) Launch(ctx context.Context, l ports.BrowserLaunch) (ports.Bro
 	d.nextPID++
 	b := &FakeBrowser{
 		Launch: l, ref: ports.ProcessRef{PID: 5000 + d.nextPID, Start: time.Unix(1_800_000_000, 0)},
-		silent: d.Silent, stubborn: d.Stubborn, done: make(chan struct{}),
+		silent: d.Silent, stubborn: d.Stubborn, wedged: d.Wedged, done: make(chan struct{}),
 	}
 	d.launched = append(d.launched, b)
 	return b, nil
@@ -65,6 +67,7 @@ type FakeBrowser struct {
 	ref      ports.ProcessRef
 	silent   bool
 	stubborn bool
+	wedged   bool
 
 	mu     sync.Mutex
 	calls  []FakeCall
@@ -97,6 +100,9 @@ func (b *FakeBrowser) Call(ctx context.Context, session, method string, params [
 	default:
 	}
 	switch {
+	case method == "Browser.close" && b.wedged:
+		<-b.done
+		return nil, ports.ErrBrowserGone
 	case method == "Browser.getVersion" && !b.silent:
 		return []byte(`{"product":"FakeChrome/1.0"}`), nil
 	case method == "Browser.close" && !b.stubborn:

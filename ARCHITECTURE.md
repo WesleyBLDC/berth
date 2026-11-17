@@ -373,7 +373,7 @@ stateDiagram-v2
 
 - `Requested` is never stored: the first saved transition is `Launch`, so the row exists before any process starts.
 - `Spawn` starts the browser through the `BrowserDriver`, waits up to 30 seconds for `Browser.getVersion` over the pipe, opens the CDP proxy, and sends `Started`; any failure kills the process group and sends `LaunchFailed` with a fixed note.
-- `CloseBrowser` sends `Browser.close` over the pipe and starts a 5 second timer, whose `CloseTimedOut` makes `KillGroup` kill the process group.
+- `CloseBrowser` starts a 5 second timer, whose `CloseTimedOut` makes `KillGroup` kill the process group, then sends `Browser.close` over the pipe beside the actor; every write to the pipe has a 10 second deadline, and one that misses it kills the browser, since its pipe is out of step, so a browser that stopped reading cannot hold its close.
 - `Exited` comes when the pipe reaches EOF and the process is reaped, and at boot (`gone at boot`) for every live row.
 - `Closed` is the only final state; the event that got there says why (`LaunchFailed`, `Exited` after a close, or `Exited` alone).
 

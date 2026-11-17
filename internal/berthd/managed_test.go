@@ -262,6 +262,25 @@ func TestCloseAndItsKillAfterTheGrace(t *testing.T) {
 	}
 }
 
+// A browser that stopped reading its pipe holds the Browser.close write; the grace still runs
+// out and its group is killed, rather than the close waiting on the write.
+func TestABrowserWedgedOnItsPipeIsKilledAfterTheGrace(t *testing.T) {
+	f := newManagedFixture(t)
+	f.driver.Wedged = true
+	resp, _ := f.launch(t, "wedged")
+	id := resp.GetBrowser().GetId()
+	if _, err := f.m.CloseBrowser(t.Context(), &berthv1.CloseBrowserRequest{Id: id}); err != nil {
+		t.Fatal(err)
+	}
+	waitBrowserClosed(t, f.m, id)
+	if got := f.events(t, id); !slices.Equal(got, []string{"Launch", "Started", "CloseRequested", "CloseTimedOut", "Exited"}) {
+		t.Fatalf("events = %v; a wedged browser must be killed after the grace", got)
+	}
+	if !f.driver.Launched()[0].Killed() {
+		t.Fatal("KillGroup did not kill")
+	}
+}
+
 func TestABrowserThatExitsOnItsOwnIsClosed(t *testing.T) {
 	f := newManagedFixture(t)
 	resp, _ := f.launch(t, "work")

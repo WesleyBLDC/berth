@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"sync"
 	"syscall"
+	"time"
 
 	"golang.org/x/sys/unix"
 
@@ -29,6 +30,10 @@ const (
 	// maxMessage bounds one message, so a runaway page cannot make berthd buffer without limit.
 	maxMessage = 64 << 20
 )
+
+// writeTimeout bounds one write to the pipe, so a browser that stopped reading cannot hold every
+// writer, Browser.close included, forever; tests shorten it.
+var writeTimeout = 10 * time.Second
 
 // killGroup sends SIGKILL to a process group; tests watch it.
 var killGroup = func(pgid int) error { return syscall.Kill(-pgid, syscall.SIGKILL) }
@@ -207,7 +212,14 @@ func (c *conn) Send(raw []byte) error {
 	}
 	c.writeMu.Lock()
 	defer c.writeMu.Unlock()
+	if err := c.w.SetWriteDeadline(time.Now().Add(writeTimeout)); err != nil {
+		return ports.ErrBrowserGone
+	}
 	if _, err := c.w.Write(append(raw[:len(raw):len(raw)], 0)); err != nil {
+		if errors.Is(err, os.ErrDeadlineExceeded) {
+			// Part of the message may be on the pipe, which no later write can bring back in step.
+			_ = c.Kill()
+		}
 		return ports.ErrBrowserGone
 	}
 	return nil

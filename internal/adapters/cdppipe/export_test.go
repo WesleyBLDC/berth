@@ -1,6 +1,9 @@
 package cdppipe
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // WatchKills records every process group Kill signals until the returned function is called.
 func WatchKills() (kills func() []int, restore func()) {
@@ -18,4 +21,11 @@ func FailExitWatch(err error) (restore func()) {
 	orig := watchExit
 	watchExit = func(context.Context, int) (<-chan struct{}, error) { return nil, err }
 	return func() { watchExit = orig }
+}
+
+// ShortenWrites sets the write timeout until restore is called.
+func ShortenWrites(d time.Duration) (restore func()) {
+	orig := writeTimeout
+	writeTimeout = d
+	return func() { writeTimeout = orig }
 }
