@@ -2,6 +2,7 @@ package berthd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
@@ -11,6 +12,10 @@ import (
 	"berth/internal/core/machine"
 	"berth/internal/core/ports"
 )
+
+// errActorStopped means the actor stopped before applying the step's event, most often because
+// another step moved the entity to a final state first.
+var errActorStopped = errors.New("actor stopped")
 
 // actors keeps one running actor per entity of one machine, created on first use.
 type actors[S ~string, E machine.Event, F any] struct {
@@ -239,7 +244,7 @@ func waitApplied[S ~string, E machine.Event, F any](sl *slot[S, E, F], w chan ap
 						return got.rec, nil
 					}
 				default:
-					return ports.TransitionRecord{}, fmt.Errorf("actor stopped")
+					return ports.TransitionRecord{}, errActorStopped
 				}
 			}
 		}

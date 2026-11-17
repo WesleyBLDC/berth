@@ -268,6 +268,8 @@ func secretsError(err error) error {
 	case errors.Is(err, ErrGrantNotFound):
 		return withReason(connect.NewError(connect.CodeNotFound, "no grant has this id"),
 			berthv1.ErrorReason_ERROR_REASON_GRANT_NOT_FOUND)
+	case errors.Is(err, ErrAgentTokenInvalid):
+		return agentsError(err)
 	case errors.Is(err, ErrBadGlob):
 		return connect.NewError(connect.CodeInvalidArgument, "args_glob is not a valid pattern")
 	case errors.Is(err, ErrCallerUnknown):

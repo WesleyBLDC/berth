@@ -36,10 +36,15 @@ var (
 
 type sessionKey struct{}
 
-// sessionOf is the agent session the call's token belongs to, or "" off the agent socket.
-func sessionOf(ctx context.Context) string {
+// AgentSession is the agent session the call's token belongs to, or "" off the agent socket.
+func AgentSession(ctx context.Context) string {
 	s, _ := ctx.Value(sessionKey{}).(string)
 	return s
+}
+
+// WithAgentSession records the agent session a call's token belongs to.
+func WithAgentSession(ctx context.Context, id string) context.Context {
+	return context.WithValue(ctx, sessionKey{}, id)
 }
 
 // AgentToken refuses every call without the token of a live agent session presented from that
@@ -60,7 +65,7 @@ func AgentToken(agents Agents) connect.ServerInterceptor {
 			if err != nil {
 				return agentsError(err)
 			}
-			return next(context.WithValue(ctx, sessionKey{}, id), spec, stream)
+			return next(WithAgentSession(ctx, id), spec, stream)
 		}
 	}
 }
@@ -103,7 +108,7 @@ func (h *handlers) RevokeAgentSession(ctx context.Context, req *berthv1.RevokeAg
 // admitStore holds a store dialog slot for the call's agent session; calls on the owner socket
 // carry no session and are never limited.
 func (h *handlers) admitStore(ctx context.Context) (func(), error) {
-	id := sessionOf(ctx)
+	id := AgentSession(ctx)
 	if id == "" {
 		return func() {}, nil
 	}

@@ -755,3 +755,39 @@ func TestAuthorizeUseSkipsProxyGrants(t *testing.T) {
 		t.Fatalf("an executable used a proxy grant: %v", got)
 	}
 }
+
+// TestAgentSessionEndStopsItsProxies: a proxy authorized through an agent session stops when that
+// agent session ends, and one whose agent session already ended is refused at once.
+func TestAgentSessionEndStopsItsProxies(t *testing.T) {
+	f := newFixture(t, &testutil.Approver{})
+	f.request(t)
+	f.grantProxy(t)
+	const agent = "0123456789abcdef0123456789abcdef"
+	live := map[string]bool{agent: true}
+	f.s.AgentLive = func(_ context.Context, id string) bool { return live[id] }
+	ctx := api.WithAgentSession(t.Context(), agent)
+
+	owners := f.authorizeProxy(t, "gh-token").GetSessionId()
+	resp, err := f.s.AuthorizeProxy(ctx, &berthv1.AuthorizeProxyRequest{Names: []string{"gh-token"}}, peerOf(proxyPID))
+	if err != nil || resp.GetOutcome() != berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED {
+		t.Fatalf("authorize through the agent session: %v %v", resp, err)
+	}
+	id := resp.GetSessionId()
+	if rec, _, _ := f.store.ProxySession(t.Context(), id); rec.AgentSession != agent {
+		t.Fatalf("session row %+v does not name the agent session", rec)
+	}
+	w := f.watch(t, id)
+	serving(t, w)
+
+	live[agent] = false
+	f.s.stopAgentSessions(t.Context(), agent)
+	stopped(t, w, berthv1.ProxyStopReason_PROXY_STOP_REASON_AGENT_SESSION_ENDED)
+	// A session still in its initial Authorized state has no state row yet.
+	if got := f.state(t, "proxy/"+owners); got != "" {
+		t.Fatalf("the owner's proxy session was touched: %s", got)
+	}
+
+	if _, err := f.s.AuthorizeProxy(ctx, &berthv1.AuthorizeProxyRequest{Names: []string{"gh-token"}}, peerOf(proxyPID)); !errors.Is(err, api.ErrAgentTokenInvalid) {
+		t.Fatalf("authorize through an ended agent session: %v", err)
+	}
+}

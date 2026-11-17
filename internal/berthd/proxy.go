@@ -59,9 +59,10 @@ func (p *proxySession) finished() {
 }
 
 var reasons = map[proxysession.StopReason]berthv1.ProxyStopReason{
-	proxysession.StopGrantRevoked:   berthv1.ProxyStopReason_PROXY_STOP_REASON_GRANT_REVOKED,
-	proxysession.StopSecretRemoved:  berthv1.ProxyStopReason_PROXY_STOP_REASON_SECRET_REMOVED,
-	proxysession.StopDaemonStopping: berthv1.ProxyStopReason_PROXY_STOP_REASON_DAEMON_STOPPING,
+	proxysession.StopGrantRevoked:      berthv1.ProxyStopReason_PROXY_STOP_REASON_GRANT_REVOKED,
+	proxysession.StopSecretRemoved:     berthv1.ProxyStopReason_PROXY_STOP_REASON_SECRET_REMOVED,
+	proxysession.StopDaemonStopping:    berthv1.ProxyStopReason_PROXY_STOP_REASON_DAEMON_STOPPING,
+	proxysession.StopAgentSessionEnded: berthv1.ProxyStopReason_PROXY_STOP_REASON_AGENT_SESSION_ENDED,
 }
 
 func (s *secrets) runSession(entity string) machine.Runner[proxysession.Event, proxysession.Effect] {
@@ -170,7 +171,8 @@ func (s *secrets) openSession(ctx context.Context, peer ports.Peer, grants []por
 		cancel()
 		return nil, api.ErrPeerNotTrusted
 	}
-	rec := ports.ProxySessionRecord{ID: hex.EncodeToString(raw), PID: peer.PID, CreatedAt: s.Clock.Now()}
+	agent := api.AgentSession(ctx)
+	rec := ports.ProxySessionRecord{ID: hex.EncodeToString(raw), PID: peer.PID, CreatedAt: s.Clock.Now(), AgentSession: agent}
 	for _, g := range grants {
 		rec.Grants = append(rec.Grants, g.ID)
 	}
@@ -178,6 +180,9 @@ func (s *secrets) openSession(ctx context.Context, peer ports.Peer, grants []por
 		cancel()
 		return nil, err
 	}
+	// The agent session's end stops the proxy sessions it finds recorded, so one that ended
+	// before this row existed is caught here: either it sees the row or this sees its end.
+	agentEnded := agent != "" && (s.AgentLive == nil || !s.AgentLive(ctx, agent))
 	ps := &proxySession{
 		id: rec.ID, pid: peer.PID, token: peer.AuditToken, cancel: cancel,
 		stop: make(chan proxysession.StopReason, 1), done: make(chan struct{}),
@@ -188,6 +193,10 @@ func (s *secrets) openSession(ctx context.Context, peer ports.Peer, grants []por
 	if _, err := s.sessions.get(ctx, proxysession.Entity(ps.id)); err != nil {
 		s.lose(ps, "no actor")
 		return nil, err
+	}
+	if agentEnded {
+		s.lose(ps, "its agent session ended")
+		return nil, api.ErrAgentTokenInvalid
 	}
 	go s.monitor(ps, exited)
 	return ps, nil
@@ -340,6 +349,19 @@ func (s *secrets) stopSessions(ctx context.Context, grantID int64, reason proxys
 	}
 	for _, id := range ids {
 		s.stopSession(ctx, id, reason)
+	}
+}
+
+// stopAgentSessions stops every open proxy session authorized through the agent session, once
+// that agent session has ended.
+func (s *secrets) stopAgentSessions(ctx context.Context, agentSession string) {
+	ids, err := s.Sessions.ProxySessionsForAgentSession(ctx, agentSession)
+	if err != nil {
+		s.Log.Error("cannot list proxy sessions to stop", "agent_session", agentSession, "err", err)
+		return
+	}
+	for _, id := range ids {
+		s.stopSession(ctx, id, proxysession.StopAgentSessionEnded)
 	}
 }
 

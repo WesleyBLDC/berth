@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"log/slog"
 	"strconv"
 	"sync"
@@ -38,6 +39,8 @@ type agentsDeps struct {
 	Code ports.CodeInspector
 	// AgentUID is the agent socket's user; a session binds to that user's processes only.
 	AgentUID uint32
+	// StopProxies stops the proxy sessions authorized through an agent session that ended.
+	StopProxies func(ctx context.Context, agentSession string)
 }
 
 // agents issues agent sessions, checks their tokens on every agent socket call and limits their
@@ -176,6 +179,15 @@ func (a *agents) Authenticate(ctx context.Context, token string, peer ports.Peer
 		if err := a.step(ctx, rec.ID, ev); err != nil && !errors.Is(err, machine.ErrIllegal) {
 			return "", err
 		}
+		// Bind is illegal when a concurrent first call bound the session, which leaves it Bound,
+		// or when a revoke or an expiry landed since the refresh, which must refuse this call.
+		now, err := a.state(ctx, rec.ID)
+		if err != nil {
+			return "", err
+		}
+		if now != agentsession.Bound {
+			return "", a.refuse("session "+string(now), rec.ID, peer)
+		}
 	}
 	if !agentsession.Descends(lineage, root) {
 		rec.Root = root
@@ -194,9 +206,14 @@ func (a *agents) refuse(why, session string, peer ports.Peer) error {
 	return api.ErrAgentTokenInvalid
 }
 
-func (a *agents) AdmitStore(_ context.Context, sessionID string) (func(), error) {
+func (a *agents) AdmitStore(ctx context.Context, sessionID string) (func(), error) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
+	// Read under a.mu: step deletes an ended session's slots under it after saving the end, so a
+	// session either reads as ended here or has its slots deleted after this.
+	if !a.live(ctx, sessionID) {
+		return nil, api.ErrAgentTokenInvalid
+	}
 	slots := a.stores[sessionID]
 	if slots == nil {
 		slots = &storeSlots{}
@@ -247,10 +264,15 @@ func (a *agents) running(ctx context.Context, p ports.ProcessRef) bool {
 	return err == nil && lineage[0].Same(p)
 }
 
-// step applies one event and frees the store slots of a session that ended; the actor stops by
-// itself once it reaches a final state.
+// step applies one event. Once a session ends it frees its store slots and stops the proxy
+// sessions authorized through it; the actor stops by itself in a final state. An event the
+// session can no longer take, including one whose actor stopped because another step ended the
+// session first, is machine.ErrIllegal.
 func (a *agents) step(ctx context.Context, id string, ev agentsession.Event) error {
 	rec, _, err := step(ctx, a.sessions, agentsession.Entity(id), ev, nil, ev.Kind)
+	if errors.Is(err, errActorStopped) {
+		return fmt.Errorf("%w: %s in agent session %s", machine.ErrIllegal, ev.Kind, id)
+	}
 	if err != nil {
 		return err
 	}
@@ -258,8 +280,17 @@ func (a *agents) step(ctx context.Context, id string, ev agentsession.Event) err
 		a.mu.Lock()
 		delete(a.stores, id)
 		a.mu.Unlock()
+		if a.StopProxies != nil {
+			a.StopProxies(ctx, id)
+		}
 	}
 	return nil
+}
+
+// live reports whether the session still serves calls; a store error counts as not live.
+func (a *agents) live(ctx context.Context, id string) bool {
+	st, err := a.state(ctx, id)
+	return err == nil && agentsession.Live(st)
 }
 
 func (a *agents) state(ctx context.Context, id string) (agentsession.State, error) {

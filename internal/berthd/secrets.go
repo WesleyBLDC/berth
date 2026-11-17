@@ -84,6 +84,9 @@ type secretsDeps struct {
 	Exits func(ctx context.Context, pid int) (<-chan struct{}, error)
 	// AllowLocalTargets accepts localhost and IP literal proxy grants; only berth_e2e builds.
 	AllowLocalTargets bool
+	// AgentLive reports whether an agent session still serves calls; nil means none ever does.
+	// berthd sets it once both secrets and agents exist, before serving.
+	AgentLive func(ctx context.Context, id string) bool
 }
 
 // secrets runs one actor per secret and per grant and performs their effects. It implements

@@ -33,7 +33,8 @@ type EventKind string
 const (
 	// ProxyReady comes when the proxy opens WatchProxySession.
 	ProxyReady EventKind = "ProxyReady"
-	// StopRequested comes from a revoke, a remove or berthd stopping.
+	// StopRequested comes from a revoke, a remove, the end of the agent session that authorized
+	// it, or berthd stopping.
 	StopRequested EventKind = "StopRequested"
 	// ProxyEnded comes from EndProxySession.
 	ProxyEnded EventKind = "ProxyEnded"
@@ -49,6 +50,8 @@ const (
 	StopGrantRevoked   StopReason = "GrantRevoked"
 	StopSecretRemoved  StopReason = "SecretRemoved"
 	StopDaemonStopping StopReason = "DaemonStopping"
+	// StopAgentSessionEnded stops a session authorized through an agent session that ended.
+	StopAgentSessionEnded StopReason = "AgentSessionEnded"
 )
 
 type Event struct {

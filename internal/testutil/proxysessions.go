@@ -55,6 +55,19 @@ func (p *ProxySessions) ProxySessionsForGrant(_ context.Context, grantID int64) 
 	return out, nil
 }
 
+func (p *ProxySessions) ProxySessionsForAgentSession(_ context.Context, agentSession string) ([]string, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	var out []string
+	for _, id := range p.order {
+		r := p.sessions[id]
+		if r.EndedAt.IsZero() && agentSession != "" && r.AgentSession == agentSession {
+			out = append(out, id)
+		}
+	}
+	return out, nil
+}
+
 func (p *ProxySessions) OpenProxySessions(_ context.Context) ([]string, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()

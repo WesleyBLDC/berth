@@ -15,6 +15,7 @@ import (
 	"berth/internal/adapters/api"
 	"berth/internal/adapters/sqlite"
 	"berth/internal/core/agentsession"
+	"berth/internal/core/machine"
 	"berth/internal/core/ports"
 	"berth/internal/testutil"
 )
@@ -32,12 +33,13 @@ func (l anyLive) Live(ctx context.Context, p ports.Peer) (ports.LiveCode, error)
 }
 
 type agentsFixture struct {
-	a     *agents
-	store *sqlite.Store
-	clock *testutil.Clock
-	procs *testutil.Processes
-	log   *bytes.Buffer
-	dir   string
+	a       *agents
+	stopped chan string
+	store   *sqlite.Store
+	clock   *testutil.Clock
+	procs   *testutil.Processes
+	log     *bytes.Buffer
+	dir     string
 }
 
 func fp(pid, ppid int, uid uint32) testutil.FakeProcess {
@@ -71,7 +73,9 @@ func newAgentsFixture(t *testing.T) *agentsFixture {
 		Log: slog.New(slog.NewTextHandler(&log, nil)), Store: store, Records: store, Clock: clock,
 		Lineage: procs, Code: anyLive{procs}, AgentUID: agentUID,
 	})
-	return &agentsFixture{a: a, store: store, clock: clock, procs: procs, log: &log, dir: dir}
+	f := &agentsFixture{a: a, store: store, clock: clock, procs: procs, log: &log, dir: dir, stopped: make(chan string, 8)}
+	a.StopProxies = func(_ context.Context, id string) { f.stopped <- id }
+	return f
 }
 
 func (f *agentsFixture) create(t *testing.T, ttl uint32) (string, string) {
@@ -271,5 +275,88 @@ func TestAgentStoreLimits(t *testing.T) {
 	f.clock.Advance(time.Hour)
 	if _, err := f.a.AdmitStore(t.Context(), "s1"); err != nil {
 		t.Fatalf("an hour later: %v", err)
+	}
+}
+
+// revokingLineage revokes the session the first time a caller's lineage is read, which falls
+// between Authenticate's refresh and its Bind.
+type revokingLineage struct {
+	ports.ProcessLineage
+	revoke func()
+	once   bool
+}
+
+func (r *revokingLineage) Lineage(ctx context.Context, pid int) ([]ports.ProcessInfo, error) {
+	if !r.once {
+		r.once = true
+		r.revoke()
+	}
+	return r.ProcessLineage.Lineage(ctx, pid)
+}
+
+func TestAgentBindRacingARevokeRefuses(t *testing.T) {
+	f := newAgentsFixture(t)
+	id, token := f.create(t, 0)
+	f.a.Lineage = &revokingLineage{ProcessLineage: f.procs, revoke: func() {
+		if _, err := f.a.RevokeAgentSession(t.Context(), &berthv1.RevokeAgentSessionRequest{RequestId: "revoke-0001", Id: id}); err != nil {
+			t.Error(err)
+		}
+	}}
+	if err := f.auth(t, token, 21); !errors.Is(err, api.ErrAgentTokenInvalid) {
+		t.Fatalf("a first call racing a revoke was served: %v", err)
+	}
+	if f.state(t, id) != agentsession.Revoked {
+		t.Fatalf("state %s, want Revoked", f.state(t, id))
+	}
+}
+
+func TestEndedAgentSessionHoldsNoSlotsAndStopsItsProxies(t *testing.T) {
+	f := newAgentsFixture(t)
+	id, token := f.create(t, 0)
+	if err := f.auth(t, token, 21); err != nil {
+		t.Fatal(err)
+	}
+	release, err := f.a.AdmitStore(t.Context(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.a.RevokeAgentSession(t.Context(), &berthv1.RevokeAgentSessionRequest{RequestId: "revoke-0001", Id: id}); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case got := <-f.stopped:
+		if got != id {
+			t.Fatalf("stopped the proxies of %s, want %s", got, id)
+		}
+	default:
+		t.Fatal("revoking did not stop the session's proxies")
+	}
+	release()
+	if _, err := f.a.AdmitStore(t.Context(), id); !errors.Is(err, api.ErrAgentTokenInvalid) {
+		t.Fatalf("a store slot for an ended session: %v", err)
+	}
+	f.a.mu.Lock()
+	n := len(f.a.stores)
+	f.a.mu.Unlock()
+	if n != 0 {
+		t.Fatalf("%d store entries kept for an ended session", n)
+	}
+	// A second revoke changes nothing and stops nothing again.
+	if _, err := f.a.RevokeAgentSession(t.Context(), &berthv1.RevokeAgentSessionRequest{RequestId: "revoke-0002", Id: id}); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.stopped) != 0 {
+		t.Fatal("a second revoke stopped the proxies again")
+	}
+}
+
+func TestStepAfterTheEndIsIllegal(t *testing.T) {
+	f := newAgentsFixture(t)
+	id, _ := f.create(t, 0)
+	if err := f.a.step(t.Context(), id, agentsession.Event{Kind: agentsession.Revoke}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.a.step(t.Context(), id, agentsession.Event{Kind: agentsession.Bind}); !errors.Is(err, machine.ErrIllegal) {
+		t.Fatalf("Bind after the end: %v", err)
 	}
 }

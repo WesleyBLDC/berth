@@ -139,7 +139,9 @@ func Run(ctx context.Context, cfg Config) (int, error) {
 	}
 	s.agents = newAgents(machineCtx, agentsDeps{
 		Log: cfg.Log, Store: store, Records: store, Clock: clock.System{}, Lineage: procs, Code: peer.NewCode(), AgentUID: agentUID,
+		StopProxies: s.secrets.stopAgentSessions,
 	})
+	s.secrets.AgentLive = s.agents.live
 	s.browsers = newBrowsers(machineCtx, browsersDeps{
 		Log: cfg.Log, Source: procs, Store: store, List: store, Events: store, Clock: clock.System{},
 		UID: uint32(os.Getuid()), //nolint:gosec // user IDs fit in 32 bits

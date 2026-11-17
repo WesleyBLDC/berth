@@ -73,6 +73,9 @@ type SecretRecords interface {
 type ProxySessionRecord struct {
 	// ID is 32 lowercase hex characters; the entity is proxy/<ID>.
 	ID string
+	// AgentSession is the agent session whose token the AuthorizeProxy call carried, or empty
+	// on the owner socket; its end stops this session.
+	AgentSession string
 	// PID is the berth-proxy process that authorized the session.
 	PID int
 	// Grants are the proxy grants the session holds tickets for.
@@ -91,6 +94,9 @@ type ProxySessionRecords interface {
 	ProxySession(ctx context.Context, id string) (ProxySessionRecord, bool, error)
 	// ProxySessionsForGrant lists the ids of sessions holding the grant that have not ended.
 	ProxySessionsForGrant(ctx context.Context, grantID int64) ([]string, error)
+	// ProxySessionsForAgentSession lists the ids of sessions authorized through the agent session
+	// that have not ended.
+	ProxySessionsForAgentSession(ctx context.Context, agentSession string) ([]string, error)
 	// OpenProxySessions lists the ids of sessions that have not ended, for boot recovery.
 	OpenProxySessions(ctx context.Context) ([]string, error)
 	// EndProxySession records the counts and the end time once; a second call is an error.

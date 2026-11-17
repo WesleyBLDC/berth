@@ -97,10 +97,13 @@ func dial(ctx context.Context, socketPath, name string, verify func(*net.UnixCon
 // ReadAgentToken reads an agent session token from a file only its owner can read, so the token
 // never has to be an argument, which any process can see, or an environment variable.
 func ReadAgentToken(path string) (string, error) {
-	f, err := os.Open(path) //nolint:gosec // the person names the file
+	// O_NONBLOCK so opening a FIFO cannot hang, O_NOFOLLOW so a symlink is not followed; the
+	// type is checked on the open descriptor, and a regular file reads the same either way.
+	fd, err := syscall.Open(path, syscall.O_RDONLY|syscall.O_NONBLOCK|syscall.O_NOFOLLOW|syscall.O_CLOEXEC, 0)
 	if err != nil {
 		return "", fmt.Errorf("agent token file: %w", err)
 	}
+	f := os.NewFile(uintptr(fd), path)
 	defer func() { _ = f.Close() }()
 	st, err := f.Stat()
 	if err != nil {

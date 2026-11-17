@@ -229,7 +229,7 @@ func Principal(ctx context.Context) string {
 	case ok:
 		kind = "owner"
 	}
-	if session := sessionOf(ctx); session != "" {
+	if session := AgentSession(ctx); session != "" {
 		kind += "/" + session
 	}
 	return fmt.Sprintf("%s:%d:%x", kind, c.UID, peerOf(ctx).AuditToken)

@@ -18,8 +18,8 @@ func (s *Store) AddProxySession(ctx context.Context, r ports.ProxySessionRecord)
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if _, err := tx.ExecContext(ctx, `INSERT INTO proxy_sessions (id, proxy_pid, created_at) VALUES (?, ?, ?)`,
-		r.ID, r.PID, r.CreatedAt.UnixMicro()); err != nil {
+	if _, err := tx.ExecContext(ctx, `INSERT INTO proxy_sessions (id, proxy_pid, created_at, agent_session) VALUES (?, ?, ?, ?)`,
+		r.ID, r.PID, r.CreatedAt.UnixMicro(), r.AgentSession); err != nil {
 		return err
 	}
 	for _, g := range r.Grants {
@@ -34,8 +34,8 @@ func (s *Store) ProxySession(ctx context.Context, id string) (ports.ProxySession
 	r := ports.ProxySessionRecord{ID: id}
 	var created int64
 	var ended sql.NullInt64
-	err := s.db.QueryRowContext(ctx, `SELECT proxy_pid, created_at, ended_at, injected, refused FROM proxy_sessions WHERE id = ?`, id).
-		Scan(&r.PID, &created, &ended, &r.Injected, &r.Refused)
+	err := s.db.QueryRowContext(ctx, `SELECT proxy_pid, created_at, ended_at, injected, refused, agent_session FROM proxy_sessions WHERE id = ?`, id).
+		Scan(&r.PID, &created, &ended, &r.Injected, &r.Refused, &r.AgentSession)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ports.ProxySessionRecord{}, false, nil
 	}
@@ -67,6 +67,11 @@ func (s *Store) ProxySession(ctx context.Context, id string) (ports.ProxySession
 func (s *Store) ProxySessionsForGrant(ctx context.Context, grantID int64) ([]string, error) {
 	return s.sessionIDs(ctx, `SELECT s.id FROM proxy_sessions s JOIN proxy_session_grants g ON g.session_id = s.id
 		WHERE g.grant_id = ? AND s.ended_at IS NULL ORDER BY s.created_at, s.id`, grantID)
+}
+
+func (s *Store) ProxySessionsForAgentSession(ctx context.Context, agentSession string) ([]string, error) {
+	return s.sessionIDs(ctx, `SELECT id FROM proxy_sessions WHERE agent_session = ? AND agent_session != '' AND ended_at IS NULL
+		ORDER BY created_at, id`, agentSession)
 }
 
 func (s *Store) OpenProxySessions(ctx context.Context) ([]string, error) {

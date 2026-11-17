@@ -168,32 +168,45 @@ var _ ports.ProcessLineage = (*Source)(nil)
 // maxLineage bounds the parent walk; process trees are far shallower.
 const maxLineage = 64
 
-// Lineage walks parents with kern.proc.pid one at a time. A parent that exits mid walk ends the
-// lineage early, and a process whose parent exited is already launchd's, so a race can only
-// shorten a lineage, never lengthen it with a process the caller does not descend from.
+// Lineage walks parents with kern.proc.pid one at a time.
 func (*Source) Lineage(ctx context.Context, pid int) ([]ports.ProcessInfo, error) {
-	var out []ports.ProcessInfo
-	for cur := pid; len(out) < maxLineage; {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
+	return walkLineage(ctx, pid, func(cur int) (ports.ProcessInfo, bool) {
 		k, err := unix.SysctlKinfoProc(processSysctlPID, cur)
 		// An exited pid comes back as an empty record rather than an error.
-		if err != nil || int(k.Proc.P_pid) != cur || cur <= 0 {
-			if len(out) == 0 {
-				return nil, ports.ErrProcessGone
-			}
-			return out, nil
+		if err != nil || int(k.Proc.P_pid) != cur {
+			return ports.ProcessInfo{}, false
 		}
-		out = append(out, ports.ProcessInfo{
+		return ports.ProcessInfo{
 			ProcessRef: ports.ProcessRef{PID: cur, Start: start(k)},
 			PPID:       int(k.Eproc.Ppid),
 			UID:        k.Eproc.Ucred.Uid,
-		})
-		if cur == 1 || int(k.Eproc.Ppid) == cur {
-			return out, nil
+		}, true
+	})
+}
+
+// walkLineage follows parent pids through lookup. Each level is read at a different moment, so
+// a parent can exit between reading its child and reading it: a parent already gone ends the
+// lineage, and a pid that a later process took meanwhile is caught by its start time, since a
+// real parent never starts after its child. Either way the lineage only gets shorter, never
+// longer with a process the caller does not descend from.
+func walkLineage(ctx context.Context, pid int, lookup func(int) (ports.ProcessInfo, bool)) ([]ports.ProcessInfo, error) {
+	var out []ports.ProcessInfo
+	for cur := pid; cur > 0 && len(out) < maxLineage; {
+		if err := ctx.Err(); err != nil {
+			return nil, err
 		}
-		cur = int(k.Eproc.Ppid)
+		p, ok := lookup(cur)
+		if !ok || (len(out) > 0 && p.Start.After(out[len(out)-1].Start)) {
+			break
+		}
+		out = append(out, p)
+		if cur == 1 || p.PPID == cur {
+			break
+		}
+		cur = p.PPID
+	}
+	if len(out) == 0 {
+		return nil, ports.ErrProcessGone
 	}
 	return out, nil
 }
