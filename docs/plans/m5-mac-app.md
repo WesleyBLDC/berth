@@ -40,13 +40,13 @@ flowchart LR
 | Path in `Berth.app/Contents` | Holds | Signed as |
 |---|---|---|
 | `MacOS/Berth` | The app | `com.wesleybldc.berth` (the bundle) |
-| `MacOS/berthd`, `MacOS/berth`, `MacOS/berth-native`, `MacOS/berth-proxy` | The daemon, the CLI, the helper and the proxy, beside each other so `paths.Beside` and every pin work unchanged | Their own identifiers, signed before the bundle |
-| `Library/LaunchAgents/com.wesleybldc.berth.daemon.plist` | The login item `SMAppService.agent` registers: `BundleProgram` `Contents/MacOS/berthd`, `RunAtLoad`, `KeepAlive` on unsuccessful exit | Sealed by the bundle signature |
+| `Helpers/berthd`, `Helpers/berth`, `Helpers/berth-native`, `Helpers/berth-proxy` | The daemon, the CLI, the helper and the proxy, beside each other so `paths.Beside` and every pin work unchanged; not in `MacOS`, where `berth` and `Berth` would be one file on a case insensitive volume | Their own identifiers, signed before the bundle |
+| `Library/LaunchAgents/com.wesleybldc.berth.daemon.plist` | The login item `SMAppService.agent` registers: `BundleProgram` `Contents/Helpers/berthd`, `RunAtLoad`, `KeepAlive` on unsuccessful exit | Sealed by the bundle signature |
 | `Resources/AppIcon.icns` | `brand/app-icon/Berth.icns` | Sealed |
 | `Info.plist` | Bundle id `com.wesleybldc.berth`, `LSMinimumSystemVersion` 26.0, `LSUIElement` | Sealed |
 
 The bundle is signed with the hardened runtime and no entitlements, and is not sandboxed: the App Sandbox would block the socket under `~/Library/Application Support/Berth`.
-The person's `berth` on `PATH` becomes a symlink to `Contents/MacOS/berth` once they use the app build, so the CLI that `berthd` pins is the one they run.
+The person's `berth` on `PATH` becomes a symlink to `Contents/Helpers/berth` once they use the app build, so the CLI that `berthd` pins is the one they run.
 
 ### How the app talks to berthd
 
@@ -59,7 +59,7 @@ The person's `berth` on `PATH` becomes a symlink to `Contents/MacOS/berth` once 
 - **Server streams**: `Content-Type: application/connect+json`, the request in one envelope (one flag byte, a four byte big endian length, the JSON); the answer is chunked, one envelope per message, ending with an end of stream envelope (flag `0x02`) whose JSON holds an `error` or nothing. Envelopes over 16 MiB and heads over 64 KiB end the stream as malformed.
 - **Proto JSON**: field names in lowerCamelCase, enums by name (an unknown name decodes as unknown, never a crash), 64 bit integers as strings, timestamps as RFC 3339 with 0 to 9 fractional digits, default values omitted.
 - **Client streaming is not possible over HTTP/1.1** in Connect, so input for takeover is a unary `SendInput` carrying a batch of events (item 9).
-- **berthd side, a pin for the app** (item 7): `berthd` pins `Berth` beside its own executable with identifier `com.wesleybldc.berth`, the same `codetrust.File` rule as the CLI. The listing and watching methods stay open to any owner socket client, as today; the pin gates only the live view and takeover methods, which show page content and send input. It lands with the first method that checks it, so no unused pin ships.
+- **berthd side, a pin for the app** (item 7): `berthd` pins `../MacOS/Berth` from its own folder (`Contents/Helpers`) with identifier `com.wesleybldc.berth`, the same `codetrust.File` rule as the CLI. The listing and watching methods stay open to any owner socket client, as today; the pin gates only the live view and takeover methods, which show page content and send input. It lands with the first method that checks it, so no unused pin ships.
 
 ### The session list and the menu bar (items 3 and 4)
 
@@ -152,7 +152,7 @@ Items 2 to 5 are built in this pass; the rest follow.
 |---|---|---|---|---|
 | 1 | Plan | | this file, ADR 0019 | |
 | 2 | Shared socket library and app core | 1 | `native/Package.swift`, `native/Sources/BerthSocket/`, `macos/Sources/BerthAppCore/`, `macos/Sources/berth-app-probe/`, `internal/cli/swiftfixture_test.go`, `test/e2e/app_test.go` | Below |
-| 3 | App shell and bundle | 2 | `macos/Sources/BerthApp/`, `macos/Bundle/`, `scripts/build-app.sh`, `scripts/check-app-bundle.sh` | The bundle check, ad hoc signed |
+| 3 | App shell and bundle | 2 | `macos/Sources/BerthApp/`, `macos/Bundle/`, `scripts/build-app.sh`, `scripts/check-app-bundle.sh` | The bundle check, ad hoc signed: layout, plists, every signature and identifier, no Keychain symbol in `Berth` |
 | 4 | Make targets | 3 | `Makefile` | `make check` builds and tests the app |
 | 5 | Docs | 4 | `ARCHITECTURE.md` | |
 | 6 | Login item | 3 | `macos/Sources/BerthApp/LoginItem.swift` | The plist keys; registering is manual |
@@ -209,7 +209,7 @@ Defaults taken while he was away; each is cheap to reverse before M5 closes.
 1. **`macos/` as its own SwiftPM package**, no Xcode project; `scripts/build-app.sh` assembles the bundle. An Xcode project would add a second build system for one target.
 2. **Connect JSON over HTTP/1.1 on the raw socket**, not grpc-swift-2 ([ADR 0019](../adr/0019-berth-app-speaks-connect-json-over-the-socket.md), superseding that line of ADR 0015), with the socket code shared with `berth-native` through a new `BerthSocket` target.
 3. **The app checks `berthd` before writing a byte**, release requirement only; the probe takes the requirement as an argument for the end to end tests.
-4. **All four binaries inside the bundle, beside `Berth`** in `Contents/MacOS`, so `paths.Beside` and every pin stay as they are; the person's `berth` becomes a symlink into the bundle.
+4. **All four binaries inside the bundle, beside each other in `Contents/Helpers`**, so `paths.Beside` and every pin stay as they are and `berth` never collides with `Berth` on a case insensitive volume; the person's `berth` becomes a symlink into the bundle.
 5. **An accessory app** (`LSUIElement`), no Dock icon.
 6. **No App Sandbox, no entitlements**, hardened runtime.
 7. **The `berthd` pin for the app lands with the first method that checks it** (item 7), the screen and control methods; listing and watching stay open to the owner socket.
