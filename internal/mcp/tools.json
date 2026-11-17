@@ -1,0 +1,43 @@
+[
+  {
+    "name": "browser_open",
+    "title": "Open a browser",
+    "description": "Open a headless Chromium for this agent session, on a fresh profile that Berth deletes when the browser closes. Returns the CDP endpoint and the path of a file holding its token; connect with any CDP client (for example Playwright's connectOverCDP) and send the file's content in the X-Berth-Token header. At most 2 open and 10 opened an hour; the browser closes with browser_close or when this agent session ends.",
+    "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false},
+    "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": true}
+  },
+  {
+    "name": "browser_close",
+    "title": "Close a browser",
+    "description": "Close one browser this agent session opened with browser_open, and delete its profile and token file.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {"id": {"type": "string", "pattern": "^[0-9a-f]{16}$", "description": "The id browser_open returned"}},
+      "required": ["id"],
+      "additionalProperties": false
+    },
+    "annotations": {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": true, "openWorldHint": false}
+  },
+  {
+    "name": "secret_list",
+    "title": "List secret names",
+    "description": "List the names of the secrets stored in Berth. Values are never shown to agents.",
+    "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false},
+    "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false}
+  },
+  {
+    "name": "secret_request",
+    "title": "Request a secret",
+    "description": "Ask the person to store a secret under a name, through a native dialog they type into. Returns only whether it was stored; the value never reaches the agent. The person sees the reason labelled as the agent's claim.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,127}$", "description": "The secret's name"},
+        "why": {"type": "string", "minLength": 1, "maxLength": 500, "description": "Why the agent needs it, shown to the person"}
+      },
+      "required": ["name", "why"],
+      "additionalProperties": false
+    },
+    "annotations": {"readOnlyHint": false, "destructiveHint": false, "idempotentHint": false, "openWorldHint": false}
+  }
+]
