@@ -7,8 +7,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"google.golang.org/protobuf/encoding/protojson"
-
 	berthv1 "berth/gen/berth/v1"
 )
 
@@ -72,13 +70,7 @@ func agentSessionList(ctx context.Context, args []string, env Env) int {
 		return reportError(env.Stderr, err, "", "")
 	}
 	if *asJSON {
-		b, err := protojson.MarshalOptions{Multiline: true}.Marshal(resp)
-		if err != nil {
-			fmt.Fprintln(env.Stderr, err)
-			return ExitError
-		}
-		fmt.Fprintln(env.Stdout, string(b))
-		return ExitOK
+		return printJSON(env, resp)
 	}
 	w := tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "ID\tNAME\tSTATE\tROOT PID\tEXPIRES")
@@ -87,7 +79,7 @@ func agentSessionList(ctx context.Context, args []string, env Env) int {
 		if s.GetRootPid() > 0 {
 			root = fmt.Sprint(s.GetRootPid())
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", s.GetId(), s.GetName(), enumWord(s.GetState().String(), "AGENT_SESSION_STATE_"),
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", s.GetId(), shown(s.GetName()), enumWord(s.GetState().String(), "AGENT_SESSION_STATE_"),
 			root, s.GetExpiresAt().AsTime().Local().Format(time.DateTime))
 	}
 	_ = w.Flush()

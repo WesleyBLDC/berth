@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"io"
+	"slices"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -12,6 +14,7 @@ import (
 	"unicode/utf8"
 
 	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
 
 	berthv1 "berth/gen/berth/v1"
 )
@@ -40,13 +43,7 @@ func listSessions(ctx context.Context, env Env, req *berthv1.ListSessionsRequest
 		return reportError(env.Stderr, err, "", "")
 	}
 	if asJSON {
-		b, err := protojson.MarshalOptions{Multiline: true}.Marshal(resp)
-		if err != nil {
-			fmt.Fprintln(env.Stderr, err)
-			return ExitError
-		}
-		fmt.Fprintf(env.Stdout, "%s\n", b)
-		return ExitOK
+		return printJSON(env, resp)
 	}
 	printSessions(env, resp.GetSessions())
 	return ExitOK
@@ -91,27 +88,9 @@ func sessionInspect(ctx context.Context, args []string, env Env) int {
 	fmt.Fprintf(w, "owner\t%s\n", ownerName(s))
 	_ = w.Flush()
 	fmt.Fprintln(env.Stdout)
-	w = tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "PID\tROLE\tEXECUTABLE")
-	for _, p := range resp.GetProcesses() {
-		fmt.Fprintf(w, "%d\t%s\t%s\n", p.GetPid(), roleName(p.GetRole()), shown(p.GetExecutable()))
-	}
-	for _, p := range resp.GetOwnerChain() {
-		fmt.Fprintf(w, "%d\t%s\t%s\n", p.GetPid(), roleName(p.GetRole()), shown(p.GetExecutable()))
-	}
-	_ = w.Flush()
+	printProcesses(env.Stdout, slices.Concat(resp.GetProcesses(), resp.GetOwnerChain()))
 	fmt.Fprintln(env.Stdout)
-	var hist bytes.Buffer
-	w = tabwriter.NewWriter(&hist, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "V\tWHEN\tEVENT\tFROM\tTO\tDETAIL")
-	for _, t := range resp.GetHistory() {
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\n", t.GetVersion(), when(t.GetAt().AsTime()), shown(t.GetEvent()), shown(t.GetFromState()), shown(t.GetToState()), shown(t.GetDetail()))
-	}
-	_ = w.Flush()
-	// An empty detail leaves the padding of the column before it, which nobody wants to see.
-	for line := range strings.Lines(hist.String()) {
-		fmt.Fprintln(env.Stdout, strings.TrimRight(line, " \n"))
-	}
+	printHistory(env.Stdout, resp.GetHistory())
 	return ExitOK
 }
 
@@ -286,6 +265,40 @@ func argsName(s *berthv1.Session) string {
 		return "unreadable"
 	}
 	return "read"
+}
+
+// printJSON prints a response as JSON, for --json.
+func printJSON(env Env, m proto.Message) int {
+	b, err := protojson.MarshalOptions{Multiline: true}.Marshal(m)
+	if err != nil {
+		fmt.Fprintln(env.Stderr, err)
+		return ExitError
+	}
+	fmt.Fprintf(env.Stdout, "%s\n", b)
+	return ExitOK
+}
+
+func printProcesses(out io.Writer, procs []*berthv1.SessionProcess) {
+	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "PID\tROLE\tEXECUTABLE")
+	for _, p := range procs {
+		fmt.Fprintf(w, "%d\t%s\t%s\n", p.GetPid(), roleName(p.GetRole()), shown(p.GetExecutable()))
+	}
+	_ = w.Flush()
+}
+
+func printHistory(out io.Writer, hist []*berthv1.Transition) {
+	var b bytes.Buffer
+	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "V\tWHEN\tEVENT\tFROM\tTO\tDETAIL")
+	for _, t := range hist {
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\n", t.GetVersion(), when(t.GetAt().AsTime()), shown(t.GetEvent()), shown(t.GetFromState()), shown(t.GetToState()), shown(t.GetDetail()))
+	}
+	_ = w.Flush()
+	// An empty detail leaves the padding of the column before it, which nobody wants to see.
+	for line := range strings.Lines(b.String()) {
+		fmt.Fprintln(out, strings.TrimRight(line, " \n"))
+	}
 }
 
 // shown makes text a process chose (paths, profile folders, names) safe to print: a string with

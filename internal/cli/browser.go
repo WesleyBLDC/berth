@@ -9,8 +9,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"google.golang.org/protobuf/encoding/protojson"
-
 	berthv1 "berth/gen/berth/v1"
 	"berth/internal/client"
 )
@@ -153,13 +151,7 @@ func browserList(ctx context.Context, args []string, env Env) int {
 		return reportError(env.Stderr, err, "", "")
 	}
 	if *asJSON {
-		b, err := protojson.MarshalOptions{Multiline: true}.Marshal(resp)
-		if err != nil {
-			fmt.Fprintln(env.Stderr, err)
-			return ExitError
-		}
-		fmt.Fprintf(env.Stdout, "%s\n", b)
-		return ExitOK
+		return printJSON(env, resp)
 	}
 	w := tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "ID\tPROFILE\tSTATE\tSESSION\tAGENT SESSION\tHEADLESS\tENDPOINT\tPRODUCT")
@@ -182,13 +174,7 @@ func agentBrowserList(ctx context.Context, c *client.Client, asJSON bool, env En
 		return reportError(env.Stderr, err, "", "")
 	}
 	if asJSON {
-		b, err := protojson.MarshalOptions{Multiline: true}.Marshal(resp)
-		if err != nil {
-			fmt.Fprintln(env.Stderr, err)
-			return ExitError
-		}
-		fmt.Fprintf(env.Stdout, "%s\n", b)
-		return ExitOK
+		return printJSON(env, resp)
 	}
 	w := tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "ID\tSTATE\tENDPOINT\tPRODUCT")

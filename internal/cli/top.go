@@ -561,19 +561,9 @@ func (m *topModel) detail(s *berthv1.Session) string {
 		return b.String()
 	}
 	b.WriteString("\n")
-	w = tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "PID\tROLE\tEXECUTABLE")
-	for _, p := range slices.Concat(r.GetProcesses(), r.GetOwnerChain()) {
-		fmt.Fprintf(w, "%d\t%s\t%s\n", p.GetPid(), roleName(p.GetRole()), shown(p.GetExecutable()))
-	}
-	_ = w.Flush()
+	printProcesses(&b, slices.Concat(r.GetProcesses(), r.GetOwnerChain()))
 	b.WriteString("\n")
-	w = tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "V\tWHEN\tEVENT\tFROM\tTO\tDETAIL")
-	for _, t := range r.GetHistory() {
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\n", t.GetVersion(), when(t.GetAt().AsTime()), shown(t.GetEvent()), shown(t.GetFromState()), shown(t.GetToState()), shown(t.GetDetail()))
-	}
-	_ = w.Flush()
+	printHistory(&b, r.GetHistory())
 	return b.String()
 }
 

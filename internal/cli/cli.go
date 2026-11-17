@@ -237,14 +237,8 @@ func debugState(ctx context.Context, entity string, args []string, env Env) int 
 		fmt.Fprintln(env.Stderr, err)
 		return ExitError
 	}
-	fmt.Fprintf(env.Stdout, "%s (%s): %s, version %d\n\n", s.GetEntity(), s.GetKind(), s.GetState(), s.GetVersion())
-	w := tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "V\tWHEN\tEVENT\tFROM\tTO\tDETAIL")
-	for _, t := range s.GetHistory() {
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\n", t.GetVersion(), t.GetAt().AsTime().Local().Format(time.TimeOnly),
-			t.GetEvent(), t.GetFromState(), t.GetToState(), t.GetDetail())
-	}
-	_ = w.Flush()
+	fmt.Fprintf(env.Stdout, "%s (%s): %s, version %d\n\n", shown(s.GetEntity()), shown(s.GetKind()), shown(s.GetState()), s.GetVersion())
+	printHistory(env.Stdout, s.GetHistory())
 	return ExitOK
 }
 

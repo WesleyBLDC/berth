@@ -11,7 +11,6 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	berthv1 "berth/gen/berth/v1"
@@ -75,13 +74,7 @@ func secretList(ctx context.Context, args []string, env Env) int {
 		return reportError(env.Stderr, err, "", "")
 	}
 	if *asJSON {
-		b, err := protojson.MarshalOptions{Multiline: true}.Marshal(resp)
-		if err != nil {
-			fmt.Fprintln(env.Stderr, err)
-			return ExitError
-		}
-		fmt.Fprintf(env.Stdout, "%s\n", b)
-		return ExitOK
+		return printJSON(env, resp)
 	}
 	w := tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "NAME\tSTATE\tCONSUMERS\tLAST USED\tUSES")
@@ -112,7 +105,7 @@ func secretList(ctx context.Context, args []string, env Env) int {
 					methodsOf(t.GetMethods()), pathOf(t.GetPathGlob()), state)
 				continue
 			}
-			fmt.Fprintf(w, "  %d\t%s\t%s\t%s\t%s\t%s\n", cons.GetGrantId(), cons.GetExePath(), shortHash(cons.GetSha256()),
+			fmt.Fprintf(w, "  %d\t%s\t%s\t%s\t%s\t%s\n", cons.GetGrantId(), shown(cons.GetExePath()), shortHash(cons.GetSha256()),
 				teamOf(cons), argsOf(cons.GetArgsGlob()), state)
 		}
 		_ = w.Flush()
@@ -150,7 +143,7 @@ func secretGrant(ctx context.Context, args []string, env Env) int {
 	switch resp.GetOutcome() {
 	case berthv1.GrantOutcome_GRANT_OUTCOME_GRANTED:
 		cons := resp.GetConsumer()
-		fmt.Fprintf(env.Stdout, "granted %s to %s\n", name, cons.GetExePath())
+		fmt.Fprintf(env.Stdout, "granted %s to %s\n", name, shown(cons.GetExePath()))
 		w := tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
 		fmt.Fprintf(w, "  sha256\t%s\n", shortHash(cons.GetSha256()))
 		fmt.Fprintf(w, "  team\t%s\n", teamOf(cons))
