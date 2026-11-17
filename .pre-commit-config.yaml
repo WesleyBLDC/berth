@@ -46,7 +46,7 @@ repos:
         types: [swift]
       - id: no-dash-punctuation
         name: no em or en dashes in docs
-        entry: '[—–]'
+        entry: '—|–'
         language: pygrep
         types_or: [markdown, text]
         exclude: ^\.pre-commit-config\.yaml$
