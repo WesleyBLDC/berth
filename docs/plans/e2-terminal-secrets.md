@@ -39,7 +39,7 @@ Out (E2b, later): the header proxy, `copy`, `rotate`, `rm`, the Keychain "Always
 2. `berthd` identifies the executable itself (never trusting a client hash), matches an `Active` grant, and returns a single use ticket: 32 random bytes, bound to name, exe hash and the caller's pid, valid 30 seconds.
 3. `berth run` starts `berth-native read`, passing the ticket on stdin.
 4. `berth-native` calls `RedeemUseTicket(ticket)` over the socket; `berthd` accepts it only from a peer whose executable is the signed `berth-native` (team `XPJ7XA42J4`), marks it used, and returns the name.
-5. `berth-native` reads `berth.<name>` and writes the value to its stdout pipe; `berth run` holds it only as `[]byte`, puts it in the child's environment, zeroes its copy, and masks it in the child's output.
+5. `berth-native` checks that fd 3 is a socket whose peer is its signed `berth` parent, then reads `berth.<name>` and writes the value to fd 3, one end of a socketpair `berth run` created; `berth run` holds it only as `[]byte`, puts it in the child's environment, zeroes its copy, and masks it in the child's output.
 6. A changed executable hash moves its grants to `Stale`, so step 2 refuses until the person grants again.
 
 Neither `RedeemUseTicket` nor `GrantSecret` is on the agent surface. Agents get `RequestSecret`, `ListSecrets` and `AuthorizeUse`.
@@ -73,7 +73,7 @@ stderr carries short diagnostics and never a value.
 |---|---|---|
 | `store` | `{"name":"...","reason":"...","requester":{"pid":1,"executable":"/path","tree":[{"pid":1,"executable":"/path"}],"working_dir":"/path"}}` | `{"outcome":"stored"}`, `"denied"` or `"failed"`, with optional `"error":"<short text>"` |
 | `confirm` | `{"action":"grant","secret":"...","consumer":{"path":"/path","sha256":"<64 hex>","team_id":"","signing_id":""},"args_glob":"","requester":{...}}` | `{"outcome":"approved"}`, `"denied"` or `"failed"` |
-| `read` | the ticket as 64 lowercase hex characters and a newline | the raw value bytes, no newline; on any failure nothing on stdout and exit 3 |
+| `read` | the ticket as 64 lowercase hex characters and a newline | nothing on stdout; the raw value bytes go to fd 3 (a socketpair end from `berth run`, checked by the kernel to belong to the signed `berth` parent) on any failure nothing is written and exit 3 |
 
 - Keychain item: generic password, service `berth.<name>`, account `berth`, login keychain.
 - `store` refuses with `failed` if `berth.<name>` already exists.
