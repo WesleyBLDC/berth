@@ -10,7 +10,9 @@
 Berth is a local app for macOS that lists every browser your agents, tests and scrapers have open, lets you watch and take over any of them, and decides which Keychain passwords and which runbook each one gets.
 
 Status: pre release, in active development, with no releases yet.
-M0 (spike) and M1 (skeleton) are done; E2a (terminal secrets) is being integrated; M2 (see every browser) is next.
+M0 (spike) and M1 (skeleton) are done.
+E2a (terminal secrets) and E2b (header proxy and secret lifecycle) are built and await the maintainer's manual check.
+E3 (isolated agents) is next, then M2 (see every browser).
 The full status is in [ARCHITECTURE.md](ARCHITECTURE.md#milestones).
 
 - Architecture, what is built and what is planned: [ARCHITECTURE.md](ARCHITECTURE.md)
@@ -28,7 +30,8 @@ The maintainer keeps extra design notes privately; everything needed to understa
 
 - `berthd`: a Go daemon that holds all state, runs explicit state machines and serves one Connect API on a Unix socket.
 - `berth`: one shot commands today, and a full screen terminal view later.
-- `berth-native`: a small signed Swift helper, the only Berth process that touches secret values (Keychain, Touch ID).
+- `berth-native`: a small signed Swift helper, the only Berth process that reads secret values from the Keychain (Touch ID).
+- `berth-proxy`: a signed loopback HTTPS proxy, one per `berth run --proxy`, that writes a granted API key header so the command never holds the key.
 - `Berth.app`: a native SwiftUI window and menu bar item (planned).
 - `berth-mcp`: a thin MCP shim for agents without a shell (planned).
 

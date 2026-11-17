@@ -139,7 +139,7 @@ What the e2e proves, and what it does not:
 - The canary run: A gets exactly `Bearer <canary>` once; B, not granted, gets the client's placeholder header untouched; plain HTTP gets 405 and never reaches A; C, granted but self signed, sees a failed TLS handshake and no request while the client gets 502 on its `CONNECT`; a wrong or missing credential gets 407; the canary is in no environment dump, CLI or child output, `berthd` log, database file or proxy temp file (checked during and after the run); the session ends `Ended` with one injected request.
 - Lifecycle: a revoke during a run stops injection and the session ends `Ended`; `SIGKILL` on the proxy makes the session `Lost` through kqueue `NOTE_EXIT`; `rotate` puts the new value in the next run; `rm` revokes the grants and the next `berth run --proxy` exits 8 with no session; `berth-proxy` with `GODEBUG` exits 2 before contacting `berthd`.
 - Ticket kinds: the fake helper's `trust_parent` switch takes the parent to be the other kind without checking its signature, so the e2e proves `berthd` records and returns the consumer kind and the helper refuses a mismatch; the signature half of the receiver check rests on the receiver table tests in `native/Tests/BerthNativeCoreTests/ReceiverTests.swift` and Wesley's manual check.
-- Remaining for the exit gate: the agent safety checklist walk for E2b, and Wesley's manual check with real signing, Touch ID and a real API with a test key.
+- The agent safety checklist walk is in [E2b exit gate](#e2b-exit-gate); Wesley's manual check with real signing, Touch ID and a real API with a test key remains.
 
 ## Exit notes (item 7)
 
@@ -148,3 +148,38 @@ What the e2e proves, and what it does not:
 - Limit: any `SIGCONT` lifts `POSIX_SPAWN_START_SUSPENDED`, so the check stops a file swap by itself but not a same user agent that also stops berth and resumes the child, or kills berth while the child waits; the swapped binary then runs with the values in its environment. No fix exists while values travel in the environment, and it falls under the accepted hostile same user threat model. The child stays in berth's process group so it keeps reading the terminal.
 - Scripts are checked by their interpreter's cdhash, so the race stays open for a script's own bytes; grants older than 0006 go Stale at their first use and must be granted again.
 - `berth run --proxy` still starts its child with `exec.Cmd`: that child holds no value, so the race does not apply.
+
+## E2b exit gate
+
+The [agent safety checklist](../agent-safety.md#milestone-checklist), walked on 2026-11-17 for everything E2b added (items 1 to 7), at `971664e`.
+No item fails; nothing here needed a code change.
+
+| # | Check | Result | Evidence |
+|---|---|---|---|
+| 1 | New agent methods are marked, pinned, cannot read a value or reach another session | Pass | `AuthorizeProxy`, `WatchProxySession`, `EndProxySession` carry `(berth.v1.agent) = true` (`proto/berth/v1/secrets.proto:44-56`) and `TestAgentSurface` pins all seven (`internal/adapters/api/api_test.go:90`). All three accept only the signed proxy through `TrustProxy` before the request log (`internal/adapters/api/secrets.go:181-229`, `TestProxyMethodsCheckThePeerBeforeTheRequestLog`). A session answers only the audit token that authorized it (`owned`, `internal/berthd/proxy.go:226`; `TestProxySessionServesUntilRevoked` tries another token and an unknown id). They return tickets, targets and events, never a value; a ticket yields a value only to a signed `berth-native` whose parent is the proxy pid. `GrantProxy`, `RevokeGrant`, `RemoveSecret` and `RotateSecret` stay off the agent surface. |
+| 2 | No value in a `string`, log, error, event note, proto field, non canary fixture or the request log | Pass, with one recorded limit | `TestNoFieldCarriesAValue` (`internal/adapters/api/api_test.go:127`) pins every bytes or value named field. The proxy holds each value in locked memory outside the Go heap (`lockValue`, `internal/proxy/value.go:23`; `TestLockValueRefusesAndZeroes`) and writes it from bytes (`writeRequest`, `internal/proxy/forward.go:183`). Event notes are fixed text or counts (`internal/berthd/proxy.go:149`, `:288`, `:347`; `internal/berthd/lifecycle.go:59`). The request log drops tickets (`TestAuthorizeProxyNeverRecordsATicket`). The suspended start builds the child environment from `[]byte` and wipes it (`startVerified`, `internal/cli/run.go:150`). Limit: a response header that echoes the value is a Go string inside `net/http` before redaction, recorded in the honest limits of `ARCHITECTURE.md`. |
+| 3 | A canary reaches no reply, log, database row or agent facing output | Pass | `TestProxyCanary` and `TestProxyLifecycle` (`test/e2e/proxy_test.go:364`, `:520`) check the canary, its hex and base64, in every environment dump, CLI and child output, `berthd.log`, every `berth.db*` file and the proxy temp folder during and after the run (`canaryChecker`, `:294`). `TestSwappedBinaryNeverRuns` (`test/e2e/secrets_test.go:594`) checks item 7's refusal output; the same start path is covered for logs and database files by `TestSecretStoreGrantRunAndRefusals`. |
+| 4 | Every power action needs Touch ID, with prompt text from verified facts | Pass | `GrantProxy` sends a `PowerProxyGrant` prompt with the requester facts `berthd` read from the kernel (`internal/berthd/lifecycle.go:35`); remove and rotate share `LifecyclePrompt{Name, Requester}` (`:135`) and `berth-native` redeems their action ticket before any prompt (`removeRedeemsBeforeAnyPrompt`, `rotateRedeemsBeforeAnyPrompt` in `native/Tests/BerthNativeCoreTests/LifecycleTests.swift`). The target in the proxy prompt is what the requester asked for, the exact thing being granted, restricted by the schema to DNS names, HTTP tokens and printable ASCII and folded onto one capped line (`proxyTouchIDReason`, `native/Sources/BerthNativeCore/Prompts.swift:77`). Revoke needs none, since it only lowers privilege. |
+| 5 | Agent controlled text is quoted and labelled where a person sees it, and never an event note | Pass | E2b adds no free text claim: rotate and remove carry no reason (`rotateDialogText`, `Prompts.swift:25`); the proxy target is validated tokens, and its path glob is quoted (`Prompts.swift:83`). No target field, path or request detail is stored in an event note or in `proxy_sessions` (counts and pid only). |
+| 6 | Every mutating method takes a `request_id`; a retry cannot act twice | Pass | `TestMutatingMethodsTakeARequestID` (`internal/adapters/api/api_test.go:166`) covers `GrantProxy`, `RevokeGrant`, `RemoveSecret`, `RotateSecret`, `AuthorizeProxy` and `EndProxySession`, each through `once` or `onceKeeping` (`internal/adapters/api/secrets.go:135-226`); `TestRemoveSecretRunsOncePerRequestID`. A replayed `AuthorizeProxy` returns no ticket. `WatchProxySession` is a stream without one, and a second stream on a session is refused (`internal/berthd/proxy.go:240-244`). |
+| 7 | Every new failure path ends in a named state or a typed error | Pass | Proxy sessions end `Ended` or `Lost` (`TestProxySessionLost`, `TestBootRecoversLifecycleAndSessions`); interrupted rotates and removes fail with the note `interrupted`. `BUSY`, `BAD_PROXY_TARGET` and `GRANT_NOT_FOUND` are typed (`TestLifecycleErrorsAreTyped`); the CLI maps them to exits 7 and 8 (`internal/cli/cli.go:31-32`); the proxy exits 0 to 3. A redial in the proxy happens only before a request is written, never as a resend (`internal/proxy/forward.go:90`). Item 7 kills a child whose live cdhash differs and exits 6 (`internal/cli/run.go:205`, `TestRunKillsAChildThatIsNotTheGrantedCode`). |
+| 8 | Each OWASP agentic risk is covered, unchanged or a known limit | Pass | See below. |
+
+OWASP agentic risks after E2b:
+
+| Risk | After E2b |
+|---|---|
+| ASI01 Goal hijack | Covered for API keys: the header goes only to the granted host and port, never over cleartext; browsers still M4 and M6 |
+| ASI02 Tool misuse | Unchanged; the allowlist grew to seven methods, the three proxy ones accepting only the signed proxy |
+| ASI03 Identity and privilege abuse | Covered for proxy grants: pinned target, method and path limits, Touch ID, revoke and rm |
+| ASI04 Supply chain | Covered for `berth-proxy`: pinned by team, identifier and live cdhash; standard library only |
+| ASI05 Unexpected code execution | Unchanged: names travel as JSON on stdin, no shell; the proxy refuses `GODEBUG` and any variable beyond its four |
+| ASI06 Memory and context poisoning | Unchanged (M6) |
+| ASI07 Insecure agent to agent messages | Partly: a proxy session answers only its own audit token; session tokens still M4 |
+| ASI08 Cascading failures | Unchanged (M6) |
+| ASI09 Human trust exploitation | Covered for proxy, rotate and remove prompts |
+| ASI10 Rogue agents | Partly: revoke and rm stop running proxies at once; the kill switch is still planned |
+
+Known limits carried forward, all in the honest limits of `ARCHITECTURE.md`: the proxy credential in the child's environment, use through the granted API, the echoed header string, the redaction timing channel, and the suspended start's `SIGCONT` race against an agent that signals the processes (the header proxy is the mode for that).
+
+Remaining for the exit gate: Wesley's manual check with real signing, Touch ID and a real API with a test key.

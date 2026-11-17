@@ -11,7 +11,7 @@ It borrows Docker's model: a browser and whoever drives it is a session, a saved
 It runs only on your own Mac, talks only over a Unix socket, and has no telemetry.
 
 Berth is in pre release development.
-Terminal secrets (E2a) and the header proxy with the secret lifecycle (E2b) are built and wired; the browser features start at M2.
+Terminal secrets (E2a) and the header proxy with the secret lifecycle (E2b) are built and wired, and await the maintainer's manual check; isolated agents (E3) come next, and the browser features start at M2.
 See [Milestones](#milestones) for the exact status.
 
 ## Processes
@@ -462,13 +462,14 @@ Each milestone starts from a plan in [`docs/plans/`](docs/plans) with acceptance
 |---|---|---|
 | M0 Spike | Five risky proofs: Swift streaming over the socket, Playwright MCP through a token proxy, 60 fps screencast in SwiftUI, Touch ID and Keychain from a signed helper, window capture by process ID | Done; code kept under the tag `m0-spike` ([ADR 0015](docs/adr/0015-m0-spike-results.md), [plan](docs/plans/m0-spike.md)) |
 | M1 Skeleton | Repository rules, `berth.v1` schema, machine kit, SQLite store, daemon machine, socket checks, `berth status` and `berth debug state` | Done ([plan](docs/plans/m1-skeleton.md)) |
-| E2a Terminal secrets | `berth secret request`, `add`, `ls`, `grant`, `berth run`, `berth-native`, secret and grant machines, audit rows, a Claude Code hook | In progress: built and wired with the end to end canary test; the manual Touch ID check remains ([plan](docs/plans/e2-terminal-secrets.md)) |
-| M2 See every browser | `ProcessSource`, signature registry, owner chain, session machine (observed states), `berth ps`, `inspect`, `stop`, `leftovers` | Planned, next |
+| E2a Terminal secrets | `berth secret request`, `add`, `ls`, `grant`, `berth run`, `berth-native`, secret and grant machines, audit rows, a Claude Code hook | Built: wired with the end to end canary test; awaiting the maintainer's manual Touch ID check ([plan](docs/plans/e2-terminal-secrets.md)) |
+| E2b Header proxy and secret lifecycle | `berth-proxy` and `berth run --proxy`, `berth secret proxy`, `revoke`, `rm`, `rotate`, the proxy session machine, and `berth run --env` starting its child suspended to check its live cdhash | Built: wired with the canary and lifecycle end to end tests, agent safety checklist walked ([exit gate](docs/plans/e2b-header-proxy.md#e2b-exit-gate)); item 7 catches a Mach-O consumer swapped between the check and the start (not an agent that also signals berth and the child); awaiting the maintainer's manual check with real signing, Touch ID and a real API. `copy` moved to E3 or M5, MCP tools to M4 ([plan](docs/plans/e2b-header-proxy.md)) |
+| E3 Isolated agents | Coding agents run as another identity (a separate macOS user, a sandbox or a VM, chosen by a scout), so a hostile agent cannot reach your files, Keychain or `berth.db`; the agent surface becomes enforced | Planned, next ([plan](docs/plans/e3-isolated-agents.md)) |
+| M2 See every browser | `ProcessSource`, signature registry, owner chain, session machine (observed states), `berth ps`, `inspect`, `stop`, `leftovers` | Planned, after E3 |
 | M3 Live terminal view | `WatchSessions` stream with resume, the TUI | Planned |
 | M4 Managed Chromium | `BrowserDriver` over a private CDP pipe, the token gated CDP proxy, profile locks, session tokens, `berth-mcp` | Planned |
 | M5 Mac app | `Berth.app`, login item registration, live view and takeover, window pictures, notifications | Planned |
 | M6 Credentials and runbooks | Browser grants, the atomic fill, hard limits per profile, runbooks served to agents | Planned |
-| E2b Header proxy and secret lifecycle | `berth-proxy` and `berth run --proxy`, `berth secret proxy`, `revoke`, `rm`, `rotate`, the proxy session machine | In progress: built and wired with the canary and lifecycle end to end tests, and item 7 catches a Mach-O consumer swapped between the check and the start (not an agent that also signals berth and the child); the manual check with real signing, Touch ID and a real API remains. `copy` moved to E3 or M5, MCP tools to M4 ([plan](docs/plans/e2b-header-proxy.md)) |
 | E1 Other password stores | Helper contract with 1Password and Bitwarden helpers | Optional |
 | M7 Firefox and your daily Chrome | WebDriver BiDi adapter; connecting to your own Chrome as a Touch ID power action | Planned |
 | M8 Release | License, signed and notarized build, tamper evident audit log, published signature format, first tagged release | Planned |

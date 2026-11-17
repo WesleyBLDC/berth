@@ -23,10 +23,10 @@ Most controls below are planned for the browser milestones (M4 to M6); each row 
 
 | Risk | How it hits Berth | Control | Status |
 |---|---|---|---|
-| ASI01 Goal hijack | A page tells the agent to log in somewhere else or send data out | Site binding on every fill; a per profile site allowlist enforced in the browser; session token scope | Planned (M4, M6) |
+| ASI01 Goal hijack | A page tells the agent to log in somewhere else or send data out | Site binding on every fill; a per profile site allowlist enforced in the browser; session token scope; for API keys, the header proxy writes the key only into requests to the granted host and port | Header proxy built (E2b); the rest planned (M4, M6) |
 | ASI02 Tool misuse | The agent calls tools in harmful combinations | A short agent method allowlist pinned by `TestAgentSurface`; CDP methods outside the session refused; rate limits per session | Allowlist built; the rest planned |
-| ASI03 Identity and privilege abuse | The agent acts as you with your logins | Grants per consumer (executable today, profile and site later); power actions need Touch ID; strict mode | Terminal grants built; browser grants planned |
-| ASI04 Supply chain | A fake secret helper, signature file or MCP shim | The helper is trusted by code signing team; other store helpers pinned by signing identity and added with Touch ID; signatures are data, never code; pinned dependencies, `go mod verify`, `govulncheck` | Partly built |
+| ASI03 Identity and privilege abuse | The agent acts as you with your logins | Grants per consumer (executable or proxy target today, profile and site later); power actions need Touch ID; strict mode | Terminal and proxy grants built; browser grants planned |
+| ASI04 Supply chain | A fake secret helper, signature file or MCP shim | The helper and `berth-proxy` are trusted by code signing team; other store helpers pinned by signing identity and added with Touch ID; signatures are data, never code; pinned dependencies, `go mod verify`, `govulncheck` | Partly built |
 | ASI05 Unexpected code execution | Agent input reaches a shell | Berth never runs a command built from agent input; helpers get a reference on stdin, never shell arguments | Built |
 | ASI06 Memory and context poisoning | The agent rewrites its own runbook to grant itself more | Agents can read runbooks, never write them; runbook changes land in the audit log | Planned (M6) |
 | ASI07 Insecure agent to agent messages | One agent impersonates another | One token per session; no agent can see or call another session | Planned (M4) |
@@ -38,6 +38,7 @@ Most controls below are planned for the browser milestones (M4 to M6); each row 
 
 Agents store and use secrets but never read them ([ADR 0012](adr/0012-agents-can-store-and-use-secrets-never-read-them.md)).
 In the terminal, values travel only from `berth-native` over a socketpair, whose peer it checks is its parent and the signed `berth`, into the one child process `berth run` starts; the flow is in [ARCHITECTURE.md](../ARCHITECTURE.md#secrets-store-and-use-never-read).
+For API keys, `berth run --proxy` keeps the value out of the child too: only the signed `berth-proxy` reads it, through the same helper, and writes it into requests to the granted host ([the header proxy](../ARCHITECTURE.md#the-header-proxy-built-e2b)).
 
 In a browser (planned, M6), typing a password into a page puts it in the DOM, where any CDP client can read it back with `Runtime.evaluate` or a screenshot, so the fill runs as one atomic step the agent cannot watch ([ADR 0008](adr/0008-atomic-fill-with-the-agent-paused.md)):
 
@@ -49,7 +50,7 @@ In a browser (planned, M6), typing a password into a page puts it in the DOM, wh
 The harness never passes a password and never receives one: the planned `fill_login` tool has no secret parameters, not even the Keychain item name, and `berth-mcp` adds the session token itself, so the token never enters the model's context.
 
 **Where a value never goes:** tool arguments or results, Connect or MCP messages to clients, command line arguments, files, logs, error reports, event notes, screenshots, or the agent's CDP connection.
-The one deliberate exception is the environment of the child that `berth run` starts, pinned by a grant.
+The deliberate exceptions are the environment of the child that `berth run --env` starts, pinned by a grant, and the locked memory of the `berth-proxy` that `berth run --proxy` starts, which sends it only to the granted host.
 
 **If a session token leaks** (planned, M4): it works only over the local socket, only as your user, only from the agent's own process tree, only for that session's agent methods, and it ends with the session; it can ask Berth to fill on a granted site, never read a value.
 

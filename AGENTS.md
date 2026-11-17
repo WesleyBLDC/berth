@@ -48,7 +48,7 @@ Paste its last lines in your report; a failure is investigated to its root cause
 4. **State and event names are stored data.** Renaming one breaks existing databases; add new names and migrate instead.
 5. **The core imports no adapter.** `depguard` enforces it; `forbidigo` bans `time.Now` and `fmt.Print` in `internal/core`.
 6. **Contract first.** A behaviour change starts in `proto/` or a transition table, then tests, then code.
-7. **Secrets never cross the API**, never live in a Go string, never reach logs, errors or agent replies. Only `berth-native` and secret helpers read them.
+7. **Secrets never cross the API**, never live in a Go string, never reach logs, errors or agent replies. Only `berth-native`, secret helpers and `berth-proxy` (through `berth-native`, to write a granted header) read them.
 8. **Agents store and use secrets, never read them.** Power actions need Touch ID. Approval text is built only from facts the daemon verified.
 9. **Agent methods are opt in.** Only methods with `(berth.agent) = true` are reachable by agents, and `TestAgentSurface` pins the list.
 10. **Mutating calls are idempotent** through a `request_id` and the request log.
