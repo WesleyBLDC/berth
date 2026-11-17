@@ -75,6 +75,7 @@ stateDiagram-v2
 - `Requested` is never stored: the first saved transition is `Launch`, so the row exists, in `Launching`, before any process starts (persist before acting).
 - `Spawn` starts the browser through the driver, waits up to 30 seconds for `Browser.getVersion` over the pipe, and returns `Started` with the product name, or kills the process group and returns `LaunchFailed` with a fixed note.
 - A `CloseRequested` that arrives while `Spawn` runs is applied before `Started`, so `Launching` accepts it and `Started` in `Closing` is ignored; a `LaunchFailed` in `Closing` ends it.
+  Found by the audit of 2026-11-17: the table allows this, but the daemon does not do it yet. `Spawn` runs inside the actor and the launch call holds the entity's turn, so a close sent during a launch waits until the launch has ended, and no daemon test covers it; making `Spawn` return at once is a follow up.
 - `CloseBrowser` sends `Browser.close` over the pipe and starts a 5 second timer, whose `CloseTimedOut` makes `KillGroup` kill the process group.
 - `Exited` comes when the pipe reaches EOF and the process has been reaped, and at boot for every live row (`gone at boot`).
 - `Closed` is the only final state, so the actors kit's single `final` applies unchanged; why a browser closed is in the event that got it there (`LaunchFailed`, `Exited` or `CloseRequested`).
