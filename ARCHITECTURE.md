@@ -11,7 +11,7 @@ It borrows Docker's model: a browser and whoever drives it is a session, a saved
 It runs only on your own Mac, talks only over a Unix socket, and has no telemetry.
 
 Berth is in pre release development.
-Terminal secrets (E2a) are done: the maintainer's manual check with real signing and Touch ID passed on 2026-11-17. The header proxy with the secret lifecycle (E2b) is built and wired and awaits the maintainer's manual check; isolated agents (E3) come next, and the browser features start at M2.
+Terminal secrets (E2a) are done: the maintainer's manual check with real signing and Touch ID passed on 2026-11-17. The header proxy with the secret lifecycle (E2b) is built and wired and awaits the maintainer's manual check; isolated agents (E3) are in progress, starting with the agent socket, and the browser features start at M2.
 See [Milestones](#milestones) for the exact status.
 
 ## Processes
@@ -52,6 +52,7 @@ Swift does the native work because Keychain, Touch ID and ScreenCaptureKit are A
 - One Protobuf schema, package `berth.v1` in [`proto/berth/v1/`](proto/berth/v1), generates every client; generated code is committed under `gen/` ([ADR 0002](docs/adr/0002-connect-api-with-one-protobuf-schema.md)).
 - `berthd` serves Connect, gRPC and Connect JSON on one socket, over HTTP/2 without TLS and over HTTP/1.1.
 - The socket is `$BERTH_HOME/berthd.sock`; `BERTH_HOME` defaults to `~/Library/Application Support/Berth`.
+- With `berthd -agent-uid <uid> -agent-gid <gid>`, a second socket serves the agent user (E3), by default at `/Users/Shared/Berth/<owner uid>/agent.sock`, with only the agent methods; see [the socket](#the-socket-built).
 - Every Go client calls `Handshake` first, and a protocol version mismatch is a typed error (`ERROR_REASON_PROTOCOL_MISMATCH`).
 - `buf breaking` fails the build if a change would break an existing client; `v1` only gains fields.
 
@@ -319,6 +320,7 @@ Instructions and prompts are never a security control.
 
 - The socket is mode 0600 inside a 0700 folder, and only one `berthd` may serve it.
 - Every connection's peer user ID is checked with `LOCAL_PEERCRED` before a single byte is read; another user's connection is closed.
+- **The agent socket (built, E3 item 3):** when `berthd` is given an agent uid and gid, it also listens at `/Users/Shared/Berth/<owner uid>/agent.sock` (or `-agent-socket`), outside the owner's `0700` `~/Library` so the agent user can reach it. The folder is `0710` and the socket `0660`, both with the agent group (setup makes it the `berth` group, which the owner belongs to), so the agent can connect but not list the folder. `berthd` refuses a socket folder that is a symlink or another user's, or whose ancestors anyone but the owner or root could write (a root owned sticky folder like `/Users/Shared` is fine), and changes the folder's mode and group through a descriptor opened without following symlinks. Every connection's `LOCAL_PEERCRED` uid must equal the agent uid, and only methods marked `(berth.v1.agent) = true` are served; every other method answers `PermissionDenied` with `ERROR_REASON_NOT_AGENT_METHOD`. With no agent uid the agent socket is off. The owner socket is unchanged and still refuses the agent uid.
 - Every request is validated against `protovalidate` rules in the schema before a handler acts on it.
 - Every mutating call carries a `request_id`; a retry gets the first response, and reusing an ID for another method is a typed error.
 - Logs go through a redacting `slog` handler that blanks any attribute whose key names a secret; core dumps are turned off at start.
@@ -327,7 +329,8 @@ Instructions and prompts are never a security control.
 
 - **Built:** a method is meant for agents only when the schema marks it `option (berth.v1.agent) = true`, and `TestAgentSurface` pins the list: `Handshake`, `RequestSecret`, `ListSecrets`, `AuthorizeUse`, `AuthorizeProxy`, `WatchProxySession` and `EndProxySession`. The last three accept only the signed `berth-proxy`, and only the audit token that authorized a session may watch or end it.
 - **Planned (M4):** agents get a session token that works only for their own session, only from their own process tree, and only for agent methods ([ADR 0006](docs/adr/0006-agents-are-scoped-by-session-token.md)); `berth-mcp` and the agent commands expose exactly the marked methods.
-- **Today's limit:** until session tokens exist, the daemon cannot tell an agent from the person, because both run as the same user; anything that can reach the socket can call any method, and the protections that hold are Touch ID on power actions, values never crossing the API, and use tickets going only to the signed `berth` CLI.
+- **Enforced for a separate agent user (E3):** the agent socket serves exactly the marked methods, read from the schema option, and `TestAgentSurface` pins both the list and the refusal of every other method there.
+- **Today's limit:** for an agent running as the same user, until session tokens exist, the daemon cannot tell it from the person; anything that can reach the socket can call any method, and the protections that hold are Touch ID on power actions, values never crossing the API, and use tickets going only to the signed `berth` CLI.
 
 ### Secrets: store and use, never read
 
@@ -428,7 +431,7 @@ Other password stores plug in as `berth-secret-<name>` helper programs pinned by
 E2a defends against agents that are honest, confused, or prompt injected into asking for or printing secrets, and against casual misuse of the signed binaries (copying them, wrapping the helper, pointing them at a fake daemon).
 A determined agent running as the same user that can run arbitrary code can still leak an environment injected secret through tool configuration (dotfiles, `PATH`, `HOME`).
 The header proxy (E2b) keeps API keys out of every process an agent controls, and every check it rests on is a kernel fact (audit tokens, live cdhash, kqueue), never a path or the caller's environment.
-Running agents under a separate user or in a sandbox (E3) is the stronger isolation beyond that.
+Running agents as a separate macOS user (E3, [ADR 0018](docs/adr/0018-agents-run-as-a-separate-macos-user.md), proposed) is the stronger isolation beyond that.
 
 ### Honest limits
 
@@ -450,6 +453,9 @@ Running agents under a separate user or in a sandbox (E3) is the stronger isolat
 - A granted interpreter can print the secret whatever the glob says; `--allow-interpreter` only makes that a deliberate choice.
 - The receiver check compares the socket peer's audit token pid with `getppid()`; a parent that exited would reparent the helper (to pid 1) and fail that comparison, and the audit token itself stops matching once its process exits or execs.
 - Until session tokens (M4), a malicious process running as the person can call every method; it still cannot read a value through the API or grant itself access without Touch ID.
+- **`berthd` cannot read another user's process arguments:** `kern.procargs2` fails for processes of another uid (checked on 2026-11-17), so `berthd` cannot see the debugging port of a Chrome the agent user starts itself; agent browsers must be launched through Berth (E3 item 8), and M2 can list such a Chrome only as owned by the agent user.
+- **An agent that runs before setup can squat `/Users/Shared/Berth`**; `berthd` then refuses to serve the agent socket. That is a denial of service, not a bypass, and `berth agent setup` (E3 item 2) creates the folder as root first.
+- **Until E3 items 4 to 6 land, the agent socket only narrows the surface:** a separate agent user can call the agent methods with no session token, and `AuthorizeUse` and `AuthorizeProxy` answer it as they answer the owner, though their tickets lead to no value, since only a `berth-native` or `berth-proxy` on the owner socket can redeem them.
 - The peer adapter reads process facts through a raw `proc_info` syscall with a hardcoded struct offset, which a macOS update could break; its test guards it.
 - Builds are signed with a free Apple Development identity; the data protection keychain, notarization and Developer ID signing wait for the paid program at M8.
 
@@ -464,7 +470,7 @@ Each milestone starts from a plan in [`docs/plans/`](docs/plans) with acceptance
 | M1 Skeleton | Repository rules, `berth.v1` schema, machine kit, SQLite store, daemon machine, socket checks, `berth status` and `berth debug state` | Done ([plan](docs/plans/m1-skeleton.md)) |
 | E2a Terminal secrets | `berth secret request`, `add`, `ls`, `grant`, `berth run`, `berth-native`, secret and grant machines, audit rows, a Claude Code hook | Done: wired with the end to end canary test; the maintainer's manual check with real signing and Touch ID passed on 2026-11-17 ([plan](docs/plans/e2-terminal-secrets.md#manual-check-2026-11-17)) |
 | E2b Header proxy and secret lifecycle | `berth-proxy` and `berth run --proxy`, `berth secret proxy`, `revoke`, `rm`, `rotate`, the proxy session machine, and `berth run --env` starting its child suspended to check its live cdhash | Built: wired with the canary and lifecycle end to end tests, agent safety checklist walked ([exit gate](docs/plans/e2b-header-proxy.md#e2b-exit-gate)); item 7 catches a Mach-O consumer swapped between the check and the start (not an agent that also signals berth and the child); awaiting the maintainer's manual check with real signing, Touch ID and a real API. `copy` moved to E3 or M5, MCP tools to M4 ([plan](docs/plans/e2b-header-proxy.md)) |
-| E3 Isolated agents | Coding agents run as another identity (a separate macOS user, a sandbox or a VM, chosen by a scout), so a hostile agent cannot reach your files, Keychain or `berth.db`; the agent surface becomes enforced | Planned, next ([plan](docs/plans/e3-isolated-agents.md)) |
+| E3 Isolated agents | Coding agents run as a separate macOS user (the scout's pick over Seatbelt and a VM), env consumers as a runner user `berthd` starts, so a hostile agent cannot reach your files, Keychain or `berth.db`; the agent surface becomes enforced | In progress: the agent socket is built (item 3); the separate macOS user is proposed in [ADR 0018](docs/adr/0018-agents-run-as-a-separate-macos-user.md) with provisional picks awaiting the maintainer, and the spike, setup and launching as another user need his admin rights ([plan](docs/plans/e3-isolated-agents.md)) |
 | M2 See every browser | `ProcessSource`, signature registry, owner chain, session machine (observed states), `berth ps`, `inspect`, `stop`, `leftovers` | Planned, after E3 |
 | M3 Live terminal view | `WatchSessions` stream with resume, the TUI | Planned |
 | M4 Managed Chromium | `BrowserDriver` over a private CDP pipe, the token gated CDP proxy, profile locks, session tokens, `berth-mcp` | Planned |
@@ -500,5 +506,6 @@ Every decision that binds code has a record in [`docs/adr/`](docs/adr):
 | [0015](docs/adr/0015-m0-spike-results.md) | M0 spike results |
 | [0016](docs/adr/0016-brand-sleeping-key.md) | Brand is the Sleeping key |
 | [0017](docs/adr/0017-public-development-repository.md) | Public repository for development |
+| [0018](docs/adr/0018-agents-run-as-a-separate-macos-user.md) | Agents run as a separate macOS user (proposed) |
 
 How several coding agents split a milestone is in [docs/agentic-work.md](docs/agentic-work.md), and the rules they follow are in [AGENTS.md](AGENTS.md).
