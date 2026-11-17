@@ -30,15 +30,28 @@ let arguments = CommandLine.arguments.dropFirst()
 guard arguments.count == 1, let command = arguments.first else {
     misuse("usage: berth-native store | confirm | read | rotate | remove (one request on stdin)")
 }
-guard ["store", "confirm", "read", "rotate", "remove"].contains(command) else { misuse("unknown command \(command)") }
+var commands = ["store", "confirm", "read", "rotate", "remove"]
+#if DEBUG
+    commands.append("selftest-wait")
+#endif
+guard commands.contains(command) else { misuse("unknown command \(command)") }
 // One line, not end of file: the caller may keep stdin open while it waits for the reply.
 let line = readLine(strippingNewline: false).map { Data($0.utf8) } ?? Data()
 
-switch command {
-case "store": await runStore(line)
-case "confirm": await runConfirm(line)
-case "read": runRead(line)
-case "rotate": await runRotate(line)
-case "remove": await runRemove(line)
-default: misuse("unknown command \(command)")
+// Every command ends in exit with its reply. Run it as a task and serve the main queue forever:
+// with top level await, the main run loop returns as soon as a dialog's modal session has ended
+// and the command waits on Touch ID, and the process exits with no reply.
+Task { @MainActor in
+    switch command {
+    case "store": await runStore(line)
+    case "confirm": await runConfirm(line)
+    case "read": runRead(line)
+    case "rotate": await runRotate(line)
+    case "remove": await runRemove(line)
+    #if DEBUG
+        case "selftest-wait": await runSelfTestWait()
+    #endif
+    default: misuse("unknown command \(command)")
+    }
 }
+dispatchMain()
