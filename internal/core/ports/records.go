@@ -63,6 +63,8 @@ type SecretRecords interface {
 	AddGrant(ctx context.Context, g GrantRecord) (int64, error)
 	// Grants lists a secret's grants, newest first.
 	Grants(ctx context.Context, secret string) ([]GrantRecord, error)
+	// Grant looks a grant up by id; ok is false when there is none.
+	Grant(ctx context.Context, id int64) (g GrantRecord, ok bool, err error)
 	CountUse(ctx context.Context, id int64, at time.Time) error
 }
 

@@ -104,11 +104,11 @@ func Transition(s State, e Event) (State, []Effect, error) {
 	switch e.Kind {
 	case StoreRequested:
 		switch s {
-		// Denied and Failed may be requested again so a person can retry.
-		case Pending, Denied, Failed:
+		// Denied and Failed may be requested again so a person can retry; Removed frees the name.
+		case Pending, Denied, Failed, Removed:
 			return Pending, []Effect{{Kind: PromptStore}}, nil
-		// A Stored secret is replaced only by rotate; the API answers SECRET_EXISTS.
-		case Stored, Rotating, Removing, Removed:
+		// A Stored secret is replaced only by rotate; the API answers SECRET_EXISTS or BUSY.
+		case Stored, Rotating, Removing:
 		}
 	case StoreSucceeded:
 		if s == Pending {
@@ -123,13 +123,34 @@ func Transition(s State, e Event) (State, []Effect, error) {
 			return Failed, nil, nil
 		}
 	case UseRefused:
-		// Use of a secret that is not Stored is SECRET_NOT_FOUND, not a refused use.
+		// Rotating still serves uses with the old value, so a refused use is recorded there too.
+		// Any other state answers SECRET_NOT_FOUND, not a refused use.
+		switch s {
+		case Stored, Rotating:
+			return s, nil, nil
+		case Pending, Denied, Failed, Removing, Removed:
+		}
+	case RotateRequested:
 		if s == Stored {
+			return Rotating, []Effect{{Kind: PromptRotate}}, nil
+		}
+	case RotateSucceeded, RotateDenied, RotateFailed:
+		// Grants stay Active whatever the outcome; only the Keychain item changes.
+		if s == Rotating {
 			return Stored, nil, nil
 		}
-	// The rotate and remove transitions come with E2b item 2; until then they are illegal.
-	case RotateRequested, RotateSucceeded, RotateDenied, RotateFailed,
-		RemoveRequested, RemoveSucceeded, RemoveDenied, RemoveFailed:
+	case RemoveRequested:
+		if s == Stored {
+			return Removing, []Effect{{Kind: PromptRemove}}, nil
+		}
+	case RemoveSucceeded:
+		if s == Removing {
+			return Removed, []Effect{{Kind: RevokeAll}}, nil
+		}
+	case RemoveDenied, RemoveFailed:
+		if s == Removing {
+			return Stored, nil, nil
+		}
 	}
 	return s, nil, machine.Illegal(s, e)
 }

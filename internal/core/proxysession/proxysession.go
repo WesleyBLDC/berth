@@ -1,6 +1,7 @@
-// Package proxysession names the states, events and effects of one berth-proxy run. The
-// transition table comes with E2b item 2.
+// Package proxysession is the state machine for one berth-proxy run.
 package proxysession
+
+import "berth/internal/core/machine"
 
 const Kind = "proxy"
 
@@ -75,3 +76,35 @@ type Effect struct {
 	Kind   EffectKind
 	Reason StopReason
 }
+
+// Transition is the proxy session's whole transition table. Ended and Lost are terminal, and a
+// stop or a lost stream makes the proxy zero its values and exit, so the session fails closed.
+func Transition(s State, e Event) (State, []Effect, error) {
+	switch e.Kind {
+	case ProxyReady:
+		if s == Authorized {
+			return Serving, nil, nil
+		}
+	case StopRequested:
+		switch s {
+		case Authorized, Serving:
+			return Stopping, []Effect{{Kind: SendStop, Reason: e.Reason}}, nil
+		case Stopping, Ended, Lost:
+		}
+	case ProxyEnded:
+		switch s {
+		case Authorized, Serving, Stopping:
+			return Ended, nil, nil
+		case Ended, Lost:
+		}
+	case ProxyLost:
+		switch s {
+		case Authorized, Serving, Stopping:
+			return Lost, nil, nil
+		case Ended, Lost:
+		}
+	}
+	return s, nil, machine.Illegal(s, e)
+}
+
+var _ machine.Transition[State, Event, Effect] = Transition
