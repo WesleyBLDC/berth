@@ -735,17 +735,22 @@ var (
 )
 
 // ProfileInUse reports whether a live browser the scan saw uses dir as its profile folder,
-// comparing cleaned absolute paths with symlinks resolved on both sides.
+// comparing cleaned absolute paths with symlinks resolved on both sides. A process chose those
+// paths, and resolving one can block on a slow or hung mount, so it happens outside b.mu.
 func (b *browsers) ProfileInUse(dir string) bool {
 	want := profilePath(dir)
+	if want == "" {
+		return false
+	}
 	b.mu.Lock()
-	defer b.mu.Unlock()
+	var dirs []string
 	for _, t := range b.live {
-		if t.disc.State != session.Stopping && want != "" && profilePath(t.obs.Signature.UserDataDir) == want {
-			return true
+		if t.disc.State != session.Stopping {
+			dirs = append(dirs, t.obs.Signature.UserDataDir)
 		}
 	}
-	return false
+	b.mu.Unlock()
+	return slices.ContainsFunc(dirs, func(d string) bool { return profilePath(d) == want })
 }
 
 // StopUnder stops every live browser of this user whose profile folder is inside root, as a
@@ -758,18 +763,25 @@ func (b *browsers) StopUnder(ctx context.Context, root string) int {
 	}
 	prefix = strings.TrimSuffix(prefix, "/") + "/"
 	b.mu.Lock()
-	var ids []string
+	dirs := map[string]string{}
 	for id, t := range b.live {
-		if !t.obs.OtherUser && strings.HasPrefix(profilePath(t.obs.Signature.UserDataDir), prefix) {
-			ids = append(ids, id)
+		if !t.obs.OtherUser {
+			dirs[id] = t.obs.Signature.UserDataDir
 		}
 	}
 	b.mu.Unlock()
-	for _, id := range ids {
-		b.send(ctx, id, session.Event{Kind: session.StopRequested, Note: "left on a Berth profile"})
+	n := 0
+	for id, dir := range dirs {
+		if strings.HasPrefix(profilePath(dir), prefix) {
+			b.send(ctx, id, session.Event{Kind: session.StopRequested, Note: "left on a Berth profile"})
+			n++
+		}
 	}
-	return len(ids)
+	return n
 }
+
+// resolve is filepath.EvalSymlinks, replaced in tests.
+var resolve = filepath.EvalSymlinks
 
 // profilePath is a profile folder as a cleaned absolute path with symlinks resolved where the
 // folder exists, or "" for a relative path, whose base only its own process knows.
@@ -778,7 +790,7 @@ func profilePath(p string) string {
 		return ""
 	}
 	p = filepath.Clean(p)
-	if real, err := filepath.EvalSymlinks(p); err == nil {
+	if real, err := resolve(p); err == nil {
 		return real
 	}
 	return p

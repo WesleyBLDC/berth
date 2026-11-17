@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strings"
 	"testing"
 	"time"
 
@@ -657,4 +658,39 @@ func TestListOrderIsStableForEqualStartTimes(t *testing.T) {
 			t.Fatalf("order %v", sessions)
 		}
 	}
+}
+
+// Resolving a profile path a process chose can block on a hung mount; it must not hold the lock
+// every listing needs.
+func TestProfileResolutionDoesNotHoldTheLock(t *testing.T) {
+	f := newBrowsersFixture(t)
+	f.set(t, append(slices.Clone(f.rows), row(130, 80, testUID, shellPath, shellPath, "--headless", "--user-data-dir=/Volumes/hung/profile"))...)
+	release, entered := make(chan struct{}), make(chan struct{}, 1)
+	resolve = func(p string) (string, error) {
+		if strings.HasPrefix(p, "/Volumes/hung") {
+			select {
+			case entered <- struct{}{}:
+			default:
+			}
+			<-release
+		}
+		return p, nil
+	}
+	t.Cleanup(func() { resolve = filepath.EvalSymlinks })
+	done := make(chan bool, 1)
+	go func() { done <- f.b.ProfileInUse("/tmp/other") }()
+	<-entered
+	listed := make(chan struct{})
+	go func() {
+		_, _ = f.b.ListSessions(t.Context(), &berthv1.ListSessionsRequest{})
+		close(listed)
+	}()
+	select {
+	case <-listed:
+	case <-time.After(time.Second):
+		t.Error("ListSessions waited on a profile path being resolved")
+	}
+	close(release)
+	<-done
+	<-listed
 }
