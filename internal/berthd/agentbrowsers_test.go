@@ -210,8 +210,17 @@ func TestAgentSessionEndClosesItsBrowsersAndDeletesTheirProfiles(t *testing.T) {
 func TestAgentSessionEndingDuringOpenClosesTheBrowser(t *testing.T) {
 	f, l := newAgentBrowsersFixture(t)
 	l.endOnCall = 2
+	// The end hook ran first; the open still read the session live and recreated its counts.
+	f.m.closeAgent(t.Context(), sessionA)
 	if _, err := openAs(t, f, sessionA); !errors.Is(err, api.ErrAgentTokenInvalid) {
 		t.Fatalf("open = %v, want ErrAgentTokenInvalid", err)
+	}
+	f.m.mu.Lock()
+	_, opened := f.m.opened[sessionA]
+	_, seq := f.m.seq[sessionA]
+	f.m.mu.Unlock()
+	if opened || seq {
+		t.Fatal("the ended session's counts were left behind by the racing open")
 	}
 	list, _ := f.m.ListBrowsers(t.Context(), &berthv1.ListBrowsersRequest{IncludeClosed: true})
 	if len(list.GetBrowsers()) != 1 {
@@ -286,5 +295,85 @@ func TestAgentSessionRevokeClosesItsBrowsers(t *testing.T) {
 	}
 	if events := f.events(t, resp.GetBrowser().GetId()); !strings.Contains(strings.Join(events, " "), "CloseRequested") {
 		t.Fatalf("events = %v", events)
+	}
+}
+
+// A caller that gives up while its browser starts leaves nothing running: the launch finishes on
+// berthd's context and the browser is closed, its profile deleted.
+func TestACancelledOpenClosesItsBrowser(t *testing.T) {
+	f, _ := newAgentBrowsersFixture(t)
+	f.m.launch = 5 * time.Second
+	f.driver.Hold = make(chan struct{})
+	ctx, cancel := context.WithCancel(api.WithAgentSession(t.Context(), sessionA))
+	done := make(chan error, 1)
+	go func() {
+		_, err := f.m.OpenAgentBrowser(ctx, &berthv1.OpenAgentBrowserRequest{RequestId: "open-request"})
+		done <- err
+	}()
+	id := waitLiveBrowser(t, f)
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("open = %v, want context.Canceled", err)
+	}
+	close(f.driver.Hold)
+	waitBrowserClosed(t, f.m, id)
+	if f.profileExists("agent-" + sessionA + "-1") {
+		t.Fatal("the abandoned browser's profile must be deleted")
+	}
+	if launched := f.driver.Launched(); len(launched) != 1 {
+		t.Fatalf("launches = %d", len(launched))
+	}
+}
+
+// A session that ends while an open waits on the launch closes the browser once it starts, with
+// the session's end hook having found it still without a row.
+func TestSessionEndDuringAnInFlightOpenClosesIt(t *testing.T) {
+	f, l := newAgentBrowsersFixture(t)
+	f.m.launch = 5 * time.Second
+	f.driver.Hold = make(chan struct{})
+	done := make(chan error, 1)
+	go func() { _, err := openAs(t, f, sessionA); done <- err }()
+	id := waitLiveBrowser(t, f)
+	l.mu.Lock()
+	l.ended[sessionA] = true
+	l.mu.Unlock()
+	f.m.closeAgent(t.Context(), sessionA)
+	close(f.driver.Hold)
+	if err := <-done; !errors.Is(err, api.ErrAgentTokenInvalid) {
+		t.Fatalf("open = %v, want ErrAgentTokenInvalid", err)
+	}
+	waitBrowserClosed(t, f.m, id)
+	if f.profileExists("agent-" + sessionA + "-1") {
+		t.Fatal("the browser's profile must be deleted")
+	}
+}
+
+// waitLiveBrowser waits for one browser to be live and returns its id.
+func waitLiveBrowser(t *testing.T, f *managedFixture) string {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(5 * time.Millisecond) {
+		f.m.mu.Lock()
+		for id := range f.m.live {
+			f.m.mu.Unlock()
+			return id
+		}
+		f.m.mu.Unlock()
+	}
+	t.Fatal("no browser went live")
+	return ""
+}
+
+// After a restart the profile numbers start again; one left on disk is skipped, not reused.
+func TestAgentProfileSkipsAFolderLeftBehind(t *testing.T) {
+	f, _ := newAgentBrowsersFixture(t)
+	left := filepath.Join(f.home, "profiles", "agent-"+sessionA+"-1")
+	if err := os.MkdirAll(left, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := openAs(t, f, sessionA); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.driver.Launched()[0].Launch.ProfileDir; got != filepath.Join(f.home, "profiles", "agent-"+sessionA+"-2") {
+		t.Fatalf("profile = %s, want the next free number", got)
 	}
 }

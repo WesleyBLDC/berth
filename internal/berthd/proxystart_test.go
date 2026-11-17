@@ -424,3 +424,25 @@ func TestStartProxyWhoseFirstSendFailsStopsTheProxy(t *testing.T) {
 		t.Fatalf("open sessions %v %v", open, err)
 	}
 }
+
+// An agent session's end drops its start times, so the limiter keeps nothing for it.
+func TestAgentSessionEndDropsItsProxyStartTimes(t *testing.T) {
+	f := agentFixture(t)
+	fs := newFakeStarter(t, f)
+	fs.failAtOnce = true
+	ctx := api.WithAgentSession(t.Context(), agentSession)
+	_ = f.s.StartProxy(ctx, &berthv1.StartProxyRequest{Names: []string{"gh-token"}}, func(*berthv1.StartProxyResponse) error { return nil })
+	f.s.mu.Lock()
+	n := len(f.s.startTimes[agentSession])
+	f.s.mu.Unlock()
+	if n != 1 {
+		t.Fatalf("start times before the end = %d, want 1", n)
+	}
+	f.s.stopAgentSessions(t.Context(), agentSession)
+	f.s.mu.Lock()
+	_, kept := f.s.startTimes[agentSession]
+	f.s.mu.Unlock()
+	if kept {
+		t.Fatal("an ended agent session's start times must be dropped")
+	}
+}

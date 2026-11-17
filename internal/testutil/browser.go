@@ -18,13 +18,25 @@ type Browsers struct {
 	LaunchErr error
 	Silent    bool
 	Stubborn  bool
-	launched  []*FakeBrowser
-	nextPID   int
+	// Hold, when set, makes each launch wait until it is closed or the launch's context ends.
+	Hold     chan struct{}
+	launched []*FakeBrowser
+	nextPID  int
 }
 
 var _ ports.BrowserDriver = (*Browsers)(nil)
 
-func (d *Browsers) Launch(_ context.Context, l ports.BrowserLaunch) (ports.BrowserConn, error) {
+func (d *Browsers) Launch(ctx context.Context, l ports.BrowserLaunch) (ports.BrowserConn, error) {
+	d.mu.Lock()
+	hold := d.Hold
+	d.mu.Unlock()
+	if hold != nil {
+		select {
+		case <-hold:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	if d.LaunchErr != nil {

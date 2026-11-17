@@ -359,6 +359,10 @@ func (s *secrets) stopSessions(ctx context.Context, grantID int64, reason proxys
 // stopAgentSessions stops every open proxy session authorized through the agent session, once
 // that agent session has ended.
 func (s *secrets) stopAgentSessions(ctx context.Context, agentSession string) {
+	// An ended session starts nothing more, so its hourly count is dropped with it.
+	s.mu.Lock()
+	delete(s.startTimes, agentSession)
+	s.mu.Unlock()
 	ids, err := s.Sessions.ProxySessionsForAgentSession(ctx, agentSession)
 	if err != nil {
 		s.Log.Error("cannot list proxy sessions to stop", "agent_session", agentSession, "err", err)

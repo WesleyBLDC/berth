@@ -419,9 +419,31 @@ func (m *managed) start(ctx context.Context, b *managedBrowser, admit func() err
 		m.release(b)
 		return err
 	}
-	rec, _, err := step(ctx, m.actors, browser.Entity(b.id), browser.Event{Kind: browser.Launch}, nil,
+	// The launch runs on berthd's context, so its outcome is always seen: a caller that gives up
+	// cannot leave a browser starting that nobody closes. Whoever takes the result owns it.
+	res := make(chan error, 1)
+	go func() { res <- m.settleLaunch(b) }() //nolint:contextcheck // see above
+	select {
+	case err := <-res:
+		return err
+	case <-ctx.Done():
+		go func() {
+			if err := <-res; err == nil {
+				m.send(m.ctx, b.id, browser.Event{Kind: browser.CloseRequested, Note: "the caller gave up"})
+			}
+		}()
+		return ctx.Err()
+	}
+}
+
+// settleLaunch applies Launch to b and waits for its outcome, on berthd's context. An agent browser
+// whose session ended meanwhile is closed here, since the session's end hook may have run while
+// the browser had no row yet.
+func (m *managed) settleLaunch(b *managedBrowser) error {
+	rec, _, err := step(m.ctx, m.actors, browser.Entity(b.id), browser.Event{Kind: browser.Launch}, nil,
 		browser.Started, browser.LaunchFailed, browser.Exited)
 	if err != nil {
+		// Only berthd stopping fails a step on its own context; boot recovers any row left.
 		if m.state(b.id) == browser.Requested {
 			m.release(b)
 		}
@@ -429,6 +451,13 @@ func (m *managed) start(ctx context.Context, b *managedBrowser, admit func() err
 	}
 	// The waiter hears of a transition just before the saved hook runs, so record it here too.
 	m.saved(rec)
+	if b.agent != "" && !m.agentLive(m.ctx, b.agent) {
+		m.forgetAgent(b.agent)
+		if m.state(b.id) != browser.Closed {
+			m.send(m.ctx, b.id, browser.Event{Kind: browser.CloseRequested, Note: "agent session ended"})
+		}
+		return api.ErrAgentTokenInvalid
+	}
 	if pb := m.proto(b); pb.GetState() != berthv1.BrowserState_BROWSER_STATE_READY {
 		return errors.Join(api.ErrBrowserLaunchFailed, errors.New(pb.GetCloseReason()))
 	}

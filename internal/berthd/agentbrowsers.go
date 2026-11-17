@@ -52,13 +52,6 @@ func (m *managed) OpenAgentBrowser(ctx context.Context, _ *berthv1.OpenAgentBrow
 	if err != nil {
 		return nil, err
 	}
-	// The session may have ended while the browser started; its end hook closes only the
-	// browsers it found, so one that was still starting is closed here.
-	if !m.agentLive(ctx, agent) {
-		closeEv := browser.Event{Kind: browser.CloseRequested, Note: "agent session ended"}
-		m.send(m.ctx, b.id, closeEv) //nolint:contextcheck // the close must not depend on the caller
-		return nil, api.ErrAgentTokenInvalid
-	}
 	m.Log.Info("opened an agent browser", "agent_session", agent, "browser", b.id)
 	return &berthv1.OpenAgentBrowserResponse{Browser: m.agentProto(b), CdpToken: token}, nil
 }
@@ -77,9 +70,14 @@ func (m *managed) admitAgent(b *managedBrowser) error {
 	if !ok {
 		return api.ErrRateLimited
 	}
-	m.seq[b.agent]++
-	b.profile = fmt.Sprintf("%s%s-%d", agentProfilePrefix, b.agent, m.seq[b.agent])
-	return nil
+	// After a restart the numbers start again, so skip a folder a previous berthd left behind.
+	for {
+		m.seq[b.agent]++
+		b.profile = fmt.Sprintf("%s%s-%d", agentProfilePrefix, b.agent, m.seq[b.agent])
+		if _, err := os.Lstat(filepath.Join(m.profilesRoot(), b.profile)); errors.Is(err, os.ErrNotExist) && m.profiles[b.profile] == "" {
+			return nil
+		}
+	}
 }
 
 // CloseAgentBrowser closes one of the caller's agent session's browsers. Any other browser
@@ -107,11 +105,10 @@ func (m *managed) closeAgent(ctx context.Context, agent string) {
 			ids = append(ids, id)
 		}
 	}
-	delete(m.opened, agent)
-	delete(m.seq, agent)
 	m.mu.Unlock()
+	m.forgetAgent(agent)
 	for _, id := range ids {
-		// A browser still in Requested has no row and takes no event; OpenAgentBrowser closes
+		// A browser still in Requested may have no row and takes no event; its launch closes
 		// it once it starts.
 		if st := m.state(id); st != browser.Closing && st != browser.Requested {
 			m.send(ctx, id, browser.Event{Kind: browser.CloseRequested, Note: "agent session ended"})
@@ -120,6 +117,15 @@ func (m *managed) closeAgent(ctx context.Context, agent string) {
 	if len(ids) > 0 {
 		m.Log.Info("closing the browsers of an agent session that ended", "agent_session", agent, "count", len(ids))
 	}
+}
+
+// forgetAgent drops an ended session's limit counts; an open racing the end that recreated them
+// calls it again once its launch settles.
+func (m *managed) forgetAgent(agent string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	delete(m.opened, agent)
+	delete(m.seq, agent)
 }
 
 func (m *managed) agentLive(ctx context.Context, agent string) bool {
