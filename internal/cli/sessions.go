@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 	"time"
+	"unicode"
+	"unicode/utf8"
 
 	"google.golang.org/protobuf/encoding/protojson"
 
@@ -53,7 +56,7 @@ func printSessions(env Env, sessions []*berthv1.Session) {
 	w := tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "ID\tSTATE\tBROWSER\tDRIVER\tHEADLESS\tCDP\tOWNER\tPROCS")
 	for _, s := range sessions {
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\n", s.GetId(), stateName(s.GetState()), kindName(s.GetKind()),
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%d\n", shown(s.GetId()), stateName(s.GetState()), kindName(s.GetKind()),
 			driverName(s.GetDriver()), headlessName(s), cdpName(s), ownerName(s), s.GetProcessCount())
 	}
 	_ = w.Flush()
@@ -73,34 +76,35 @@ func sessionInspect(ctx context.Context, args []string, env Env) int {
 	}
 	resp, err := c.Sessions.InspectSession(ctx, &berthv1.InspectSessionRequest{Id: id, HistoryLimit: uint32(*limit)}) //nolint:gosec // bounded to 500 above
 	if err != nil {
-		return reportError(env.Stderr, err, "", id)
+		return reportError(env.Stderr, err, "", shown(id))
 	}
 	s := resp.GetSession()
-	fmt.Fprintf(env.Stdout, "session %s: %s since %s\n\n", s.GetId(), stateName(s.GetState()), when(s.GetStateSince().AsTime()))
+	fmt.Fprintf(env.Stdout, "session %s: %s since %s\n\n", shown(s.GetId()), stateName(s.GetState()), when(s.GetStateSince().AsTime()))
 	w := tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintf(w, "browser\t%s, pid %d, started %s\n", kindName(s.GetKind()), s.GetBrowser().GetPid(), when(s.GetBrowser().GetStartedAt().AsTime()))
-	fmt.Fprintf(w, "executable\t%s\n", s.GetBrowser().GetExecutable())
+	fmt.Fprintf(w, "executable\t%s\n", shown(s.GetBrowser().GetExecutable()))
 	fmt.Fprintf(w, "driver\t%s\n", driverName(s.GetDriver()))
 	fmt.Fprintf(w, "headless\t%s\n", headlessName(s))
 	fmt.Fprintf(w, "cdp\t%s\n", cdpName(s))
-	profile := s.GetUserDataDir()
+	profile := shown(s.GetUserDataDir())
 	switch {
-	case s.GetOtherUser():
+	case s.GetOtherUser() || s.GetArgsUnreadable():
 		profile = "?"
 	case profile == "":
 		profile = "default"
 	}
 	fmt.Fprintf(w, "profile\t%s\n", profile)
+	fmt.Fprintf(w, "arguments\t%s\n", argsName(s))
 	fmt.Fprintf(w, "owner\t%s\n", ownerName(s))
 	_ = w.Flush()
 	fmt.Fprintln(env.Stdout)
 	w = tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "PID\tROLE\tEXECUTABLE")
 	for _, p := range resp.GetProcesses() {
-		fmt.Fprintf(w, "%d\t%s\t%s\n", p.GetPid(), roleName(p.GetRole()), p.GetExecutable())
+		fmt.Fprintf(w, "%d\t%s\t%s\n", p.GetPid(), roleName(p.GetRole()), shown(p.GetExecutable()))
 	}
 	for _, p := range resp.GetOwnerChain() {
-		fmt.Fprintf(w, "%d\t%s\t%s\n", p.GetPid(), roleName(p.GetRole()), p.GetExecutable())
+		fmt.Fprintf(w, "%d\t%s\t%s\n", p.GetPid(), roleName(p.GetRole()), shown(p.GetExecutable()))
 	}
 	_ = w.Flush()
 	fmt.Fprintln(env.Stdout)
@@ -108,7 +112,7 @@ func sessionInspect(ctx context.Context, args []string, env Env) int {
 	w = tabwriter.NewWriter(&hist, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "V\tWHEN\tEVENT\tFROM\tTO\tDETAIL")
 	for _, t := range resp.GetHistory() {
-		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\n", t.GetVersion(), when(t.GetAt().AsTime()), t.GetEvent(), t.GetFromState(), t.GetToState(), t.GetDetail())
+		fmt.Fprintf(w, "%d\t%s\t%s\t%s\t%s\t%s\n", t.GetVersion(), when(t.GetAt().AsTime()), shown(t.GetEvent()), shown(t.GetFromState()), shown(t.GetToState()), shown(t.GetDetail()))
 	}
 	_ = w.Flush()
 	// An empty detail leaves the padding of the column before it, which nobody wants to see.
@@ -140,19 +144,20 @@ func stopOne(ctx context.Context, env Env, stop stopFunc, id string, force bool)
 	defer cancel()
 	resp, err := stop(ctx, &berthv1.StopSessionRequest{RequestId: requestID(), Id: id, Force: force})
 	if err != nil {
-		return reportError(env.Stderr, err, "", id)
+		return reportError(env.Stderr, err, "", shown(id))
 	}
 	if resp.GetState() != berthv1.SessionState_SESSION_STATE_STOPPED {
-		fmt.Fprintf(env.Stderr, "session %s is still %s after 10 seconds\n", id, stateName(resp.GetState()))
+		fmt.Fprintf(env.Stderr, "session %s is still %s after 10 seconds\n", shown(id), stateName(resp.GetState()))
 		return ExitError
 	}
-	fmt.Fprintf(env.Stdout, "stopped %s\n", id)
+	fmt.Fprintf(env.Stdout, "stopped %s\n", shown(id))
 	return ExitOK
 }
 
 func sessionLeftovers(ctx context.Context, args []string, env Env) int {
 	fs := newFlags("leftovers", env)
 	stop := fs.Bool("stop", false, "stop every leftover browser")
+	force := fs.Bool("force", false, "with --stop, also stop leftovers owned by you or an app")
 	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
 		fmt.Fprint(env.Stderr, usage)
 		return ExitUsage
@@ -172,10 +177,10 @@ func sessionLeftovers(ctx context.Context, args []string, env Env) int {
 	code := ExitOK
 	for _, s := range resp.GetSessions() {
 		if s.GetOtherUser() {
-			fmt.Fprintf(env.Stdout, "skipped %s: it belongs to another user\n", s.GetId())
+			fmt.Fprintf(env.Stdout, "skipped %s: it belongs to another user\n", shown(s.GetId()))
 			continue
 		}
-		if stopOne(ctx, env, c.Sessions.StopSession, s.GetId(), false) != ExitOK {
+		if stopOne(ctx, env, c.Sessions.StopSession, s.GetId(), *force) != ExitOK {
 			code = ExitError
 		}
 	}
@@ -221,7 +226,7 @@ func headlessName(s *berthv1.Session) string {
 	switch {
 	case s.GetHeadless():
 		return "yes"
-	case s.GetOtherUser():
+	case s.GetOtherUser() || s.GetArgsUnreadable():
 		return "?"
 	}
 	return "no"
@@ -250,13 +255,13 @@ func ownerName(s *berthv1.Session) string {
 	o := s.GetOwner()
 	switch o.GetKind() {
 	case berthv1.OwnerKind_OWNER_KIND_AGENT:
-		return fmt.Sprintf("agent %s (pid %d)", o.GetName(), o.GetProcess().GetPid())
+		return fmt.Sprintf("agent %s (pid %d)", shown(o.GetName()), o.GetProcess().GetPid())
 	case berthv1.OwnerKind_OWNER_KIND_TERMINAL:
-		return fmt.Sprintf("terminal %s (pid %d)", o.GetName(), o.GetProcess().GetPid())
+		return fmt.Sprintf("terminal %s (pid %d)", shown(o.GetName()), o.GetProcess().GetPid())
 	case berthv1.OwnerKind_OWNER_KIND_APP:
-		return fmt.Sprintf("app %s (pid %d)", o.GetName(), o.GetProcess().GetPid())
+		return fmt.Sprintf("app %s (pid %d)", shown(o.GetName()), o.GetProcess().GetPid())
 	case berthv1.OwnerKind_OWNER_KIND_PROCESS:
-		return fmt.Sprintf("process %s (pid %d)", o.GetName(), o.GetProcess().GetPid())
+		return fmt.Sprintf("process %s (pid %d)", shown(o.GetName()), o.GetProcess().GetPid())
 	case berthv1.OwnerKind_OWNER_KIND_PERSON:
 		return "you"
 	case berthv1.OwnerKind_OWNER_KIND_NONE:
@@ -268,4 +273,25 @@ func ownerName(s *berthv1.Session) string {
 
 func roleName(r berthv1.ProcessRole) string {
 	return strings.ToLower(strings.TrimPrefix(r.String(), "PROCESS_ROLE_"))
+}
+
+func argsName(s *berthv1.Session) string {
+	switch {
+	case s.GetOtherUser():
+		return "another user's, not read"
+	case s.GetArgsUnreadable():
+		return "unreadable"
+	}
+	return "read"
+}
+
+// shown makes text a process chose (paths, profile folders, names) safe to print: a string with
+// any control byte (ESC, CR, LF, other C0 and C1, DEL), format character or invalid UTF-8 is
+// printed quoted with Go escapes, so it cannot move the cursor, recolour or fake lines in the
+// terminal. Ordinary paths print as they are.
+func shown(text string) string {
+	if utf8.ValidString(text) && !strings.ContainsFunc(text, func(r rune) bool { return !unicode.IsGraphic(r) }) {
+		return text
+	}
+	return strconv.QuoteToGraphic(text)
 }

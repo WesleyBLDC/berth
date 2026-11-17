@@ -120,6 +120,7 @@ driver      playwright
 headless    yes
 cdp         port auto
 profile     /tmp/pw-profile
+arguments   read
 owner       agent claude (pid 20)
 
 PID  ROLE      EXECUTABLE
@@ -155,5 +156,31 @@ func TestStopAndLeftovers(t *testing.T) {
 	}
 	if r := invokeSessions(t, fake, "stop"); r.code != ExitUsage {
 		t.Fatalf("stop without an id: %+v", r)
+	}
+}
+
+// Text a process chose (its profile folder, its program name) must not drive the terminal.
+func TestSessionTextIsEscaped(t *testing.T) {
+	list := sampleSessions()[:1]
+	list[0].UserDataDir = "/tmp/p\x1b[2J\nFAKE  line"
+	list[0].Owner.Name = "cla\x1b]0;pwned\x07ude\r\n"
+	list[0].Browser.Executable = "/x/chrome\u202e\x7f\u0085"
+	for _, args := range [][]string{{"ps"}, {"inspect", "100-1794945540000000"}} {
+		r := invokeSessions(t, &fakeSessions{list: list}, args...)
+		if r.code != ExitOK {
+			t.Fatalf("%v: %+v", args, r)
+		}
+		for _, bad := range []string{"\x1b", "\r", "\x07", "\x7f", "\u202e", "\u0085", "\nFAKE"} {
+			if strings.Contains(r.stdout, bad) {
+				t.Fatalf("%v printed %q raw:\n%s", args, bad, r.stdout)
+			}
+		}
+		if !strings.Contains(r.stdout, `"cla\x1b]0;pwned\aude\r\n"`) {
+			t.Fatalf("%v: owner name not shown escaped:\n%s", args, r.stdout)
+		}
+	}
+	r := invokeSessions(t, &fakeSessions{list: list}, "inspect", "100-1794945540000000")
+	if !strings.Contains(r.stdout, `"/tmp/p\x1b[2J\nFAKE  line"`) || !strings.Contains(r.stdout, `"/x/chrome\u202e\x7f\u0085"`) {
+		t.Fatalf("profile or executable not shown escaped:\n%s", r.stdout)
 	}
 }

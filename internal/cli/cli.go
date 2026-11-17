@@ -73,7 +73,7 @@ const usage = `usage:
   berth stop <session id> [--force]             stop a browser: SIGTERM, then SIGKILL after 5 s;
                                                 one you or an app started needs --force, and
                                                 another user's is never stopped
-  berth leftovers [--stop]                      list, or stop, browsers whose owner exited
+  berth leftovers [--stop [--force]]           list, or stop, browsers whose owner exited
 
 exit codes:
   0  success
