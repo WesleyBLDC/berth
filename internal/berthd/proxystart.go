@@ -150,14 +150,20 @@ func (s *secrets) forget(pid int, rec *startRecord) {
 	}
 }
 
+// releaseStart ends a start's claim; a start that raced its agent session's end recreated the
+// hourly count stopAgentSessions dropped, so an ended session's count is dropped again here.
 func (s *secrets) releaseStart(agent string) {
 	if agent == "" {
 		return
 	}
+	live := s.AgentLive == nil || s.AgentLive(s.ctx, agent)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.starting[agent]--; s.starting[agent] <= 0 {
 		delete(s.starting, agent)
+	}
+	if !live {
+		delete(s.startTimes, agent)
 	}
 }
 

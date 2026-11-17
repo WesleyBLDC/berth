@@ -486,3 +486,22 @@ func TestAgentSessionEndDropsItsProxyStartTimes(t *testing.T) {
 		t.Fatal("an ended agent session's start times must be dropped")
 	}
 }
+
+// A start that races its agent session's end recreates the start times the end dropped; once
+// the start settles they are dropped again, so an ended session keeps nothing in the limiter.
+func TestAStartRacingTheSessionEndKeepsNoStartTimes(t *testing.T) {
+	f := agentFixture(t)
+	fs := newFakeStarter(t, f)
+	fs.failAtOnce = true
+	// The session's end and its stopAgentSessions ran just before this start reserved.
+	f.s.AgentLive = func(context.Context, string) bool { return false }
+	f.s.stopAgentSessions(t.Context(), agentSession)
+	ctx := api.WithAgentSession(t.Context(), agentSession)
+	_ = f.s.StartProxy(ctx, &berthv1.StartProxyRequest{Names: []string{"gh-token"}}, func(*berthv1.StartProxyResponse) error { return nil })
+	f.s.mu.Lock()
+	_, kept := f.s.startTimes[agentSession]
+	f.s.mu.Unlock()
+	if kept {
+		t.Fatal("a start that raced its agent session's end must not leave start times behind")
+	}
+}
