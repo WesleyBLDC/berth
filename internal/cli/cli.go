@@ -27,6 +27,8 @@ const (
 	ExitFailed      = 4
 	ExitNoGrant     = 5
 	ExitStaleGrant  = 6
+	ExitBusy        = 7
+	ExitProxyFailed = 8
 	connectTimeout  = 5 * time.Second
 	statusTimeout   = 5 * time.Second
 	addReason       = "added by you from the terminal"
@@ -41,12 +43,27 @@ const usage = `usage:
   berth secret ls [--json]                      list secrets and their consumers, never values
   berth secret grant <name> --exe <path> [--args <glob>] [--pass-env NAME ...] [--allow-interpreter]
                                                 let one executable use a secret, after Touch ID
+  berth secret proxy <name> --host <host> --header <Header> [--port N] [--prefix S] [--suffix S]
+                     [--path <glob>] [--method M ...] [--placeholder-env NAME]
+                                                let berth-proxy write a secret into one header of
+                                                HTTPS requests to one host, after Touch ID; for
+                                                example --header Authorization --prefix "Bearer "
+  berth secret revoke <grant id>                revoke one grant and stop proxies using it
+  berth secret rm <name>                        delete a secret after Touch ID and revoke its grants
+  berth secret rotate <name>                    replace a secret's value after Touch ID; grants stay
   berth run --env KEY=<name> [--env ...] -- <command> [args...]
                                                 run a command with secrets in its environment,
                                                 masked as **** in its output; the command gets
                                                 HOME, PATH, TERM, LANG, LC_*, USER, LOGNAME, SHELL,
                                                 TMPDIR, the secrets, and only the variables its
                                                 grant lists with --pass-env
+  berth run --proxy <name> [--proxy ...] -- <command> [args...]
+                                                run a command through berth-proxy, which adds each
+                                                secret to requests to its granted host; the command
+                                                never holds a value and gets your environment with
+                                                HTTPS_PROXY and the CA variables set by Berth and
+                                                NO_PROXY, HTTP_PROXY and ALL_PROXY removed;
+                                                --proxy and --env cannot be combined
 
 exit codes:
   0  success
@@ -56,6 +73,8 @@ exit codes:
   4  the store or grant failed
   5  run: no grant lets this command use the secret; the command did not start
   6  run: the command changed since it was granted; the command did not start
+  7  the secret is busy with another request waiting for the person; try again later
+  8  run --proxy: berth-proxy did not start or answered badly; the command did not start
   Once its command starts, berth run exits with the command's own exit code.
 `
 
@@ -74,6 +93,8 @@ type Env struct {
 	ConnectTrusted func(ctx context.Context) (*client.Client, error)
 	// Read is nil until berth-native is wired in; berth run refuses without it.
 	Read ValueReader
+	// StartProxy starts berth-proxy for berth run --proxy, which refuses without it.
+	StartProxy ProxyStarter
 }
 
 // Run executes one berth command and returns its exit code.
@@ -93,6 +114,14 @@ func Run(ctx context.Context, args []string, env Env) int {
 			return secretList(ctx, args[2:], env)
 		case "grant":
 			return secretGrant(ctx, args[2:], env)
+		case "proxy":
+			return secretProxy(ctx, args[2:], env)
+		case "revoke":
+			return secretRevoke(ctx, args[2:], env)
+		case "rm":
+			return secretRemove(ctx, args[2:], env)
+		case "rotate":
+			return secretRotate(ctx, args[2:], env)
 		}
 	case len(args) >= 1 && args[0] == "run":
 		return runCommand(ctx, args[1:], env)
@@ -190,8 +219,9 @@ func parseNamed(fs *flag.FlagSet, args []string) (string, bool) {
 
 func requestID() string { return rand.Text() }
 
-// reportError prints one plain line for a failed call and returns the exit code for it.
-func reportError(w io.Writer, err error, name, exe string) int {
+// reportError prints one plain line for a failed call and returns the exit code for it. target
+// is the executable or host the call named.
+func reportError(w io.Writer, err error, name, target string) int {
 	var line string
 	switch api.ReasonOf(err) {
 	case berthv1.ErrorReason_ERROR_REASON_SECRET_EXISTS:
@@ -199,7 +229,7 @@ func reportError(w io.Writer, err error, name, exe string) int {
 	case berthv1.ErrorReason_ERROR_REASON_SECRET_NOT_FOUND:
 		line = fmt.Sprintf("no stored secret named %s; ask the person to store it with berth secret add %s", name, name)
 	case berthv1.ErrorReason_ERROR_REASON_EXECUTABLE_NOT_FOUND:
-		line = fmt.Sprintf("berthd cannot read the executable %s", exe)
+		line = fmt.Sprintf("berthd cannot read the executable %s", target)
 	case berthv1.ErrorReason_ERROR_REASON_REQUEST_ID_REUSED:
 		line = "berthd saw this request id before with different input; try again"
 	case berthv1.ErrorReason_ERROR_REASON_NOT_SERVING:
@@ -211,13 +241,14 @@ func reportError(w io.Writer, err error, name, exe string) int {
 	case berthv1.ErrorReason_ERROR_REASON_PEER_NOT_TRUSTED:
 		line = "berthd gives secrets only to the signed berth binary; run make build and use bin/berth beside bin/berthd"
 	case berthv1.ErrorReason_ERROR_REASON_INTERPRETER:
-		line = fmt.Sprintf("%s is an interpreter, so anything it runs could print the secret; add --allow-interpreter only if that is what you want", exe)
+		line = fmt.Sprintf("%s is an interpreter, so anything it runs could print the secret; add --allow-interpreter only if that is what you want", target)
 	case berthv1.ErrorReason_ERROR_REASON_BUSY:
-		line = fmt.Sprintf("secret %s is waiting for the person on another request; try again when it finishes", name)
+		fmt.Fprintf(w, "secret %s is busy: another request waits for the person; try again when it finishes\n", name)
+		return ExitBusy
 	case berthv1.ErrorReason_ERROR_REASON_BAD_PROXY_TARGET:
-		line = "berthd will not grant this proxy target"
+		line = fmt.Sprintf("berthd will not proxy to %s: use a DNS host name, not an IP address or localhost", target)
 	case berthv1.ErrorReason_ERROR_REASON_GRANT_NOT_FOUND:
-		line = "no grant has this id; berth secret ls lists them"
+		line = fmt.Sprintf("no grant has id %s; berth secret ls lists the grants", target)
 	case berthv1.ErrorReason_ERROR_REASON_UNSPECIFIED:
 		line = err.Error()
 	}

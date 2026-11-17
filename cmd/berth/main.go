@@ -35,7 +35,18 @@ func main() {
 		},
 		ConnectTrusted: connectTrusted,
 		Read:           read,
+		StartProxy:     startProxy,
 	}))
+}
+
+// startProxy runs the berth-proxy beside berth. As with berth-native, the file does not decide
+// trust: berthd authorizes only the signed proxy, judged by its live code identity.
+func startProxy(ctx context.Context) (*cli.ProxyProcess, error) {
+	path, err := proxyBinary()
+	if err != nil {
+		return nil, err
+	}
+	return cli.ExecProxy(ctx, path)
 }
 
 // connectTrusted connects only when the process answering on the socket is the signed berthd

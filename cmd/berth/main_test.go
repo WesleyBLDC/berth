@@ -23,3 +23,18 @@ func TestReleaseIgnoresBERTHNATIVE(t *testing.T) {
 		t.Fatalf("helper %q, want %q", got, want)
 	}
 }
+
+func TestReleaseIgnoresBERTHPROXY(t *testing.T) {
+	t.Setenv("BERTH_PROXY", "/tmp/not-berth-proxy")
+	got, err := proxyBinary()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want, err := paths.Beside("berth-proxy")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != want {
+		t.Fatalf("proxy %q, want %q", got, want)
+	}
+}
