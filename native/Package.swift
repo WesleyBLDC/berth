@@ -9,7 +9,12 @@ let package = Package(
     ],
     targets: [
         .target(name: "BerthNativeCore"),
-        .executableTarget(name: "BerthNative", dependencies: ["BerthNativeCore"]),
+        .executableTarget(
+            name: "BerthNative",
+            dependencies: ["BerthNativeCore"],
+            // Embedded in the binary so the signed helper never depends on a file beside it.
+            resources: [.embedInCode("Resources/berth-icon.png")]
+        ),
         .testTarget(name: "BerthNativeCoreTests", dependencies: ["BerthNativeCore"]),
     ]
 )
