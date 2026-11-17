@@ -187,17 +187,20 @@ func newSecrets(ctx context.Context, d secretsDeps) *secrets {
 	s.secrets = &actors[secret.State, secret.Event, secret.Effect]{
 		ctx: ctx, log: d.Log, store: d.Store, clock: d.Clock,
 		kind: secret.Kind, initial: secret.Initial, transition: secret.Transition, run: s.runSecret,
-		live: map[string]*slot[secret.State, secret.Event, secret.Effect]{},
+		final: []secret.State{secret.Denied, secret.Failed, secret.Removed},
+		live:  map[string]*slot[secret.State, secret.Event, secret.Effect]{},
 	}
 	s.grants = &actors[grant.State, grant.Event, grant.Effect]{
 		ctx: ctx, log: d.Log, store: d.Store, clock: d.Clock,
 		kind: grant.Kind, initial: grant.Initial, transition: grant.Transition, run: s.runGrant,
-		live: map[string]*slot[grant.State, grant.Event, grant.Effect]{},
+		final: []grant.State{grant.Denied, grant.Stale, grant.Revoked},
+		live:  map[string]*slot[grant.State, grant.Event, grant.Effect]{},
 	}
 	s.sessions = &actors[proxysession.State, proxysession.Event, proxysession.Effect]{
 		ctx: ctx, log: d.Log, store: d.Store, clock: d.Clock,
 		kind: proxysession.Kind, initial: proxysession.Initial, transition: proxysession.Transition, run: s.runSession,
-		live: map[string]*slot[proxysession.State, proxysession.Event, proxysession.Effect]{},
+		final: []proxysession.State{proxysession.Ended, proxysession.Lost},
+		live:  map[string]*slot[proxysession.State, proxysession.Event, proxysession.Effect]{},
 	}
 	return s
 }

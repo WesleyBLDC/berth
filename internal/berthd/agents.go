@@ -7,7 +7,6 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"log/slog"
 	"strconv"
 	"strings"
@@ -431,15 +430,9 @@ func (a *agents) running(ctx context.Context, p ports.ProcessRef) bool {
 // step applies one event; what an ended session held is freed by the saved hook. An event the
 // session can no longer take, including one whose actor stopped because another step ended the
 // session first, is machine.ErrIllegal; an actor that stopped for any other reason (a failed
-// save, berthd stopping) is api.ErrUnavailable, so no caller mistakes it for an outcome.
+// save, berthd stopping) is api.ErrUnavailable (both from the actors kit's step).
 func (a *agents) step(ctx context.Context, id string, ev agentsession.Event) error {
 	_, _, err := step(ctx, a.sessions, agentsession.Entity(id), ev, nil, ev.Kind)
-	if errors.Is(err, errActorStopped) {
-		if st, serr := a.state(ctx, id); serr == nil && !agentsession.Live(st) {
-			return fmt.Errorf("%w: %s in agent session %s", machine.ErrIllegal, ev.Kind, id)
-		}
-		return api.ErrUnavailable
-	}
 	return err
 }
 

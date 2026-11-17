@@ -170,7 +170,7 @@ type Transition[S ~string, E Event, F any] func(state S, event E) (S, []F, error
 
 - **Pure:** a transition does no I/O, logging, randomness or clock reads; it returns the next state and the effects to run, or an error wrapping `machine.ErrIllegal`.
 - **Actors:** one goroutine owns each entity (`daemon`, `secret/<name>`, `grant/<id>`, `proxy/<session id>`, `agent/<session id>`, `session/<id>`, `browser/<id>`) and applies its events one at a time from a bounded inbox, so state is never shared or locked.
-- **Ended actors stop:** the shell's actors kit takes a machine's `final` states and a `saved` hook. An actor stops once a saved transition reaches a final state, none is started for an entity already in one, and the hook, told of every saved transition, is where an ended entity's timers, watches and dependants are freed, on `berthd`'s own context. The agent session, session and browser machines use it; secret, grant and proxy session actors still run until `berthd` stops (a follow up).
+- **Ended actors stop:** the shell's actors kit takes a machine's `final` states, the states an entity rests in until a new request, if any, and a `saved` hook. An actor stops once a saved transition reaches a final state or it refuses an event in one, and is forgotten before the step waiting on it returns; a later event for the entity starts a fresh actor, which applies it (a refused use recorded on a revoked grant, or a new store of a removed name) and stops again if the entity is still final. A step whose actor stopped under it answers `machine.ErrIllegal` when the entity is final and `Unavailable` otherwise. The hook, told of every saved transition, is where an ended entity's timers, watches and dependants are freed, on `berthd`'s own context. Final states: agent session `Expired`, `Revoked`, `Ended`; session `Stopped`; browser `Closed`; secret `Denied`, `Failed`, `Removed`; grant `Denied`, `Stale`, `Revoked` (`GrantFailed` ends in `Denied`); proxy session `Ended`, `Lost`.
 - **Persist before effects:** the actor writes the new state and the event row in one SQLite transaction, and only then runs the effects; if the write fails, the actor stops rather than act on a state it could not record ([ADR 0004](docs/adr/0004-state-and-event-rows-in-one-transaction.md)).
 - **Failures are events:** an effect that fails returns a follow up event (for example `Failed` with a note), so failure is a state, not a silent retry.
 - **Illegal events are rejected, not fatal:** the actor reports them and keeps running; nothing is persisted.
@@ -235,6 +235,7 @@ stateDiagram-v2
 - Uses accept `Stored` and `Rotating`: a run during a rotate gets the old value. `Removing` and `Removed` refuse uses, and `Removed` frees the name for a new store.
 - `UseRefused` records a refused use of a stored secret that has no grant to record it on.
 - Boot recovery fails `Rotating` and `Removing` with the note `interrupted` (`RotateFailed`, `RemoveFailed`) and revokes any grant of a `Removed` secret left Active by a crash.
+- `Denied`, `Failed` and `Removed` are final: their actors stop, and a new store starts a fresh one.
 
 ### Grant machine (built, 11 legal pairs)
 
@@ -262,6 +263,7 @@ stateDiagram-v2
 - A grant pins either an executable (kind `exe`) or a proxy target (kind `proxy`); the kind is data on the grant row, not a state, and a proxy grant never sees `HashChanged`. `Consumer.kind` in `ListSecrets` comes from the row.
 - `RevokeGrant` (`berth secret revoke`) and a remove's `RevokeAll` send `Revoke`, with no Touch ID since it only lowers privilege; revoking also drops the grant's live use tickets, so one issued just before cannot be redeemed, and stops the proxy sessions holding the grant.
 - `AuthorizeUse` considers only grants of kind `exe`, by an explicit kind check, so a proxy grant never authorizes an executable whatever its row holds.
+- `Denied`, `Stale` and `Revoked` are final: their actors stop, and a refused use or a revoke runs on a fresh actor that stops again.
 
 ### Proxy session machine (built, 9 legal pairs)
 
@@ -288,6 +290,7 @@ stateDiagram-v2
 - Revoke and remove can race on one session, so a second `StopRequested` in `Stopping` is illegal and the shell ignores it.
 - The shell keeps no ready flag beside the machine: readiness is the session's state. It keeps one connection fact, whether a watch stream was ever opened, so a second stream is refused.
 - Fails closed: a `STOP` or a broken stream makes the proxy zero its values and exit, and a session `berthd` marks `Lost` while its proxy still listens has its stream ended, so the proxy exits too.
+- `Ended` and `Lost` are final, so a finished run keeps no actor; a late end or loss answers as illegal, which `EndProxySession` reports as `PEER_NOT_TRUSTED`.
 
 ### Agent session machine (built, 6 legal pairs)
 

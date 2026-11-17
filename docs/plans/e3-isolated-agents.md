@@ -237,7 +237,7 @@ These go into `ARCHITECTURE.md` when the items that create them land.
 - `AdmitStore` reads the session's state from the database while holding the agents mutex, which serializes store admissions behind a database read.
 - Done after the audit of 2026-11-17: `ListSecrets` on the agent socket returned every grant's consumer facts (the owner's executable paths and hashes, proxy hosts, headers, path globs, passed variable names and use counts); it now answers the agent socket with names and states only.
 - From the audit: `StartProxy` checks the grants before its per session limit, and each `NO_GRANT` answer writes a `UseRefused` row, so an agent session can add rows without limit; count the call first.
-- From the audit: proxy session, grant and secret actors have no `final` states, so every proxy run leaves one actor goroutine until `berthd` stops; `Ended` and `Lost` should be final.
+- Done after the audit: proxy session, grant and secret actors had no `final` states, so every proxy run left one actor goroutine until `berthd` stopped; proxy session `Ended` and `Lost`, grant `Denied`, `Stale` and `Revoked`, and secret `Denied`, `Failed` and `Removed` are now final.
 - Done after the audit: the proxy `berthd` starts for an agent session tunnelled a `CONNECT` to any target that is not granted, so the agent reached loopback services and the local network through a process of the owner; `berthd` now starts it in agent mode, which refuses every target that is not granted.
 - From the audit: `secrets.startTimes` and the use tickets of calls that are never redeemed are freed only by a later call, so they outlive an ended agent session.
 

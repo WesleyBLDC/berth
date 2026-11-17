@@ -807,3 +807,101 @@ func TestAgentSessionEndStopsItsProxies(t *testing.T) {
 		t.Fatalf("authorize through an ended agent session: %v", err)
 	}
 }
+
+// actorsSettle waits for the actor goroutines a test left to stop, since the last one stops just
+// after its step returns.
+func actorsSettle(t *testing.T, what string, count func() int, want int) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for count() != want && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	if got := count(); got != want {
+		t.Fatalf("%d %s actors still run, want %d", got, what, want)
+	}
+}
+
+// TestEndedEntitiesStopTheirActors: an entity in a final state keeps no actor, so proxy runs,
+// refused uses of a revoked grant and denied stores leave the actor count where it was, while a
+// later event still applies.
+func TestEndedEntitiesStopTheirActors(t *testing.T) {
+	approver := &testutil.Approver{}
+	f := newFixture(t, approver)
+	f.request(t)
+	f.grantProxy(t)
+	for i := range 20 {
+		id := f.authorizeProxy(t, "gh-token").GetSessionId()
+		w := f.watch(t, id)
+		serving(t, w)
+		// The fake kernel reports the pid gone for good once it exited, so only the last run is lost.
+		if i < 19 {
+			if _, err := f.s.EndProxySession(t.Context(), &berthv1.EndProxySessionRequest{SessionId: id}, peerOf(proxyPID)); err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			f.exits.exit(proxyPID)
+			f.eventually(t, "proxy/"+id, "Lost")
+		}
+		// The stream ends with its session, cleanly or not.
+		if err := <-w.done; err == nil {
+			t.Fatal("the watch stream outlived its session without an error")
+		}
+	}
+	actorsSettle(t, "proxy session", f.s.sessions.count, 0)
+
+	grantID := f.grant(t, "").GetConsumer().GetGrantId()
+	if _, err := f.s.RevokeGrant(t.Context(), &berthv1.RevokeGrantRequest{GrantId: grantID}, peerOf(berthPID)); err != nil {
+		t.Fatal(err)
+	}
+	actorsSettle(t, "grant", f.s.grants.count, 1)
+	for range 5 {
+		if got := f.use(t).GetOutcome(); got != berthv1.UseOutcome_USE_OUTCOME_NO_GRANT {
+			t.Fatalf("use of a revoked grant %v", got)
+		}
+	}
+	if h := f.history(t, "grant/"+itoa(grantID)); len(h) < 5 || h[0].Event != "UseRefused" || h[4].Event != "UseRefused" {
+		t.Fatalf("a revoked grant did not record its refusals: %+v", h)
+	}
+	actorsSettle(t, "grant", f.s.grants.count, 1)
+
+	approver.QueueStore(ports.StoreDenied, ports.StoreDenied)
+	for range 2 {
+		if _, err := f.s.RequestSecret(t.Context(), &berthv1.RequestSecretRequest{Name: "other"}, peerOf(agentPID)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if got := f.state(t, "secret/other"); got != "Denied" {
+		t.Fatalf("secret/other is %s", got)
+	}
+	actorsSettle(t, "secret", f.s.secrets.count, 1)
+}
+
+// TestRacingEndsRecordOne: of two ends racing on one session, one records it and the other, whose
+// actor may stop under it, is refused like any end of a finished session.
+func TestRacingEndsRecordOne(t *testing.T) {
+	f := newFixture(t, &testutil.Approver{})
+	f.request(t)
+	f.grantProxy(t)
+	for range 20 {
+		id := f.authorizeProxy(t, "gh-token").GetSessionId()
+		errs := make(chan error, 2)
+		for range 2 {
+			go func() {
+				_, err := f.s.EndProxySession(t.Context(), &berthv1.EndProxySessionRequest{SessionId: id}, peerOf(proxyPID))
+				errs <- err
+			}()
+		}
+		ok := 0
+		for range 2 {
+			switch err := <-errs; {
+			case err == nil:
+				ok++
+			case !errors.Is(err, api.ErrPeerNotTrusted):
+				t.Fatalf("the losing end answered %v", err)
+			}
+		}
+		if ok != 1 {
+			t.Fatalf("%d ends recorded", ok)
+		}
+	}
+}

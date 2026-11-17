@@ -3,18 +3,19 @@ package berthd
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"slices"
 	"sync"
 	"time"
 
+	"berth/internal/adapters/api"
 	"berth/internal/core/machine"
 	"berth/internal/core/ports"
 )
 
 // errActorStopped means the actor stopped before applying the step's event, most often because
-// another step moved the entity to a final state first.
+// another step moved the entity to a final state first. step turns it into machine.ErrIllegal or
+// api.ErrUnavailable, so it never reaches a caller.
 var errActorStopped = errors.New("actor stopped")
 
 // actors keeps one running actor per entity of one machine, created on first use.
@@ -27,8 +28,11 @@ type actors[S ~string, E machine.Event, F any] struct {
 	initial    S
 	transition machine.Transition[S, E, F]
 	run        func(entity string) machine.Runner[E, F]
-	// final lists the states no event leaves: an actor stops once it reaches one, and none is
-	// started for an entity already in one, so no path leaves a goroutine behind for it.
+	// final lists the states an entity rests in until a new request, if any, arrives: an actor
+	// stops once it reaches one, or once it refuses an event in one, so no entity that ended leaves
+	// a goroutine behind. A later event for it starts a new actor, which applies it (a self loop
+	// recording a refused use, or a new request that leaves the state) and stops again if it is
+	// still in a final state.
 	final []S
 	// saved, when set, is told about every transition once it is saved and its effects have run.
 	// It must not block, since it runs on the actor's goroutine.
@@ -79,25 +83,38 @@ func (a *actors[S, E, F]) get(ctx context.Context, entity string) (*slot[S, E, F
 		return sl, nil
 	}
 	sl := &slot[S, E, F]{turn: make(chan struct{}, 1), stopped: make(chan struct{})}
+	// An actor in a final state is forgotten before its waiter hears the outcome, so the next step,
+	// which can start only after that, finds no stale actor and loads a fresh one.
+	var actor *machine.Actor[S, E, F]
 	actor, err := machine.NewActor(ctx, machine.Config[S, E, F]{
 		Entity: entity, Kind: a.kind, Initial: a.initial, Transition: a.transition, Run: a.run(entity),
 		Store: a.store, Clock: a.clock,
-		Rejected: func(err error) { sl.tell(applied{err: err}) },
+		Rejected: func(err error) {
+			final := slices.Contains(a.final, actor.State())
+			if final {
+				a.forget(entity, sl)
+			}
+			sl.tell(applied{err: err})
+			if final {
+				sl.cancel()
+			}
+		},
 		Applied: func(rec ports.TransitionRecord) {
+			final := slices.Contains(a.final, S(rec.To))
+			if final {
+				a.forget(entity, sl)
+			}
 			sl.tell(applied{rec: rec})
 			if a.saved != nil {
 				a.saved(rec)
 			}
-			if slices.Contains(a.final, S(rec.To)) {
-				a.drop(entity, sl)
+			if final {
+				sl.cancel()
 			}
 		},
 	})
 	if err != nil {
 		return nil, err
-	}
-	if slices.Contains(a.final, actor.State()) {
-		return nil, fmt.Errorf("%w: %s is %s", machine.ErrIllegal, entity, actor.State())
 	}
 	sl.actor = actor
 	a.live[entity] = sl
@@ -119,14 +136,20 @@ func (a *actors[S, E, F]) get(ctx context.Context, entity string) (*slot[S, E, F
 	return sl, nil
 }
 
-// drop stops an actor that reached the final state and forgets it.
-func (a *actors[S, E, F]) drop(entity string, sl *slot[S, E, F]) {
+// forget drops an actor in a final state from the live set; its caller then stops it.
+func (a *actors[S, E, F]) forget(entity string, sl *slot[S, E, F]) {
 	a.mu.Lock()
+	defer a.mu.Unlock()
 	if a.live[entity] == sl {
 		delete(a.live, entity)
 	}
-	a.mu.Unlock()
-	sl.cancel()
+}
+
+// holds reports whether sl is still the entity's live actor.
+func (a *actors[S, E, F]) holds(entity string, sl *slot[S, E, F]) bool {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.live[entity] == sl
 }
 
 // count is how many actors are running, for tests that check they stay bounded.
@@ -177,14 +200,23 @@ func step[S ~string, E machine.Event, F any, K ~string](ctx context.Context, a *
 	for _, u := range until {
 		names = append(names, string(u))
 	}
-	sl, err := a.get(ctx, entity)
-	if err != nil {
-		return ports.TransitionRecord{}, nil, err
-	}
-	select {
-	case sl.turn <- struct{}{}:
-	case <-ctx.Done():
-		return ports.TransitionRecord{}, nil, ctx.Err()
+	var sl *slot[S, E, F]
+	for {
+		var err error
+		if sl, err = a.get(ctx, entity); err != nil {
+			return ports.TransitionRecord{}, nil, err
+		}
+		select {
+		case sl.turn <- struct{}{}:
+		case <-ctx.Done():
+			return ports.TransitionRecord{}, nil, ctx.Err()
+		}
+		// The step before this one may have left the entity in a final state, which stops its
+		// actor; the event goes to a fresh one instead.
+		if a.holds(entity, sl) {
+			break
+		}
+		<-sl.turn
 	}
 	w := make(chan applied, 16)
 	sl.mu.Lock()
@@ -219,10 +251,24 @@ func step[S ~string, E machine.Event, F any, K ~string](ctx context.Context, a *
 	}()
 	select {
 	case r := <-done:
+		if errors.Is(r.err, errActorStopped) {
+			r.err = a.stopped(ctx, entity, event)
+		}
 		return r.rec, r.output, r.err
 	case <-ctx.Done():
 		return ports.TransitionRecord{}, nil, ctx.Err()
 	}
+}
+
+// stopped explains an actor that stopped before it applied event: an entity in a final state
+// was ended by another step first, so the event is illegal; otherwise berthd could not record it
+// (a failed save, or it is stopping), which no caller may mistake for an outcome.
+func (a *actors[S, E, F]) stopped(ctx context.Context, entity string, event E) error {
+	st, found, err := a.store.LoadState(ctx, entity)
+	if err == nil && found && slices.Contains(a.final, S(st.State)) {
+		return machine.Illegal(S(st.State), event)
+	}
+	return api.ErrUnavailable
 }
 
 func waitApplied[S ~string, E machine.Event, F any](sl *slot[S, E, F], w chan applied, until []string) (ports.TransitionRecord, error) {
