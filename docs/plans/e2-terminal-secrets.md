@@ -7,7 +7,7 @@ Design: https://wiki.wesleybldc.com/wiki-artifacts/berth/terminal-secrets and AD
 
 In:
 - `berth secret request <name> --why "<reason>"`: a native dialog (secure field plus Touch ID) stores the value; the caller gets only `saved <name>`.
-- `berth secret add <name>`: the person types the value at a no echo prompt.
+- `berth secret add <name>`: the same native dialog, with the person as the requester, so no value ever passes through a Go process to store it.
 - `berth secret ls`: names, consumers, last used, use count; never values.
 - `berth secret grant <name> --exe <path> [--args <glob>]`: Touch ID; pins a command line tool by path plus SHA-256 of the file (or its code signature when signed).
 - `berth run --env KEY=<name> -- <command>`: injects the value into that one child only when a grant matches the exact executable; masks the value in the child's output.
@@ -24,11 +24,31 @@ Out (E2b, later): the header proxy, `copy`, `rotate`, `rm`, the Keychain "Always
 - Granting and adding consumers need Touch ID; the dialog text is built only from facts `berthd` verified (process tree, executable path, hash).
 - Keychain items Berth creates use the service prefix `berth.` so they never collide with existing items.
 
+## Flows (fixed by the contract item)
+
+**Store** (`request` and `add`):
+1. CLI calls `RequestSecret(request_id, name, reason)`.
+2. `berthd` builds the requester facts from the socket peer: pid, executable, process tree up to the harness, working directory.
+3. `berthd` asks `berth-native` (port `Approver.StoreSecret`) to show the dialog with those facts; the person pastes the value and confirms with Touch ID; `berth-native` writes Keychain item `berth.<name>`.
+4. `berthd` gets only `stored`, `denied` or `failed`, records the transition, and replies with that outcome.
+
+**Grant**: `GrantSecret(request_id, name, exe_path, args_glob)`; `berthd` identifies the executable (port `ExecIdentity`: resolved path, SHA-256, team and signing ID when signed), asks `Approver.ConfirmPower` for Touch ID with those facts, and stores the grant.
+
+**Use** (`berth run --env KEY=<name> -- <cmd>`):
+1. `berth run` resolves `<cmd>` and calls `AuthorizeUse(request_id, name, exe_path, argv)`.
+2. `berthd` identifies the executable itself (never trusting a client hash), matches an `Active` grant, and returns a single use ticket: 32 random bytes, bound to name, exe hash and the caller's pid, valid 30 seconds.
+3. `berth run` starts `berth-native read`, passing the ticket on stdin.
+4. `berth-native` calls `RedeemUseTicket(ticket)` over the socket; `berthd` accepts it only from a peer whose executable is the signed `berth-native` (team `XPJ7XA42J4`), marks it used, and returns the name.
+5. `berth-native` reads `berth.<name>` and writes the value to its stdout pipe; `berth run` holds it only as `[]byte`, puts it in the child's environment, zeroes its copy, and masks it in the child's output.
+6. A changed executable hash moves its grants to `Stale`, so step 2 refuses until the person grants again.
+
+Neither `RedeemUseTicket` nor `GrantSecret` is on the agent surface. Agents get `RequestSecret`, `ListSecrets` and `AuthorizeUse`.
+
 ## Work items
 
 | # | Wave | Item | Owns | Acceptance tests it carries |
 |---|---|---|---|---|
-| 1 | Contract | Schema, ports, enums, migration | `proto/berth/v1/secrets.proto` (`SecretsService`: `RequestSecret`, `ListSecrets`, `GrantSecret`, `AuthorizeUse`), `gen/`, ports `SecretVault`, `Approver`, `ExecIdentity`, grant and secret `State`/`EventKind` enums, migration `0002_secrets.sql` | `buf breaking` clean; no field carries a value; `TestAgentSurface` lists `RequestSecret` and `ListSecrets` only |
+| 1 | Contract | Schema, ports, enums, migration | `proto/berth/v1/secrets.proto` (`SecretsService`: `RequestSecret`, `ListSecrets`, `GrantSecret`, `AuthorizeUse`, `RedeemUseTicket`), `gen/`, ports `Approver`, `ExecIdentity`, `PeerFacts`, `TicketSource`, grant and secret `State`/`EventKind` enums, migration `0002_secrets.sql` | `buf breaking` clean; no field carries a value; `TestAgentSurface` lists `Handshake`, `RequestSecret`, `ListSecrets` and `AuthorizeUse` |
 | 2 | Build | `berth-native` (Swift) | `native/` Swift package: pipe protocol (length prefixed JSON frames, value bytes in a separate frame), Keychain add and read under `berth.<name>`, Touch ID prompt, secure input dialog, signed with the Personal Team | Canary round trip; Touch ID cancel returns `denied`; the value never appears on stdout or stderr except the value frame |
 | 3 | Build | Grant machine | `internal/core/grant/` transitions (`Requested`, `Active`, `Revoked`, `Stale` on hash change) and secret machine (`Pending`, `Stored`, `Failed`) | Walk test with pinned counts; a hash change makes `Stale`; `Revoked` refuses use |
 | 4 | Build | Native and identity adapters | `internal/adapters/native/` (Go side of the pipe, `[]byte` only, zeroed after use), `internal/adapters/execid/` (path resolve, SHA-256, `codesign` team ID) | A fake native helper speaks the protocol; a changed file hash is detected |
