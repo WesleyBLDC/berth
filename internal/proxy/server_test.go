@@ -394,6 +394,9 @@ func TestPathMethodAndHostLimits(t *testing.T) {
 		{"GET", "/v1/../admin", host, http.StatusForbidden},
 		{"GET", "/v1/%2e%2e", host, http.StatusForbidden},
 		{"GET", "/v1//x", host, http.StatusForbidden},
+		{"GET", "/v1/..;", host, http.StatusForbidden},
+		{"GET", "/v1/models;admin", host, http.StatusForbidden},
+		{"GET", "/v1/models%3Badmin", host, http.StatusForbidden},
 		{"GET", "/v1/models", "evil.example", http.StatusMisdirectedRequest},
 		{"GET", "/v1/models", "example.com", http.StatusMisdirectedRequest},
 	}

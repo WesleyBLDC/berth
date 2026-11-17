@@ -128,20 +128,21 @@ func TestGrantChecksRepeatTheContract(t *testing.T) {
 		t.Fatalf("%v %v", g, err)
 	}
 	for name, mod := range map[string]func(*berthv1.ProxyTarget){
-		"host header":       func(p *berthv1.ProxyTarget) { p.HeaderName = "host" },
-		"content length":    func(p *berthv1.ProxyTarget) { p.HeaderName = "Content-Length" },
-		"proxy header":      func(p *berthv1.ProxyTarget) { p.HeaderName = "Proxy-Authorization" },
-		"transfer encoding": func(p *berthv1.ProxyTarget) { p.HeaderName = "transfer-encoding" },
-		"bad token":         func(p *berthv1.ProxyTarget) { p.HeaderName = "X Key" },
-		"IP literal":        func(p *berthv1.ProxyTarget) { p.Host = "127.0.0.1" },
-		"localhost":         func(p *berthv1.ProxyTarget) { p.Host = "localhost" },
-		"uppercase host":    func(p *berthv1.ProxyTarget) { p.Host = "API.example.com" },
-		"CRLF prefix":       func(p *berthv1.ProxyTarget) { p.ValuePrefix = "a\r\nb" },
-		"bad glob":          func(p *berthv1.ProxyTarget) { p.PathGlob = "/v1/[" },
-		"lowercase method":  func(p *berthv1.ProxyTarget) { p.Methods = []string{"get"} },
-		"port":              func(p *berthv1.ProxyTarget) { p.Port = 70000 },
-		"owned placeholder": func(p *berthv1.ProxyTarget) { p.PlaceholderEnv = "SSL_CERT_FILE" },
-		"bad placeholder":   func(p *berthv1.ProxyTarget) { p.PlaceholderEnv = "lower" },
+		"host header":        func(p *berthv1.ProxyTarget) { p.HeaderName = "host" },
+		"content length":     func(p *berthv1.ProxyTarget) { p.HeaderName = "Content-Length" },
+		"proxy header":       func(p *berthv1.ProxyTarget) { p.HeaderName = "Proxy-Authorization" },
+		"transfer encoding":  func(p *berthv1.ProxyTarget) { p.HeaderName = "transfer-encoding" },
+		"bad token":          func(p *berthv1.ProxyTarget) { p.HeaderName = "X Key" },
+		"IP literal":         func(p *berthv1.ProxyTarget) { p.Host = "127.0.0.1" },
+		"localhost":          func(p *berthv1.ProxyTarget) { p.Host = "localhost" },
+		"numeric last label": func(p *berthv1.ProxyTarget) { p.Host = "127.1" },
+		"uppercase host":     func(p *berthv1.ProxyTarget) { p.Host = "API.example.com" },
+		"CRLF prefix":        func(p *berthv1.ProxyTarget) { p.ValuePrefix = "a\r\nb" },
+		"bad glob":           func(p *berthv1.ProxyTarget) { p.PathGlob = "/v1/[" },
+		"lowercase method":   func(p *berthv1.ProxyTarget) { p.Methods = []string{"get"} },
+		"port":               func(p *berthv1.ProxyTarget) { p.Port = 70000 },
+		"owned placeholder":  func(p *berthv1.ProxyTarget) { p.PlaceholderEnv = "SSL_CERT_FILE" },
+		"bad placeholder":    func(p *berthv1.ProxyTarget) { p.PlaceholderEnv = "lower" },
 	} {
 		p := ok()
 		mod(p)

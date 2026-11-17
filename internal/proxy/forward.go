@@ -143,11 +143,13 @@ func (f *forwarder) check(req *http.Request) int {
 }
 
 // ambiguousPath is a path a server might resolve to somewhere the glob did not match: dot
-// segments, doubled slashes, backslashes, or an encoded slash, dot or backslash.
+// segments, doubled slashes, backslashes, path parameters (servers such as Tomcat drop what
+// follows a semicolon in a segment, so ..;/ climbs), or an encoded slash, dot, backslash or
+// semicolon.
 func ambiguousPath(p string) bool {
 	l := strings.ToLower(p)
-	if strings.Contains(l, "//") || strings.Contains(l, `\`) || strings.Contains(l, "%2f") ||
-		strings.Contains(l, "%2e") || strings.Contains(l, "%5c") {
+	if strings.Contains(l, "//") || strings.Contains(l, `\`) || strings.Contains(l, ";") || strings.Contains(l, "%2f") ||
+		strings.Contains(l, "%2e") || strings.Contains(l, "%5c") || strings.Contains(l, "%3b") {
 		return true
 	}
 	for seg := range strings.SplitSeq(l, "/") {

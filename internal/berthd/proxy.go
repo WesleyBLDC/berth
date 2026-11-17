@@ -44,8 +44,9 @@ type proxySession struct {
 	done   chan struct{}
 	cancel context.CancelFunc
 
+	// watching is a fact about connections, not the session: a watch stream was opened, so a
+	// second one is refused. Whether the session is ready is its machine's state.
 	mu       sync.Mutex
-	ready    bool
 	watching bool
 	once     sync.Once
 }
@@ -55,12 +56,6 @@ func (p *proxySession) finished() {
 		close(p.done)
 		p.cancel()
 	})
-}
-
-func (p *proxySession) isReady() bool {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.ready
 }
 
 var reasons = map[proxysession.StopReason]berthv1.ProxyStopReason{
@@ -211,7 +206,7 @@ func (s *secrets) monitor(ps *proxySession, exited <-chan struct{}) {
 			s.lose(ps, "the proxy exited")
 			return
 		case <-timer.C:
-			if !ps.isReady() {
+			if st, err := s.state(s.ctx, proxysession.Entity(ps.id), string(proxysession.Initial)); err != nil || proxysession.State(st) == proxysession.Authorized {
 				s.lose(ps, "no ready within 30 seconds")
 				return
 			}
@@ -251,9 +246,6 @@ func (s *secrets) WatchProxySession(ctx context.Context, id string, peer ports.P
 	_, _, err = step(ctx, s.sessions, proxysession.Entity(id), proxysession.Event{Kind: proxysession.ProxyReady}, nil, proxysession.ProxyReady)
 	switch {
 	case err == nil:
-		ps.mu.Lock()
-		ps.ready = true
-		ps.mu.Unlock()
 		if err := send(&berthv1.ProxySessionEvent{Kind: berthv1.ProxySessionEventKind_PROXY_SESSION_EVENT_KIND_SERVING}); err != nil {
 			go s.dropped(ps)
 			return err

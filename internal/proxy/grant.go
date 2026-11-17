@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	berthv1 "berth/gen/berth/v1"
+	"berth/internal/core/hostpolicy"
 )
 
 // The same rules proto validation applies to ProxyTarget; berth-proxy checks them again so a
@@ -55,10 +56,6 @@ type Grant struct {
 
 func (g *Grant) authority() string { return net.JoinHostPort(g.Host, strconv.Itoa(g.Port)) }
 
-func isLocal(host string) bool {
-	return host == "localhost" || strings.HasSuffix(host, ".localhost") || net.ParseIP(host) != nil
-}
-
 func grantableHeader(name string) bool {
 	l := strings.ToLower(name)
 	return headerPattern.MatchString(name) && !slices.Contains(ungrantable, l) && !strings.HasPrefix(l, "proxy-")
@@ -73,7 +70,7 @@ func newGrant(name string, t *berthv1.ProxyTarget, allowLocal bool) (*Grant, err
 	switch {
 	case !hostPattern.MatchString(host) || len(host) > 253:
 		return nil, fmt.Errorf("grant %s: host is not a lowercase DNS name", name)
-	case isLocal(host) && !allowLocal:
+	case hostpolicy.Local(host) && !allowLocal:
 		return nil, fmt.Errorf("grant %s: IP literals and localhost cannot be granted", name)
 	case t.GetPort() > 65535:
 		return nil, fmt.Errorf("grant %s: port out of range", name)

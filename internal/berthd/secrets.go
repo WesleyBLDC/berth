@@ -130,6 +130,8 @@ type issued struct {
 // liveTicket binds a ticket to what it may do when redeemed; berth-native refuses a ticket whose
 // consumer kind is not its parent's.
 type liveTicket struct {
+	// grantID is the grant a use ticket was issued on, so a revoke can drop it; 0 for actions.
+	grantID int64
 	name    string
 	sha256  [32]byte
 	pid     int
@@ -490,7 +492,7 @@ func (s *secrets) issue(ctx context.Context, entity string) {
 	}
 	expires := now.Add(ticketLife)
 	s.mu.Lock()
-	s.live[t] = liveTicket{name: u.name, sha256: u.sha256, pid: u.pid, kind: u.kind, action: ports.TicketUse, expires: expires}
+	s.live[t] = liveTicket{grantID: u.grantID, name: u.name, sha256: u.sha256, pid: u.pid, kind: u.kind, action: ports.TicketUse, expires: expires}
 	s.mu.Unlock()
 	s.grants.output(entity, issued{ticket: t, expires: expires})
 }
@@ -522,7 +524,7 @@ func (s *secrets) AuthorizeUse(ctx context.Context, req *berthv1.AuthorizeUseReq
 	stale, argsRefused := false, false
 	for i := range grants {
 		g := &grants[i]
-		if g.Exe.Path != exe.Path {
+		if kindOf(*g) != ports.ConsumerExe || g.Exe.Path != exe.Path {
 			continue
 		}
 		st, err := s.state(ctx, grant.Entity(g.ID), string(grant.Initial))

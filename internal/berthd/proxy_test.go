@@ -709,3 +709,49 @@ func TestRevokeAllEndsRequestedGrants(t *testing.T) {
 		t.Fatalf("history %+v", h[0])
 	}
 }
+
+func TestRevokeDropsTheGrantsLiveTickets(t *testing.T) {
+	f := newFixture(t, &testutil.Approver{})
+	f.request(t)
+	revoked := f.grant(t, "").GetConsumer().GetGrantId()
+	ticket := ticketOf(f.use(t))
+	if _, err := f.s.RevokeGrant(t.Context(), &berthv1.RevokeGrantRequest{GrantId: revoked}, peerOf(agentPID)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.RedeemUseTicket(t.Context(), ticket, peerOf(helperPID)); !errors.Is(err, api.ErrTicketInvalid) {
+		t.Fatalf("ticket issued before the revoke: %v", err)
+	}
+	// Another grant's ticket stays good.
+	f.grant(t, "")
+	kept := ticketOf(f.use(t))
+	if _, err := f.s.RevokeGrant(t.Context(), &berthv1.RevokeGrantRequest{GrantId: revoked}, peerOf(agentPID)); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.RedeemUseTicket(t.Context(), kept, peerOf(helperPID)); err != nil {
+		t.Fatalf("other grant's ticket: %v", err)
+	}
+}
+
+// pathedProxyGrants returns proxy grants carrying an executable path, which the store's CHECKs
+// never allow, to prove AuthorizeUse skips them by kind rather than by an empty path.
+type pathedProxyGrants struct{ ports.SecretRecords }
+
+func (p pathedProxyGrants) Grants(ctx context.Context, name string) ([]ports.GrantRecord, error) {
+	gs, err := p.SecretRecords.Grants(ctx, name)
+	for i := range gs {
+		if gs[i].Kind == ports.ConsumerProxy {
+			gs[i].Exe = ports.Executable{Path: toolReal, SHA256: [32]byte{1}}
+		}
+	}
+	return gs, err
+}
+
+func TestAuthorizeUseSkipsProxyGrants(t *testing.T) {
+	f := newFixture(t, &testutil.Approver{})
+	f.request(t)
+	f.grantProxy(t)
+	f.s.Records = pathedProxyGrants{f.s.Records}
+	if got := f.use(t).GetOutcome(); got != berthv1.UseOutcome_USE_OUTCOME_NO_GRANT {
+		t.Fatalf("an executable used a proxy grant: %v", got)
+	}
+}
