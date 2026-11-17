@@ -100,3 +100,9 @@ stderr carries short diagnostics and never a value.
 - From item 3: send secret `UseRefused` only to a Stored secret with no grant; a name that is not Stored is `SECRET_NOT_FOUND`, never an event.
 - From item 3: `GrantSecret` always creates a new grant row and entity; `GrantFailed` ends in Denied.
 - Add the secret and grant state diagrams to the wiki architecture page.
+- From item 4: `native.DefaultHelper` guesses `/Applications/Berth.app/Contents/MacOS/berth-native`; until the app exists (M5), `berthd` and `berth run` should find `berth-native` beside their own executable, with a `BERTH_NATIVE` override for tests.
+- From item 4: grants must store the path `ExecIdentity` resolved (symlinks followed), because `berth run` sends `LookPath` plus `Abs` without resolving; `berthd` always identifies the executable itself.
+- From item 4: `peer` uses a raw `proc_info` syscall with a hardcoded offset; keep its test, and revisit with a libproc wrapper if a macOS update breaks it.
+- From item 5: wire `cli.Env.Read` in `cmd/berth/main.go` to `native.Read`.
+- From item 5: a terminal Ctrl-C reaches a child twice (process group plus forwarding); forward SIGINT only when the child is in its own process group.
+- Safety checklist, known limit: the executable can change between `AuthorizeUse` hashing it and `berth run` starting it. Record it; closing it needs exec by file descriptor or a signed binary requirement, which is E2b.
