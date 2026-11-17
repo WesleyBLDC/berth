@@ -116,6 +116,7 @@ func runCommand(ctx context.Context, args []string, env Env) int {
 		case berthv1.UseOutcome_USE_OUTCOME_STALE_GRANT:
 			fmt.Fprintf(env.Stderr, "%s changed since it was granted %s; ask the person to run: berth secret grant %s --exe %s\n",
 				exe, b.name, b.name, exe)
+			fmt.Fprintln(env.Stderr, "grants made before this version of berth go stale at their first use and need one fresh berth secret grant")
 			return ExitStaleGrant
 		case berthv1.UseOutcome_USE_OUTCOME_UNSPECIFIED:
 		}
@@ -147,6 +148,13 @@ func runCommand(ctx context.Context, args []string, env Env) int {
 // AuthorizeUse hashed it is killed before its first instruction. The secrets stay []byte all the
 // way into the child's environment, and childEnv comes from envpolicy, never berth's own.
 func startVerified(ctx context.Context, exe string, argv, childEnv []string, bindings envFlags, values [][]byte, want ports.CDHash, env Env) int {
+	// A C environment ends each entry at a NUL, so such a value would reach the child cut short.
+	for i, v := range values {
+		if bytes.IndexByte(v, 0) >= 0 {
+			fmt.Fprintf(env.Stderr, "secret %s contains a NUL byte, which cannot go into an environment variable; nothing started\n", bindings[i].name)
+			return ExitError
+		}
+	}
 	stdout, stderr := mask.NewWriter(env.Stdout, values), mask.NewWriter(env.Stderr, values)
 	defer func() { _ = stdout.Close(); _ = stderr.Close() }()
 	entries := make([][]byte, 0, len(childEnv)+len(bindings))

@@ -55,7 +55,7 @@ func TestRunRefusalDoesNotStartTheChild(t *testing.T) {
 		says    string
 	}{
 		{berthv1.UseOutcome_USE_OUTCOME_NO_GRANT, ExitNoGrant, "no grant lets /bin/sh use gh-token"},
-		{berthv1.UseOutcome_USE_OUTCOME_STALE_GRANT, ExitStaleGrant, "/bin/sh changed since it was granted gh-token"},
+		{berthv1.UseOutcome_USE_OUTCOME_STALE_GRANT, ExitStaleGrant, "need one fresh berth secret grant"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.outcome.String(), func(t *testing.T) {
@@ -207,5 +207,17 @@ func TestRunChecksAScriptByItsInterpreter(t *testing.T) {
 	r := invoke(t, &fakeSecrets{use: berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED}, read, "run", "--env", "KEY=gh-token", "--", script)
 	if r.code != 0 || r.stdout != "ran" {
 		t.Fatalf("exit %d, stdout %q, stderr %q", r.code, r.stdout, r.stderr)
+	}
+}
+
+func TestRunRefusesAValueWithANUL(t *testing.T) {
+	marker := filepath.Join(t.TempDir(), "started")
+	read := func(context.Context, []byte) ([]byte, error) { return []byte("ab\x00cd"), nil }
+	r := invoke(t, &fakeSecrets{use: berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED}, read, "run", "--env", "KEY=gh-token", "--", "/usr/bin/touch", marker)
+	if r.code != ExitError || !strings.Contains(r.stderr, "secret gh-token contains a NUL byte") {
+		t.Fatalf("code %d, stderr %q", r.code, r.stderr)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("the child ran: %v", err)
 	}
 }
