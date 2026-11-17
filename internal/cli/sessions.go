@@ -86,14 +86,7 @@ func sessionInspect(ctx context.Context, args []string, env Env) int {
 	fmt.Fprintf(w, "driver\t%s\n", driverName(s.GetDriver()))
 	fmt.Fprintf(w, "headless\t%s\n", headlessName(s))
 	fmt.Fprintf(w, "cdp\t%s\n", cdpName(s))
-	profile := shown(s.GetUserDataDir())
-	switch {
-	case s.GetOtherUser() || s.GetArgsUnreadable():
-		profile = "?"
-	case profile == "":
-		profile = "default"
-	}
-	fmt.Fprintf(w, "profile\t%s\n", profile)
+	fmt.Fprintf(w, "profile\t%s\n", profileName(s))
 	fmt.Fprintf(w, "arguments\t%s\n", argsName(s))
 	fmt.Fprintf(w, "owner\t%s\n", ownerName(s))
 	_ = w.Flush()
@@ -273,6 +266,16 @@ func ownerName(s *berthv1.Session) string {
 
 func roleName(r berthv1.ProcessRole) string {
 	return strings.ToLower(strings.TrimPrefix(r.String(), "PROCESS_ROLE_"))
+}
+
+func profileName(s *berthv1.Session) string {
+	switch {
+	case s.GetOtherUser() || s.GetArgsUnreadable():
+		return "?"
+	case s.GetUserDataDir() == "":
+		return "default"
+	}
+	return shown(s.GetUserDataDir())
 }
 
 func argsName(s *berthv1.Session) string {

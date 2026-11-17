@@ -94,7 +94,9 @@ The detail pane shows what `inspect` shows at the top (executable, CDP, profile,
 
 **Stop follows the M2 rules.** Another user's session is never offered a stop: `s` says why and sends nothing. A session owned by the person or an app is offered a forced stop, and the confirmation line says so (`stop 200-... ? it belongs to you; this is a forced stop. y to stop`); every other session gets a plain one. `StopSession` runs in the background with a fresh `request_id`, and the result lands in the status line; the state changes arrive through the stream like any other.
 
-**Reconnecting.** When the stream ends or fails, the model shows `reconnecting` with the error, waits a second and calls `WatchSessions` again with the last `event_id` it applied, so it resumes; a snapshot replaces its list.
+**Reconnecting.** When the stream ends or fails, the header shows `reconnecting` with the error, and the stream loop (`watchLoop`, beside the model) waits a second and calls `WatchSessions` again with the last `event_id` it delivered, which the model has applied or will apply next, since messages reach it in order; so it resumes, and a snapshot replaces its list.
+
+**Only in a terminal.** `berth top` with a standard output that is not a terminal prints that it needs one, points at `berth ps`, and exits 2.
 
 **Display safety.** Every process chosen string (executable paths, profile folders, owner names, event details, and the error text) goes through `shown` before it reaches the view, so it is quoted with escapes when it holds ESC, CR, LF, other C0 and C1 characters, DEL or bidi overrides; the filter text the person types goes through it too. Lines are cut to the terminal's width after escaping, so a cut can never split an escape sequence.
 

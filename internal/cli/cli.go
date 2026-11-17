@@ -74,6 +74,8 @@ const usage = `usage:
                                                 one you or an app started needs --force, and
                                                 another user's is never stopped
   berth leftovers [--stop [--force]]           list, or stop, browsers whose owner exited
+  berth top                                     a live full screen view of every browser session:
+                                                inspect, stop (after a confirmation) and filter
 
 exit codes:
   0  success
@@ -146,6 +148,8 @@ func Run(ctx context.Context, args []string, env Env) int {
 		return sessionStop(ctx, args[1:], env)
 	case len(args) >= 1 && args[0] == "leftovers":
 		return sessionLeftovers(ctx, args[1:], env)
+	case len(args) == 1 && args[0] == "top":
+		return top(ctx, env)
 	}
 	fmt.Fprint(env.Stderr, usage)
 	return ExitUsage
