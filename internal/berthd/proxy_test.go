@@ -5,6 +5,7 @@ import (
 	"errors"
 	"slices"
 	"strconv"
+	"sync"
 	"testing"
 	"time"
 
@@ -509,3 +510,202 @@ func TestBootRecoversLifecycleAndSessions(t *testing.T) {
 }
 
 func itoa(n int64) string { return strconv.FormatInt(n, 10) }
+
+// gatedPeers holds the next Facts call for an armed pid until the test releases it, so a test can
+// stop a call between its first check and its next step.
+type gatedPeers struct {
+	ports.PeerFacts
+	mu    sync.Mutex
+	gates map[int]*gate
+}
+
+type gate struct {
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (g *gatedPeers) arm(pid int) *gate {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	gt := &gate{entered: make(chan struct{}), release: make(chan struct{})}
+	g.gates[pid] = gt
+	return gt
+}
+
+func (g *gatedPeers) Facts(ctx context.Context, pid int) (ports.Requester, error) {
+	g.mu.Lock()
+	gt := g.gates[pid]
+	delete(g.gates, pid)
+	g.mu.Unlock()
+	if gt != nil {
+		close(gt.entered)
+		<-gt.release
+	}
+	return g.PeerFacts.Facts(ctx, pid)
+}
+
+// TestRemoveRacingAGrantLeavesNoActiveGrant interleaves a grant and an rm at each point where
+// one's check could miss the other, and requires that no grant ends Active on a removed secret.
+func TestRemoveRacingAGrantLeavesNoActiveGrant(t *testing.T) {
+	type outcome struct {
+		resp *berthv1.GrantProxyResponse
+		err  error
+	}
+	setup := func(t *testing.T) (*fixture, *gatedPeers, *gatedPower) {
+		t.Helper()
+		power := &gatedPower{entered: make(chan struct{}, 1), release: make(chan struct{})}
+		f := newFixture(t, power)
+		close(power.release)
+		f.request(t)
+		peers := &gatedPeers{PeerFacts: f.s.Peers, gates: map[int]*gate{}}
+		f.s.Peers = peers
+		return f, peers, power
+	}
+	grantAsync := func(f *fixture) chan outcome {
+		done := make(chan outcome, 1)
+		go func() {
+			resp, err := f.s.GrantProxy(context.Background(), &berthv1.GrantProxyRequest{Name: "gh-token", Target: &berthv1.ProxyTarget{
+				Host: proxyHost, Port: 443, HeaderName: "Authorization", PlaceholderEnv: "API_KEY",
+			}}, peerOf(berthPID))
+			done <- outcome{resp, err}
+		}()
+		return done
+	}
+	removeAsync := func(f *fixture) chan *berthv1.RemoveSecretResponse {
+		done := make(chan *berthv1.RemoveSecretResponse, 1)
+		go func() {
+			resp, err := f.s.RemoveSecret(context.Background(), &berthv1.RemoveSecretRequest{Name: "gh-token"}, peerOf(agentPID))
+			if err != nil {
+				t.Error(err)
+			}
+			done <- resp
+		}()
+		return done
+	}
+	noActiveAfterReAdd := func(t *testing.T, f *fixture) {
+		t.Helper()
+		if got := f.state(t, "secret/gh-token"); got != "Removed" {
+			t.Fatalf("secret %s", got)
+		}
+		if got := f.request(t); got != berthv1.StoreOutcome_STORE_OUTCOME_STORED {
+			t.Fatalf("re-add %v", got)
+		}
+		list, err := f.s.ListSecrets(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, c := range list.GetSecrets()[0].GetConsumers() {
+			if c.GetState() == berthv1.GrantState_GRANT_STATE_ACTIVE || c.GetState() == berthv1.GrantState_GRANT_STATE_REQUESTED {
+				t.Fatalf("re-added secret has a live grant %v", c)
+			}
+		}
+		if resp := f.authorizeProxy(t, "gh-token"); resp.GetOutcome() != berthv1.UseOutcome_USE_OUTCOME_NO_GRANT {
+			t.Fatalf("a grant from before the rm serves the re-added value: %v", resp)
+		}
+	}
+
+	t.Run("rm finishes between the grant's check and its prompt", func(t *testing.T) {
+		f, peers, power := setup(t)
+		held := peers.arm(berthPID)
+		granted := grantAsync(f)
+		<-held.entered
+		if resp := <-removeAsync(f); resp.GetOutcome() != berthv1.RemoveOutcome_REMOVE_OUTCOME_REMOVED {
+			t.Fatalf("remove %v", resp)
+		}
+		close(held.release)
+		got := <-granted
+		if got.err != nil || got.resp.GetOutcome() != berthv1.GrantOutcome_GRANT_OUTCOME_FAILED {
+			t.Fatalf("grant after rm %v %v", got.resp, got.err)
+		}
+		if n := len(power.PowerPrompts()); n != 0 {
+			t.Fatalf("%d Touch ID prompts for a removed secret", n)
+		}
+		noActiveAfterReAdd(t, f)
+	})
+
+	t.Run("rm finishes while the grant's Touch ID is open", func(t *testing.T) {
+		f, peers, power := setup(t)
+		power.release = make(chan struct{})
+		heldGrant := peers.arm(berthPID)
+		granted := grantAsync(f)
+		<-heldGrant.entered
+		// The rm passes its check for Requested grants before the grant row exists.
+		heldRemove := peers.arm(agentPID)
+		removed := removeAsync(f)
+		<-heldRemove.entered
+		close(heldGrant.release)
+		<-power.entered
+		close(heldRemove.release)
+		f.eventually(t, "secret/gh-token", "Removed")
+		close(power.release)
+		got := <-granted
+		if got.err != nil || got.resp.GetOutcome() != berthv1.GrantOutcome_GRANT_OUTCOME_FAILED {
+			t.Fatalf("grant approved during rm %v %v", got.resp, got.err)
+		}
+		if resp := <-removed; resp.GetOutcome() != berthv1.RemoveOutcome_REMOVE_OUTCOME_REMOVED || len(resp.GetRevokedGrantIds()) != 0 {
+			t.Fatalf("remove %v", resp)
+		}
+		noActiveAfterReAdd(t, f)
+	})
+
+	t.Run("a grant on a Removing secret is busy", func(t *testing.T) {
+		a := &gatedRemove{entered: make(chan struct{}, 1), release: make(chan struct{})}
+		f := newFixture(t, a)
+		f.request(t)
+		removed := removeAsync(f)
+		<-a.entered
+		_, err := f.s.GrantProxy(t.Context(), &berthv1.GrantProxyRequest{Name: "gh-token", Target: &berthv1.ProxyTarget{
+			Host: proxyHost, Port: 443, HeaderName: "Authorization",
+		}}, peerOf(berthPID))
+		close(a.release)
+		<-removed
+		if !errors.Is(err, api.ErrBusy) {
+			t.Fatalf("grant while removing: %v", err)
+		}
+	})
+}
+
+type gatedRemove struct {
+	testutil.Approver
+	entered chan struct{}
+	release chan struct{}
+}
+
+func (g *gatedRemove) RemoveSecret(ctx context.Context, p ports.LifecyclePrompt, t ports.Ticket) (ports.RemoveOutcome, error) {
+	g.entered <- struct{}{}
+	<-g.release
+	return g.Approver.RemoveSecret(ctx, p, t)
+}
+
+// endRequested is reached when a remove's RevokeAll finds a grant still Requested, such as one
+// a crash left waiting for Touch ID; boot recovery ends it too.
+func TestRevokeAllEndsRequestedGrants(t *testing.T) {
+	f := newFixture(t, &testutil.Approver{})
+	ctx := t.Context()
+	at := f.clock.Now()
+	if err := f.store.AddSecret(ctx, "gone", at); err != nil {
+		t.Fatal(err)
+	}
+	id, err := f.store.AddGrant(ctx, ports.GrantRecord{Secret: "gone", Kind: ports.ConsumerProxy, Proxy: ports.ProxyTarget{Host: proxyHost, Port: 443, HeaderName: "X-Key"}, CreatedAt: at})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for v, r := range []ports.TransitionRecord{
+		{Entity: "secret/gone", Kind: "secret", Event: "StoreSucceeded", From: "Pending", To: "Stored"},
+		{Entity: "secret/gone", Kind: "secret", Event: "RemoveSucceeded", From: "Removing", To: "Removed"},
+	} {
+		r.Version, r.At = int64(v+1), at
+		if err := f.store.SaveTransition(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.s.recover(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if got := f.state(t, "grant/"+itoa(id)); got != "Denied" {
+		t.Fatalf("requested grant of a removed secret is %s", got)
+	}
+	if h := f.history(t, "grant/"+itoa(id)); h[0].Event != "GrantFailed" || h[0].Detail != "secret removed" {
+		t.Fatalf("history %+v", h[0])
+	}
+}

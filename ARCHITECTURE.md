@@ -215,8 +215,8 @@ stateDiagram-v2
 
 - `PromptStore` asks `berth-native store` to show the dialog; its outcome comes back as `StoreSucceeded`, `StoreDenied` or `StoreFailed`.
 - `PromptRotate` and `PromptRemove` make an action ticket bound to `berthd`'s pid and run `berth-native rotate` or `remove`, which redeems it before any prompt; the ticket is dropped when the helper exits.
-- `RevokeAll` revokes every grant of the secret, drops its live use tickets and stops the proxy sessions holding its grants; `RemoveSecret` answers with the revoked grant ids.
-- A `Stored` secret refuses another store with `ERROR_REASON_SECRET_EXISTS`; `Rotating` and `Removing` answer `ERROR_REASON_BUSY` to a store, rotate or remove, and so does a secret with a grant waiting for Touch ID. The shell checks this before it sends the event, so the table never sees a request it refuses.
+- `RevokeAll` revokes every grant of the secret, ends any grant still waiting for Touch ID with `GrantFailed` and the note `secret removed` (waiting for its prompt to finish, and revoking it if the approval got there first), drops its live use tickets and stops the proxy sessions holding its grants; `RemoveSecret` answers with the revoked grant ids.
+- A `Stored` secret refuses another store with `ERROR_REASON_SECRET_EXISTS`; `Pending`, `Rotating` and `Removing` answer `ERROR_REASON_BUSY` to a store, grant, rotate or remove, and so does a secret with a grant waiting for Touch ID to a rotate or remove. The shell checks this before it sends the event, so the table never sees a request it refuses.
 - Uses accept `Stored` and `Rotating`: a run during a rotate gets the old value. `Removing` and `Removed` refuse uses, and `Removed` frees the name for a new store.
 - `UseRefused` records a refused use of a stored secret that has no grant to record it on.
 - Boot recovery fails `Rotating` and `Removing` with the note `interrupted` (`RotateFailed`, `RemoveFailed`) and revokes any grant of a `Removed` secret left Active by a crash.
@@ -243,6 +243,7 @@ stateDiagram-v2
 
 - `PromptPower` asks `berth-native confirm` for Touch ID; `IssueTicket` makes a single use ticket and counts the use on the grant row.
 - A `Denied`, `Stale` or `Revoked` grant is never approved again; granting again creates a new grant, which is a new entity.
+- The grant and remove checks are not one transaction, so `PromptPower` checks again that the secret serves uses (`Stored` or `Rotating`) before it shows Touch ID and after the person approves; otherwise it answers `GrantFailed` with the note `secret removed`. With the remove's `RevokeAll` ending Requested grants, a grant and an `rm` racing never leave an Active grant on a removed secret, so a value stored later under the same name gets no grant without a fresh Touch ID.
 - A grant pins either an executable (kind `exe`) or a proxy target (kind `proxy`); the kind is data on the grant row, not a state, and a proxy grant never sees `HashChanged`. `Consumer.kind` in `ListSecrets` comes from the row.
 - `RevokeGrant` (`berth secret revoke`) and a remove's `RevokeAll` send `Revoke`, with no Touch ID since it only lowers privilege; revoking also stops the proxy sessions holding the grant.
 

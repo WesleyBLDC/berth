@@ -112,21 +112,11 @@ func (s *secrets) RotateSecret(ctx context.Context, req *berthv1.RotateSecretReq
 // lifecycle answers BUSY or SECRET_NOT_FOUND before it sends a rotate or remove the secret's
 // table would refuse, then waits for the prompt's outcome.
 func (s *secrets) lifecycle(ctx context.Context, name string, peer ports.Peer, request secret.EventKind, until ...secret.EventKind) (ports.TransitionRecord, any, error) {
-	st, err := s.state(ctx, secret.Entity(name), "")
-	if err != nil {
+	if err := s.requireStored(ctx, name); err != nil {
 		return ports.TransitionRecord{}, nil, err
 	}
-	if st == "" {
-		return ports.TransitionRecord{}, nil, api.ErrSecretNotFound
-	}
-	switch secret.State(st) {
-	case secret.Stored:
-	case secret.Pending, secret.Rotating, secret.Removing:
-		return ports.TransitionRecord{}, nil, api.ErrBusy
-	case secret.Denied, secret.Failed, secret.Removed:
-		return ports.TransitionRecord{}, nil, api.ErrSecretNotFound
-	}
-	// A grant waiting for Touch ID would otherwise come out Active on a secret just removed.
+	// A grant waiting for Touch ID would make the person approve one thing while removing
+	// another; the grant's own check and revokeAll make sure it never ends Active either way.
 	grants, err := s.Records.Grants(ctx, name)
 	if err != nil {
 		return ports.TransitionRecord{}, nil, err
@@ -246,8 +236,14 @@ func (s *secrets) revokeAll(ctx context.Context, name string, reason proxysessio
 			s.Log.Error("cannot read grant state", "grant", g.ID, "err", err)
 			continue
 		}
+		if grant.State(st) == grant.Requested {
+			if st, err = s.endRequested(ctx, g.ID); err != nil {
+				s.Log.Error("cannot end a requested grant", "grant", g.ID, "err", err)
+				continue
+			}
+		}
 		if grant.State(st) == grant.Active || grant.State(st) == grant.Stale {
-			_, _, err := step(ctx, s.grants, grant.Entity(g.ID), grant.Event{Kind: grant.Revoke, Note: "secret removed"}, nil, grant.Revoke)
+			_, _, err := step(ctx, s.grants, grant.Entity(g.ID), grant.Event{Kind: grant.Revoke, Note: noteSecretRemoved}, nil, grant.Revoke)
 			if err != nil {
 				s.Log.Error("cannot revoke grant", "grant", g.ID, "err", err)
 				continue
@@ -258,6 +254,17 @@ func (s *secrets) revokeAll(ctx context.Context, name string, reason proxysessio
 	}
 	slices.Sort(ids)
 	return ids
+}
+
+// endRequested fails a grant still waiting for Touch ID. Its step waits for the prompt to finish,
+// and when the prompt got there first the grant is Denied or Active, which the caller then
+// revokes; it returns the grant's state after.
+func (s *secrets) endRequested(ctx context.Context, id int64) (string, error) {
+	_, _, err := step(ctx, s.grants, grant.Entity(id), grant.Event{Kind: grant.GrantFailed, Note: noteSecretRemoved}, nil, grant.GrantFailed)
+	if err != nil && !errors.Is(err, machine.ErrIllegal) {
+		return "", err
+	}
+	return s.state(ctx, grant.Entity(id), string(grant.Initial))
 }
 
 func targetOf(t *berthv1.ProxyTarget) ports.ProxyTarget {

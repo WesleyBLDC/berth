@@ -31,6 +31,8 @@ const (
 	ticketLife = 30 * time.Second
 	// promptTimeout bounds a dialog or Touch ID prompt the person walked away from.
 	promptTimeout = 5 * time.Minute
+	// noteSecretRemoved ends a grant whose secret was removed before it became Active.
+	noteSecretRemoved = "secret removed"
 )
 
 // interpreters are executables that run other code, so a grant to one lets whatever it runs
@@ -437,6 +439,11 @@ func (s *secrets) runGrant(entity string) machine.Runner[grant.Event, grant.Effe
 			if !ok {
 				return []grant.Event{{Kind: grant.GrantFailed, Note: "no prompt to show"}}, nil
 			}
+			// A remove can start between the grant call's check and this prompt, or finish while
+			// the prompt is open; an approval must never land on a secret whose value is going.
+			if !s.servesUses(ctx, p.Secret) {
+				return []grant.Event{{Kind: grant.GrantFailed, Note: noteSecretRemoved}}, nil
+			}
 			ctx, cancel := context.WithTimeout(ctx, promptTimeout)
 			defer cancel()
 			go s.cancelOnStop(ctx, cancel)
@@ -446,6 +453,9 @@ func (s *secrets) runGrant(entity string) machine.Runner[grant.Event, grant.Effe
 			}
 			switch outcome {
 			case ports.PowerApproved:
+				if !s.servesUses(ctx, p.Secret) {
+					return []grant.Event{{Kind: grant.GrantFailed, Note: noteSecretRemoved}}, nil
+				}
 				return []grant.Event{{Kind: grant.GrantApproved}}, nil
 			case ports.PowerDenied:
 				return []grant.Event{{Kind: grant.GrantDenied}}, nil
@@ -662,15 +672,21 @@ func (s *secrets) identify(ctx context.Context, exePath string) (ports.Executabl
 	return exe, nil
 }
 
+// requireStored answers BUSY while a dialog is open on the secret and SECRET_NOT_FOUND when it
+// holds no value, so a grant, rotate or remove starts only on a Stored secret.
 func (s *secrets) requireStored(ctx context.Context, name string) error {
 	st, err := s.state(ctx, secret.Entity(name), "")
 	if err != nil {
 		return err
 	}
-	if secret.State(st) != secret.Stored {
-		return api.ErrSecretNotFound
+	switch secret.State(st) {
+	case secret.Stored:
+		return nil
+	case secret.Pending, secret.Rotating, secret.Removing:
+		return api.ErrBusy
+	case secret.Denied, secret.Failed, secret.Removed:
 	}
-	return nil
+	return api.ErrSecretNotFound
 }
 
 // usable reports whether a secret serves uses: Stored, or Rotating, which keeps the old value
@@ -681,6 +697,16 @@ func (s *secrets) usable(ctx context.Context, name string) (bool, error) {
 		return false, err
 	}
 	return secret.State(st) == secret.Stored || secret.State(st) == secret.Rotating, nil
+}
+
+// servesUses is usable for an effect, which has no caller to hand an error to: a store that
+// cannot be read counts as not usable.
+func (s *secrets) servesUses(ctx context.Context, name string) bool {
+	ok, err := s.usable(ctx, name)
+	if err != nil {
+		s.Log.Error("cannot read the secret's state", "secret", name, "err", err)
+	}
+	return ok
 }
 
 // state reads an entity's persisted state; actors save before they act, so this is current.
