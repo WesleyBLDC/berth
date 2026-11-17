@@ -43,6 +43,11 @@ enum ErrorReason {
   ERROR_REASON_GRANT_NOT_FOUND = 12;
   // NOT_AGENT_METHOD refuses, on the agent socket, every method not marked agent.
   ERROR_REASON_NOT_AGENT_METHOD = 13;
+  // SESSION_NOT_FOUND means no browser session has that id.
+  ERROR_REASON_SESSION_NOT_FOUND = 14;
+  // SESSION_NOT_STOPPABLE refuses a stop of another user's browser, or of one owned by the
+  // person or an app without force.
+  ERROR_REASON_SESSION_NOT_STOPPABLE = 15;
 }
 
 message ErrorInfo {

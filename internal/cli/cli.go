@@ -255,6 +255,10 @@ func reportError(w io.Writer, err error, name, target string) int {
 		line = fmt.Sprintf("no grant has id %s; berth secret ls lists the grants", target)
 	case berthv1.ErrorReason_ERROR_REASON_NOT_AGENT_METHOD:
 		line = "this command is for the person, not for agents; agents reach berthd only through the agent socket's methods"
+	case berthv1.ErrorReason_ERROR_REASON_SESSION_NOT_FOUND:
+		line = fmt.Sprintf("no browser session has id %s; berth ps lists them", target)
+	case berthv1.ErrorReason_ERROR_REASON_SESSION_NOT_STOPPABLE:
+		line = fmt.Sprintf("berth will not stop session %s: it belongs to another user, or to the person or an app and needs --force", target)
 	case berthv1.ErrorReason_ERROR_REASON_UNSPECIFIED:
 		line = err.Error()
 	}

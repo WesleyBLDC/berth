@@ -1,0 +1,171 @@
+syntax = "proto3";
+
+package berth.v1;
+
+import "berth/v1/debug.proto";
+import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
+
+// SessionsService lists and stops the browsers running on this Mac. A session is one browser
+// process tree and whoever started it. Raw process arguments never cross this API; only the
+// facts berthd parsed from them do. No method is on the agent surface: listing shows every
+// browser, including the person's own and other agents', and agents get methods scoped to their
+// own session with session tokens in M4.
+service SessionsService {
+  rpc ListSessions(ListSessionsRequest) returns (ListSessionsResponse);
+  rpc InspectSession(InspectSessionRequest) returns (InspectSessionResponse);
+  // StopSession sends SIGTERM to the browser, then SIGKILL to every process of the session after
+  // 5 seconds, and answers once the session is Stopped or 10 seconds have passed. It needs no
+  // Touch ID, since it only ends a process the person could end; a session owned by the person
+  // or an app needs force, and another user's session is never stopped.
+  rpc StopSession(StopSessionRequest) returns (StopSessionResponse);
+}
+
+// SessionState mirrors the session machine's states.
+enum SessionState {
+  SESSION_STATE_UNSPECIFIED = 0;
+  SESSION_STATE_DISCOVERED = 1;
+  SESSION_STATE_ACTIVE = 2;
+  SESSION_STATE_IDLE = 3;
+  // LEFTOVER is a browser whose owner has exited.
+  SESSION_STATE_LEFTOVER = 4;
+  SESSION_STATE_STOPPING = 5;
+  SESSION_STATE_STOPPED = 6;
+}
+
+enum BrowserKind {
+  BROWSER_KIND_UNSPECIFIED = 0;
+  BROWSER_KIND_CHROME = 1;
+  BROWSER_KIND_CHROME_FOR_TESTING = 2;
+  BROWSER_KIND_CHROMIUM = 3;
+  BROWSER_KIND_EDGE = 4;
+  BROWSER_KIND_BRAVE = 5;
+  BROWSER_KIND_HEADLESS_SHELL = 6;
+}
+
+// Driver is the automation library a browser's install location, profile or flags point to.
+// UNSPECIFIED means berthd could not read the arguments (another user's browser).
+enum Driver {
+  DRIVER_UNSPECIFIED = 0;
+  DRIVER_NONE = 1;
+  DRIVER_PLAYWRIGHT = 2;
+  DRIVER_PUPPETEER = 3;
+  // AUTOMATION is --enable-automation with no sign of which library set it.
+  DRIVER_AUTOMATION = 4;
+}
+
+// CdpMode is how the browser exposes the DevTools protocol.
+enum CdpMode {
+  CDP_MODE_UNSPECIFIED = 0;
+  CDP_MODE_NONE = 1;
+  CDP_MODE_PIPE = 2;
+  CDP_MODE_PORT = 3;
+}
+
+// OwnerKind is who started a browser, from its process tree.
+enum OwnerKind {
+  OWNER_KIND_UNSPECIFIED = 0;
+  OWNER_KIND_AGENT = 1;
+  OWNER_KIND_TERMINAL = 2;
+  OWNER_KIND_APP = 3;
+  // PERSON is a browser app launchd started, from the Dock, Finder or open.
+  OWNER_KIND_PERSON = 4;
+  // NONE is an automated or headless browser whose owner has already exited.
+  OWNER_KIND_NONE = 5;
+  // PROCESS is the browser's parent when no rule recognises any ancestor, such as a launchd job.
+  OWNER_KIND_PROCESS = 6;
+}
+
+enum ProcessRole {
+  PROCESS_ROLE_UNSPECIFIED = 0;
+  // BROWSER is the session's root process.
+  PROCESS_ROLE_BROWSER = 1;
+  // HELPER is a renderer, GPU, network or other child of the browser.
+  PROCESS_ROLE_HELPER = 2;
+  // ANCESTOR is a process above the browser, in an owner chain.
+  PROCESS_ROLE_ANCESTOR = 3;
+}
+
+message SessionProcess {
+  int32 pid = 1;
+  google.protobuf.Timestamp started_at = 2;
+  string executable = 3;
+  ProcessRole role = 4;
+}
+
+message SessionOwner {
+  OwnerKind kind = 1;
+  // name is the recognised program, such as claude, Ghostty or Cursor, or the executable's name
+  // for PROCESS; empty for PERSON and NONE.
+  string name = 2;
+  SessionProcess process = 3;
+}
+
+message Session {
+  // id is <pid>-<start time in microseconds since the epoch>, so a reused pid is a new session.
+  string id = 1;
+  SessionState state = 2;
+  BrowserKind kind = 3;
+  Driver driver = 4;
+  bool headless = 5;
+  CdpMode cdp = 6;
+  // cdp_port is set only for CDP_MODE_PORT; 0 there means the browser picked its own port.
+  uint32 cdp_port = 7;
+  string user_data_dir = 8;
+  SessionOwner owner = 9;
+  SessionProcess browser = 10;
+  uint32 process_count = 11;
+  // other_user marks a browser run by another user: unmanaged, its arguments unreadable, so
+  // driver, headless, cdp and user_data_dir are unknown, and it is never stopped.
+  bool other_user = 12;
+  uint32 uid = 13;
+  google.protobuf.Timestamp state_since = 14;
+}
+
+message ListSessionsRequest {
+  // states filters the list; empty means every live state.
+  repeated SessionState states = 1 [(buf.validate.field).repeated = {
+    max_items: 6
+    items: {
+      enum: {
+        defined_only: true
+        not_in: [0]
+      }
+    }
+  }];
+  // include_stopped adds sessions that stopped since berthd started.
+  bool include_stopped = 2;
+}
+
+message ListSessionsResponse {
+  repeated Session sessions = 1;
+}
+
+message InspectSessionRequest {
+  string id = 1 [(buf.validate.field).string.pattern = "^[0-9]{1,10}-[0-9]{1,20}$"];
+  uint32 history_limit = 2 [(buf.validate.field).uint32.lte = 500];
+}
+
+message InspectSessionResponse {
+  Session session = 1;
+  // processes are the browser and its helpers.
+  repeated SessionProcess processes = 2;
+  // owner_chain runs from the browser's parent upward, as far as the kernel describes it.
+  repeated SessionProcess owner_chain = 3;
+  repeated Transition history = 4;
+}
+
+message StopSessionRequest {
+  // request_id makes the call idempotent: a retry with the same id returns the first result.
+  string request_id = 1 [(buf.validate.field).string = {
+    min_len: 8
+    max_len: 128
+  }];
+  string id = 2 [(buf.validate.field).string.pattern = "^[0-9]{1,10}-[0-9]{1,20}$"];
+  // force allows stopping a browser owned by the person or an app.
+  bool force = 3;
+}
+
+message StopSessionResponse {
+  SessionState state = 1;
+}
