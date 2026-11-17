@@ -618,3 +618,29 @@ func TestAnOlderStepDoesNotOverwriteALaterState(t *testing.T) {
 		t.Fatalf("kept state %s, want Stopping from the later step", st)
 	}
 }
+
+// A session saved as Stopping when berthd went down gets its SIGTERM and grace timer again at
+// boot, so it ends in SIGKILL rather than staying Stopping forever.
+func TestBootRearmsAStoppingSession(t *testing.T) {
+	f := newBrowsersFixture(t)
+	entity := session.Entity(f.id(100))
+	st, _, err := f.store.LoadState(t.Context(), entity)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.store.SaveTransition(t.Context(), ports.TransitionRecord{
+		Entity: entity, Kind: session.Kind, Version: st.Version + 1, Event: "StopRequested", From: st.State, To: string(session.Stopping),
+	}); err != nil {
+		t.Fatal(err)
+	}
+	b := newBrowsers(t.Context(), f.b.browsersDeps)
+	b.grace = 20 * time.Millisecond
+	if err := b.recover(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	got := waitSignals(t, f.procs, 3)
+	want := []testutil.SentSignal{{PID: 100, Signal: ports.SignalTerm}, {PID: 100, Signal: ports.SignalKill}, {PID: 101, Signal: ports.SignalKill}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("signals %v, want %v", got, want)
+	}
+}

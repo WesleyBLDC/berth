@@ -132,11 +132,22 @@ func (b *browsers) recover(ctx context.Context) error {
 			gone = append(gone, r.Entity)
 		}
 	}
+	// A session saved as Stopping lost its grace timer with the previous berthd, and maybe its
+	// SIGTERM, so both are sent again.
+	stopping := map[string]ports.ProcessRef{}
+	for id, t := range b.live {
+		if t.disc.State == session.Stopping {
+			stopping[id] = t.obs.Root.ProcessRef
+		}
+	}
 	b.mu.Unlock()
 	for _, entity := range gone {
 		if _, _, err := step(ctx, b.actors, entity, session.Event{Kind: session.Exited, Note: "gone at boot"}, nil, session.Exited); err != nil {
 			return err
 		}
+	}
+	for id, root := range stopping {
+		b.terminate(ctx, id, root)
 	}
 	return nil
 }
@@ -328,12 +339,7 @@ func (b *browsers) runSession(entity string) machine.Runner[session.Event, sessi
 		}
 		switch effect.Kind {
 		case session.SignalTerm:
-			b.signal(ctx, o.Root.ProcessRef, ports.SignalTerm)
-			time.AfterFunc(b.grace, func() {
-				if st, err := b.state(b.ctx, entity); err == nil && st == session.Stopping {
-					b.send(b.ctx, id, session.Event{Kind: session.StopTimedOut})
-				}
-			})
+			b.terminate(ctx, id, o.Root.ProcessRef)
 		case session.SignalKill:
 			for _, m := range o.Members {
 				if m.UID == b.UID {
@@ -344,6 +350,16 @@ func (b *browsers) runSession(entity string) machine.Runner[session.Event, sessi
 		b.rescan()
 		return nil, nil
 	}
+}
+
+// terminate sends SIGTERM and, after the grace, StopTimedOut if the browser is still Stopping.
+func (b *browsers) terminate(ctx context.Context, id string, root ports.ProcessRef) {
+	b.signal(ctx, root, ports.SignalTerm)
+	time.AfterFunc(b.grace, func() {
+		if st, err := b.state(b.ctx, session.Entity(id)); err == nil && st == session.Stopping {
+			b.send(b.ctx, id, session.Event{Kind: session.StopTimedOut})
+		}
+	})
 }
 
 // signal ignores a process already gone: the scan or its exit watch reports the exit.
