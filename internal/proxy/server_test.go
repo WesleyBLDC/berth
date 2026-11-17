@@ -6,6 +6,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -522,5 +523,79 @@ func TestIdleUpstreamCloseIsRedialled(t *testing.T) {
 	}
 	if _, _, conns, _ := a.snapshot(); conns != 2 {
 		t.Fatalf("upstream connections %d, want 2", conns)
+	}
+}
+
+// TestStalledBodyIsCutOff: a client that sends a head and then stops mid body loses its
+// connection after the idle timeout instead of holding a handler and an upstream forever.
+func TestStalledBodyIsCutOff(t *testing.T) {
+	a := newUpstream(t)
+	f := startProxyWith(t, ServerConfig{IdleTimeout: 200 * time.Millisecond}, upstreamPool(a), a, testGrant(t, target(a.port(), nil)))
+	tn := f.open(t, a.authority())
+	if _, err := io.WriteString(tn.conn, "POST /x HTTP/1.1\r\nHost: "+a.authority()+"\r\nContent-Length: 10\r\n\r\nab"); err != nil {
+		t.Fatal(err)
+	}
+	_ = tn.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	_, err := tn.r.ReadByte()
+	var ne net.Error
+	if err == nil || (errors.As(err, &ne) && ne.Timeout()) {
+		t.Fatalf("the proxy kept a stalled body open: %v", err)
+	}
+}
+
+// TestConnectionCap: one client connection beyond the cap gets 503, and a freed slot is reused.
+func TestConnectionCap(t *testing.T) {
+	a := newUpstream(t)
+	f := startProxyWith(t, ServerConfig{MaxConns: 2}, upstreamPool(a), a, testGrant(t, target(a.port(), nil)))
+	dial := func() net.Conn {
+		c, err := (&net.Dialer{}).DialContext(t.Context(), "tcp", f.addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		t.Cleanup(func() { _ = c.Close() })
+		return c
+	}
+	held := []net.Conn{dial(), dial()}
+	over := dial()
+	_ = over.SetReadDeadline(time.Now().Add(5 * time.Second))
+	resp, err := http.ReadResponse(bufio.NewReader(over), &http.Request{Method: http.MethodConnect})
+	if err != nil || resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("connection over the cap: %v %v", resp, err)
+	}
+	_ = resp.Body.Close()
+	_ = held[0].Close()
+	head := fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\nProxy-Authorization: %s\r\n\r\n", a.authority(), a.authority(), basic(testCred))
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		if r := f.raw(t, head); r.StatusCode == http.StatusOK {
+			return
+		} else if time.Now().After(deadline) {
+			t.Fatalf("a freed slot was not reused: %d", r.StatusCode)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+}
+
+// TestLaterHeadHasTheHeadTimeout: a tunnel may sit idle between requests, but a head that has
+// started must arrive within the head timeout, not the idle one.
+func TestLaterHeadHasTheHeadTimeout(t *testing.T) {
+	a := newUpstream(t)
+	f := startProxyWith(t, ServerConfig{HeadTimeout: 300 * time.Millisecond}, upstreamPool(a), a, testGrant(t, target(a.port(), nil)))
+	tn := f.open(t, a.authority())
+	time.Sleep(500 * time.Millisecond) // idle between requests is allowed
+	if _, err := io.WriteString(tn.conn, "GET / HTTP/1.1\r\nHost: "); err != nil {
+		t.Fatal(err)
+	}
+	_ = tn.conn.SetReadDeadline(time.Now().Add(5 * time.Second))
+	resp, err := http.ReadResponse(tn.r, &http.Request{Method: http.MethodGet})
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		t.Fatal("the proxy waited past the head timeout for a started head")
+	}
+	if err == nil {
+		_ = resp.Body.Close()
+		if resp.StatusCode != http.StatusBadRequest {
+			t.Fatalf("a stalled head got %d", resp.StatusCode)
+		}
 	}
 }

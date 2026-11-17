@@ -71,8 +71,14 @@ func (f *forwarder) serve() {
 	limit := &headLimit{r: f.client}
 	cr := bufio.NewReader(limit)
 	for {
-		_ = f.raw.SetReadDeadline(time.Now().Add(idleTimeout))
+		// The tunnel may wait idle for its next request, but once a head starts it has
+		// headTimeout to arrive, as the CONNECT head had.
+		_ = f.raw.SetReadDeadline(time.Now().Add(f.s.idle))
 		limit.start()
+		if _, err := cr.Peek(1); err != nil {
+			return
+		}
+		_ = f.raw.SetReadDeadline(time.Now().Add(f.s.head))
 		req, err := http.ReadRequest(cr)
 		if err != nil {
 			if !errors.Is(err, io.EOF) {

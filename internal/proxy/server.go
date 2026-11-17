@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"crypto/subtle"
 	"crypto/tls"
@@ -24,9 +25,12 @@ const (
 	// maxHead bounds one request head, like net/http's default.
 	maxHead     = 1 << 20
 	headTimeout = 30 * time.Second
-	// idleTimeout closes a tunnel to a granted host that sends no request for this long.
+	// idleTimeout closes a connection that moves no byte for this long, either way: a tunnel to a
+	// granted host between requests, a stalled body or response, or a plain tunnel.
 	idleTimeout = 5 * time.Minute
 	dialTimeout = 30 * time.Second
+	// maxConns bounds the client connections served at once; one more gets 503 and is closed.
+	maxConns = 256
 )
 
 // DialFunc dials a TCP address; tests point it at local servers.
@@ -42,6 +46,10 @@ type Server struct {
 	log    *slog.Logger
 	// grantedOnly refuses every CONNECT to a target without a grant (proxyctl.ModeAgent).
 	grantedOnly bool
+	idle        time.Duration
+	head        time.Duration
+	maxConns    int32
+	clients     atomic.Int32
 
 	injected atomic.Uint64
 	refused  atomic.Uint64
@@ -65,6 +73,11 @@ type ServerConfig struct {
 	Log        *slog.Logger
 	// GrantedOnly refuses a CONNECT to any host and port without a grant instead of tunnelling it.
 	GrantedOnly bool
+	// IdleTimeout, HeadTimeout and MaxConns replace idleTimeout, headTimeout and maxConns when
+	// set; only tests set them.
+	IdleTimeout time.Duration
+	HeadTimeout time.Duration
+	MaxConns    int32
 }
 
 func NewServer(c ServerConfig) *Server {
@@ -78,6 +91,9 @@ func NewServer(c ServerConfig) *Server {
 		log:         c.Log,
 		ctx:         ctx,
 		grantedOnly: c.GrantedOnly,
+		idle:        cmp.Or(c.IdleTimeout, idleTimeout),
+		head:        cmp.Or(c.HeadTimeout, headTimeout),
+		maxConns:    cmp.Or(c.MaxConns, maxConns),
 		cancel:      cancel,
 		conns:       map[net.Conn]struct{}{},
 	}
@@ -111,14 +127,23 @@ func (s *Server) Serve(ln net.Listener) {
 		if err != nil {
 			return
 		}
+		if s.clients.Add(1) > s.maxConns {
+			s.clients.Add(-1)
+			_ = c.SetWriteDeadline(time.Now().Add(time.Second))
+			writeStatus(c, http.StatusServiceUnavailable, "")
+			_ = c.Close()
+			continue
+		}
 		if !s.track(c) {
+			s.clients.Add(-1)
 			return
 		}
 		s.wg.Add(1)
 		go func() {
 			defer s.wg.Done()
+			defer s.clients.Add(-1)
 			defer s.untrack(c)
-			s.handle(c)
+			s.handle(&idleConn{Conn: c, idle: s.idle})
 		}()
 	}
 }
@@ -192,6 +217,48 @@ func (l *headLimit) Read(p []byte) (int, error) {
 	return n, err
 }
 
+// idleConn ends a connection that makes no progress: every read and write pushes its deadline
+// idle into the future, so a peer that stops sending or reading mid head, body or response is
+// cut off, while a long transfer that keeps moving is not. A read never waits past the deadline
+// SetReadDeadline or SetDeadline last set, which the head and handshake timeouts use.
+type idleConn struct {
+	net.Conn
+	idle time.Duration
+
+	mu   sync.Mutex
+	hard time.Time
+}
+
+func (c *idleConn) SetReadDeadline(t time.Time) error {
+	c.mu.Lock()
+	c.hard = t
+	c.mu.Unlock()
+	return c.Conn.SetReadDeadline(t)
+}
+
+func (c *idleConn) SetDeadline(t time.Time) error {
+	c.mu.Lock()
+	c.hard = t
+	c.mu.Unlock()
+	return c.Conn.SetDeadline(t)
+}
+
+func (c *idleConn) Read(p []byte) (int, error) {
+	d := time.Now().Add(c.idle)
+	c.mu.Lock()
+	if !c.hard.IsZero() && c.hard.Before(d) {
+		d = c.hard
+	}
+	c.mu.Unlock()
+	_ = c.Conn.SetReadDeadline(d)
+	return c.Conn.Read(p)
+}
+
+func (c *idleConn) Write(p []byte) (int, error) {
+	_ = c.SetWriteDeadline(time.Now().Add(c.idle))
+	return c.Conn.Write(p)
+}
+
 // bufConn reads through the buffered reader that parsed CONNECT, so bytes the client sent
 // right behind it are not lost.
 type bufConn struct {
@@ -234,7 +301,7 @@ func connectTarget(authority string) (host string, port int, ok bool) {
 func (s *Server) handle(c net.Conn) {
 	limit := &headLimit{r: c}
 	br := bufio.NewReader(limit)
-	_ = c.SetReadDeadline(time.Now().Add(headTimeout))
+	_ = c.SetReadDeadline(time.Now().Add(s.head))
 	limit.start()
 	req, err := http.ReadRequest(br)
 	if err != nil {
@@ -285,9 +352,10 @@ func (s *Server) tunnel(c net.Conn, br *bufio.Reader, authority string) {
 	if _, err := io.WriteString(c, "HTTP/1.1 200 Connection established\r\n\r\n"); err != nil {
 		return
 	}
+	upIdle := &idleConn{Conn: up, idle: s.idle}
 	done := make(chan struct{}, 2)
-	go func() { _, _ = io.Copy(up, br); done <- struct{}{} }()
-	go func() { _, _ = io.Copy(c, up); done <- struct{}{} }()
+	go func() { _, _ = io.Copy(upIdle, br); done <- struct{}{} }()
+	go func() { _, _ = io.Copy(c, upIdle); done <- struct{}{} }()
 	<-done
 	_ = up.Close()
 	_ = c.Close()
@@ -303,7 +371,7 @@ func (s *Server) dialUpstream(g *Grant) (*tls.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	tc := tls.Client(raw, &tls.Config{
+	tc := tls.Client(&idleConn{Conn: raw, idle: s.idle}, &tls.Config{
 		ServerName: g.Host,
 		MinVersion: tls.VersionTLS12,
 		RootCAs:    s.roots,
@@ -343,7 +411,7 @@ func (s *Server) intercept(c net.Conn, br *bufio.Reader, g *Grant) {
 		MinVersion:   tls.VersionTLS12,
 		NextProtos:   []string{"http/1.1"},
 	})
-	_ = c.SetDeadline(time.Now().Add(headTimeout))
+	_ = c.SetDeadline(time.Now().Add(s.head))
 	if err := client.HandshakeContext(s.ctx); err != nil {
 		return
 	}
