@@ -1,3 +1,5 @@
+//go:build !berth_e2e
+
 package main
 
 import (
