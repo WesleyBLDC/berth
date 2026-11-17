@@ -317,3 +317,37 @@ func TestShutdownClosesEveryBrowser(t *testing.T) {
 		t.Fatalf("a launch after stop = %v, want ErrBrowserLaunchFailed", err)
 	}
 }
+
+// An owner who gives up while the browser starts leaves no browser the owner tools cannot see:
+// the launch settles on berthd's context and the browser is closed, its profile lock freed.
+func TestACancelledLaunchClosesItsBrowser(t *testing.T) {
+	f := newManagedFixture(t)
+	f.m.launch = 5 * time.Second
+	f.driver.Hold = make(chan struct{})
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan error, 1)
+	go func() {
+		_, err := f.m.LaunchBrowser(ctx, &berthv1.LaunchBrowserRequest{RequestId: "launch-work", Profile: "work", Headless: true})
+		done <- err
+	}()
+	id := waitLiveBrowser(t, f)
+	cancel()
+	if err := <-done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("launch = %v, want context.Canceled", err)
+	}
+	close(f.driver.Hold)
+	waitBrowserClosed(t, f.m, id)
+	list, _ := f.m.ListBrowsers(t.Context(), &berthv1.ListBrowsersRequest{IncludeClosed: true})
+	if len(list.GetBrowsers()) != 1 || list.GetBrowsers()[0].GetId() != id {
+		t.Fatalf("the abandoned browser must stay visible to the owner: %v", list)
+	}
+	select {
+	case <-f.driver.Launched()[0].Done():
+	default:
+		t.Fatal("the abandoned browser's process must be closed")
+	}
+	f.driver.Hold = nil
+	if _, err := f.launch(t, "work"); err != nil {
+		t.Fatalf("the profile must be free again: %v", err)
+	}
+}
