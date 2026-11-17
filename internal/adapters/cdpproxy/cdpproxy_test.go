@@ -209,9 +209,16 @@ func TestASlowAgentIsDroppedPastTheByteLimit(t *testing.T) {
 	ws.SetReadLimit(8 << 20)
 	big := []byte(`{"method":"Page.big","params":{"pad":"` + strings.Repeat("x", 1<<20) + `"}}`)
 	const sent = 64
-	for range sent {
-		if err := fb.Emit(big); err != nil {
-			t.Fatal(err)
+	// The handshake can finish before the proxy sets its sink, and the proxy lets go of the sink
+	// once it drops the agent, so wait for the first message to land and stop at the drop.
+	for deadline := time.Now().Add(5 * time.Second); fb.Emit(big) != nil; time.Sleep(time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("the proxy never took the browser's messages")
+		}
+	}
+	for range sent - 1 {
+		if fb.Emit(big) != nil {
+			break
 		}
 	}
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
