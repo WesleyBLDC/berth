@@ -15,6 +15,7 @@ import (
 
 	"berth/internal/adapters/api"
 	"berth/internal/adapters/cdppipe"
+	"berth/internal/adapters/cdpproxy"
 	"berth/internal/adapters/clock"
 	"berth/internal/adapters/execid"
 	"berth/internal/adapters/native"
@@ -153,7 +154,8 @@ func Run(ctx context.Context, cfg Config) (int, error) {
 	})
 	s.managed = newManaged(machineCtx, managedDeps{
 		Log: cfg.Log, Store: store, List: store, Clock: clock.System{}, Driver: cdppipe.Driver{},
-		Seen: s.browsers, Home: cfg.Home, Browser: cfg.Browser,
+		Proxy: &cdpproxy.Proxy{Log: cfg.Log},
+		Seen:  s.browsers, Home: cfg.Home, Browser: cfg.Browser,
 	})
 	s.actor, err = machine.NewActor(ctx, machine.Config[daemon.State, daemon.Event, daemon.Effect]{
 		Entity: daemon.Entity, Kind: daemon.Kind, Initial: daemon.Starting,
