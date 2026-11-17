@@ -393,3 +393,33 @@ func TestReplacedExecutableKeepsItsLastPath(t *testing.T) {
 		t.Fatalf("chain %+v", o.Chain)
 	}
 }
+
+// A test runner that crashes leaves its browser hanging from launchd with driver evidence while
+// the terminal above it lives on: that browser is a leftover.
+func TestACrashedTestRunnersBrowserIsALeftover(t *testing.T) {
+	rows := table()
+	sc := newScanner(t)
+	o := sc.scan(rows)
+	if o.Owner.Kind != ownerchain.Terminal {
+		t.Fatalf("owner %+v", o.Owner)
+	}
+	tr := stepWith(t, sc.s.Running, discovery.Tracked{State: session.Active}, o, 0)
+	rows = slices.Delete(rows, 3, 4) // node crashes
+	rows[3].PPID = 1
+	stepWith(t, sc.s.Running, tr, sc.scan(rows), 2*time.Second, session.OwnerExited)
+}
+
+// The same holds for a Playwright MCP server that crashes under a claude that keeps running.
+func TestACrashedMCPServersBrowserIsALeftover(t *testing.T) {
+	rows := agentTable()
+	rows[3].Args = []string{"node", "/repo/node_modules/@playwright/mcp/cli.js"}
+	sc := newScanner(t)
+	o := sc.scan(rows)
+	if o.Owner.Kind != ownerchain.Agent {
+		t.Fatalf("owner %+v", o.Owner)
+	}
+	tr := stepWith(t, sc.s.Running, discovery.Tracked{State: session.Active}, o, 0)
+	rows = slices.Delete(rows, 3, 4)
+	rows[3].PPID = 1
+	stepWith(t, sc.s.Running, tr, sc.scan(rows), 2*time.Second, session.OwnerExited)
+}

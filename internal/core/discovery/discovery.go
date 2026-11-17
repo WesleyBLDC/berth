@@ -312,10 +312,11 @@ func Events(t Tracked, o *Observed, running func(ports.ProcessRef) bool, now tim
 	return next, append(first, events...)
 }
 
-// step returns the one event, if any, that this observation of a live browser calls for. Only the
-// owner itself exiting makes a leftover: an ancestor between it and the browser exiting, or an
-// ancestor's file being replaced, leaves a live agent's browser alone, since leftovers --stop
-// would kill it.
+// step returns the one event, if any, that this observation of a live browser calls for. A
+// browser is a leftover when its owner itself exits, or when it hangs from launchd with driver
+// evidence, as a crashed test runner or MCP server leaves it. An ancestor between the owner and
+// the driver exiting leaves the driver as the browser's parent, and a replaced file keeps the
+// pid, so neither makes a live agent's browser a leftover that leftovers --stop would kill.
 func step(t Tracked, o *Observed, running func(ports.ProcessRef) bool, now time.Time) (Tracked, []session.Event) {
 	busy := o.CPU-t.CPU >= BusyCPU
 	if busy {
@@ -324,7 +325,7 @@ func step(t Tracked, o *Observed, running func(ports.ProcessRef) bool, now time.
 	t.CPU = o.CPU
 	observing := t.State == session.Discovered || t.State == session.Active || t.State == session.Idle
 	switch {
-	case observing && t.Owner.PID == 0 && o.Owner.Kind == ownerchain.None:
+	case observing && o.Owner.Kind == ownerchain.None:
 		return t, []session.Event{{Kind: session.OwnerExited, Note: "no owner above the browser"}}
 	case observing && t.Owner.PID != 0 && !running(t.Owner):
 		return t, []session.Event{{Kind: session.OwnerExited, Note: "the owner exited"}}
