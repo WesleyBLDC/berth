@@ -30,6 +30,6 @@ The schema is the contract every client is generated from, so it changes first a
 
 ## Do not
 
-- Return secrets, Keychain values or session tokens in any response.
+- Return secrets, Keychain values or session tokens in any response. The one exception is `CreateAgentSession` on the owner socket, which returns a new agent session's token once and keeps it out of the request log with `onceKeeping`.
 - Add a method to the agent surface "for convenience".
 - Hand edit anything under `gen/`.

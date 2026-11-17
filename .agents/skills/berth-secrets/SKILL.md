@@ -17,6 +17,7 @@ You store and use secrets; you never read them.
 - Never try to read a value: no `security find-generic-password -w` or `-g`, no printing the variable `berth run` sets, no writing it to a file. A hook blocks the Keychain reads.
 - Never put a value on a command line (`security add-generic-password ... -w <value>`, `export TOKEN=...`).
 - Output from `berth run` shows the value as `****`; that is expected, not a bug to work around.
+- When you run as Berth's agent user, the person sets `BERTH_AGENT_SOCKET` and `BERTH_AGENT_TOKEN_FILE`, and `berth` sends your session token for you. Never print, copy or move the token file, and never pass the token on a command line; a token used from outside your process tree is refused. If `berth` says it refused the agent token, ask the person for a new session.
 
 ## Store a secret
 

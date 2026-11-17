@@ -11,7 +11,7 @@ It borrows Docker's model: a browser and whoever drives it is a session, a saved
 It runs only on your own Mac, talks only over a Unix socket, and has no telemetry.
 
 Berth is in pre release development.
-Terminal secrets (E2a) are done: the maintainer's manual check with real signing and Touch ID passed on 2026-11-17. The header proxy with the secret lifecycle (E2b) is built and wired and awaits the maintainer's manual check; isolated agents (E3) are in progress, starting with the agent socket; seeing every browser (M2) is in progress, with discovery, `berth ps`, `inspect`, `stop` and `leftovers` built and awaiting the maintainer's check; the live terminal view (M3), `WatchSessions` and `berth top`, is built and awaits the maintainer's look.
+Terminal secrets (E2a) are done: the maintainer's manual check with real signing and Touch ID passed on 2026-11-17. The header proxy with the secret lifecycle (E2b) is built and wired and awaits the maintainer's manual check; isolated agents (E3) are in progress, with the agent socket and session tokens built; seeing every browser (M2) is in progress, with discovery, `berth ps`, `inspect`, `stop` and `leftovers` built and awaiting the maintainer's check; the live terminal view (M3), `WatchSessions` and `berth top`, is built and awaits the maintainer's look.
 See [Milestones](#milestones) for the exact status.
 
 ## Processes
@@ -52,7 +52,7 @@ Swift does the native work because Keychain, Touch ID and ScreenCaptureKit are A
 - One Protobuf schema, package `berth.v1` in [`proto/berth/v1/`](proto/berth/v1), generates every client; generated code is committed under `gen/` ([ADR 0002](docs/adr/0002-connect-api-with-one-protobuf-schema.md)).
 - `berthd` serves Connect, gRPC and Connect JSON on one socket, over HTTP/2 without TLS and over HTTP/1.1.
 - The socket is `$BERTH_HOME/berthd.sock`; `BERTH_HOME` defaults to `~/Library/Application Support/Berth`.
-- With `berthd -agent-uid <uid> -agent-gid <gid>`, a second socket serves the agent user (E3), by default at `/Users/Shared/Berth/<owner uid>/agent.sock`, with only the agent methods; see [the socket](#the-socket-built).
+- With `berthd -agent-uid <uid> -agent-gid <gid>`, a second socket serves the agent user (E3), by default at `/Users/Shared/Berth/<owner uid>/agent.sock`, with only the agent methods, each needing an agent session token; see [the socket](#the-socket-built).
 - Every Go client calls `Handshake` first, and a protocol version mismatch is a typed error (`ERROR_REASON_PROTOCOL_MISMATCH`).
 - `buf breaking` fails the build if a change would break an existing client; `v1` only gains fields.
 
@@ -62,6 +62,7 @@ Swift does the native work because Keychain, Touch ID and ScreenCaptureKit are A
 | `DebugService` | `GetState` (state and recent transitions of any entity) | Built |
 | `SecretsService` | `RequestSecret`, `ListSecrets`, `GrantSecret`, `AuthorizeUse`, `RedeemUseTicket`, `GrantProxy`, `RevokeGrant`, `RemoveSecret`, `RotateSecret`, `AuthorizeProxy`, `WatchProxySession` (server stream), `EndProxySession` | Built |
 | `SessionsService` | `ListSessions`, `InspectSession`, `StopSession`, `WatchSessions` (server stream, resumable; none on the agent surface) | Built (M2, M3) |
+| `AgentService` | `CreateAgentSession`, `ListAgentSessions`, `RevokeAgentSession` (owner only, none on the agent surface) | Built (E3 item 4) |
 | Sessions, Profiles, Runbooks, Policies | `LaunchSession`, `WatchScreen`, `SendInput`, `FillLogin` and more | Planned (M3 to M6) |
 
 ### The native helper protocol (built)
@@ -110,6 +111,7 @@ The proxy exits 0 when it ended normally, 1 on an error (berthd, `berth-native` 
 | 8 | `run --proxy`: `berth-proxy` did not start or answered badly; nothing started |
 
 Once its command starts, `berth run` exits with the command's own code.
+`berth agent session new|ls|revoke` issues, lists and ends agent sessions on the owner socket; `new` prints the token once.
 `berth secret ls` prints one line per consumer under each secret, starting with the grant id that `berth secret revoke <grant id>` takes; an executable consumer shows its path, hash, team, argument glob and state, and a proxy consumer its host and port, header, methods, path glob and state.
 
 ## Layers and import rules (built)
@@ -159,7 +161,7 @@ type Transition[S ~string, E Event, F any] func(state S, event E) (S, []F, error
 ```
 
 - **Pure:** a transition does no I/O, logging, randomness or clock reads; it returns the next state and the effects to run, or an error wrapping `machine.ErrIllegal`.
-- **Actors:** one goroutine owns each entity (`daemon`, `secret/<name>`, `grant/<id>`, `proxy/<session id>`) and applies its events one at a time from a bounded inbox, so state is never shared or locked.
+- **Actors:** one goroutine owns each entity (`daemon`, `secret/<name>`, `grant/<id>`, `proxy/<session id>`, `agent/<session id>`) and applies its events one at a time from a bounded inbox, so state is never shared or locked.
 - **Persist before effects:** the actor writes the new state and the event row in one SQLite transaction, and only then runs the effects; if the write fails, the actor stops rather than act on a state it could not record ([ADR 0004](docs/adr/0004-state-and-event-rows-in-one-transaction.md)).
 - **Failures are events:** an effect that fails returns a follow up event (for example `Failed` with a note), so failure is a state, not a silent retry.
 - **Illegal events are rejected, not fatal:** the actor reports them and keeps running; nothing is persisted.
@@ -272,11 +274,32 @@ stateDiagram-v2
 ```
 
 - `AuthorizeProxy` creates the session in `Authorized`; `ProxyReady` comes when the proxy opens `WatchProxySession`, and `berthd` then sends `SERVING`.
-- `StopRequested` comes from a revoke, a remove or `berthd` stopping; `SendStop` sends `STOP` with the reason on the watch stream, or waits for the stream if the proxy has not opened it yet.
+- `StopRequested` comes from a revoke, a remove, the end of the agent session the proxy was authorized through, or `berthd` stopping; `SendStop` sends `STOP` with the reason on the watch stream, or waits for the stream if the proxy has not opened it yet.
 - `ProxyEnded` comes from `EndProxySession` and records the counts once; `ProxyLost` records zero counts and comes when the proxy's pid exits (kqueue `NOTE_EXIT`), when the session is still `Authorized` 30 seconds after it was created (a session stopped before it was ready ends through `EndProxySession` or `NOTE_EXIT`), when the watch stream drops without an `EndProxySession` within 2 seconds, or at boot for any session a previous run left open.
 - Revoke and remove can race on one session, so a second `StopRequested` in `Stopping` is illegal and the shell ignores it.
 - The shell keeps no ready flag beside the machine: readiness is the session's state. It keeps one connection fact, whether a watch stream was ever opened, so a second stream is refused.
 - Fails closed: a `STOP` or a broken stream makes the proxy zero its values and exit, and a session `berthd` marks `Lost` while its proxy still listens has its stream ended, so the proxy exits too.
+
+### Agent session machine (built, 6 legal pairs)
+
+Source: [`internal/core/agentsession/agentsession.go`](internal/core/agentsession/agentsession.go).
+One entity per agent session, `agent/<session id>`; the row in `agent_sessions` holds the token's SHA-256, the expiry and, once bound, the root process's pid and start time.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Issued
+  Issued --> Bound: Bind
+  Issued --> Expired: Expire
+  Bound --> Expired: Expire
+  Issued --> Revoked: Revoke
+  Bound --> Revoked: Revoke
+  Bound --> Ended: RootExited
+```
+
+- `CreateAgentSession` creates the session in `Issued`; `Bind` comes with the first accepted call, after the root is written once to the row.
+- `Expire` comes from a timer at the session's expiry and `RootExited` from a kqueue `NOTE_EXIT` watch on the bound root, both on `berthd`'s own context and armed again at boot; a call or `ListAgentSessions` that finds either first records it. `Revoke` comes from `RevokeAgentSession`.
+- When a final state is saved, the saved hook (on its own goroutine, with `berthd`'s context) cancels the timer and watch, drops the store slots and stops the proxy sessions authorized through the session; a step whose actor stopped for another reason answers `Unavailable`, never the old state.
+- The machine has no effects: every check reads the state, and the saved hook frees what an ended session held. `Expired`, `Revoked` and `Ended` are final, and their actors stop.
 
 ### Session machine (built, 18 legal pairs)
 
@@ -375,11 +398,12 @@ One SQLite file, `$BERTH_HOME/berth.db`, through the pure Go driver `modernc.org
 |---|---|---|
 | `machine_state` | 0001 | Current state and version of every entity |
 | `machine_event` | 0001 | Every transition: entity, version, event, from and to state, a secret free detail, time; unique per entity and version; its `id` only grows and is `WatchSessions`'s resume cursor |
-| `request_log` | 0001, 0008 | The first response to each mutating `request_id` per principal (socket, peer uid and the caller's audit token), so retries replay instead of acting twice and no caller replays another's reply |
+| `request_log` | 0001, 0008 | The first response to each mutating `request_id` per principal (socket, agent session on the agent socket, peer uid and the caller's audit token), so retries replay instead of acting twice and no caller replays another's reply |
 | `secrets` | 0002 | Secret names and creation time; never values |
 | `grants` | 0002, rebuilt by 0004, 0006, 0007 | Pinned consumers: kind (`exe` or `proxy`); for `exe` the resolved path, SHA-256, cdhash (the interpreter's for a script; empty for grants older than 0006), team and signing ID, signature kind (`team`, `apple` for a platform binary, `adhoc`, `unsigned` or `other`; empty for a grant older than 0007 that names no team), argument glob and passed variables; for `proxy` the host, port, header, value prefix and suffix, path glob, methods and placeholder variable; use count and last use. CHECKs refuse a row mixing the two, and the rebuild kept every id |
-| `proxy_sessions` | 0005 | One row per `berth-proxy` run: id, proxy pid, created and ended time, injected and refused counts; never paths, request details or values |
+| `proxy_sessions` | 0005, 0010 | One row per `berth-proxy` run: id, proxy pid, created and ended time, injected and refused counts, and the agent session it was authorized through (empty on the owner socket); never paths, request details or values |
 | `proxy_session_grants` | 0005 | Which proxy grants each session holds tickets for, so a revoke finds the sessions to stop |
+| `agent_sessions` | 0009 | One row per agent session: id, name, the token's SHA-256 (never the token), created and expiry time, and the root process's pid and start time once bound, written only once |
 
 Browser sessions have no table: their facts are rebuilt by every scan, and only their machine rows (`session/<id>` in `machine_state` and `machine_event`) persist, which boot recovery finds by kind.
 
@@ -396,6 +420,7 @@ Instructions and prompts are never a security control.
 - The socket is mode 0600 inside a 0700 folder, and only one `berthd` may serve it.
 - Every connection's peer user ID is checked with `LOCAL_PEERCRED` before a single byte is read; another user's connection is closed.
 - **The agent socket (built, E3 item 3):** when `berthd` is given an agent uid and gid, it also listens at `/Users/Shared/Berth/<owner uid>/agent.sock` (or `-agent-socket`), outside the owner's `0700` `~/Library` so the agent user can reach it. The folder is `0710` and the socket `0660`, both with the agent group (setup makes it the `berth` group, which the owner belongs to), so the agent can connect but not list the folder. `berth agent setup` creates both folders (`/Users/Shared/Berth` root owned `0755`, the socket folder owner owned with the agent group and `0710`); `berthd` never creates them, and without them the agent socket does not start and `berthd` says to run setup. `berthd` walks the path from `/` one component at a time with `O_NOFOLLOW`, follows only root owned symlinks, and refuses any level owned by another user or writable by others (except a root owned sticky folder like `/Users/Shared`); it walks again after the bind and serves only if it reaches the same folder. Connections whose uid, pid or audit token the kernel will not give are closed on both sockets. Every connection's `LOCAL_PEERCRED` uid must equal the agent uid, and only methods marked `(berth.v1.agent) = true` are served; every other method answers `PermissionDenied` with `ERROR_REASON_NOT_AGENT_METHOD`. With no agent uid the agent socket is off. The owner socket is unchanged and still refuses the agent uid.
+- **Session tokens (built, E3 item 4):** past the method check, every call on the agent socket needs the token of a live agent session in the `Berth-Agent-Token` header ([ADR 0006](docs/adr/0006-agents-are-scoped-by-session-token.md)). Only the owner issues sessions (`berth agent session new`, on the owner socket); the reply carries the token once and `berthd` stores only its SHA-256. The first accepted call binds the session to the caller's highest ancestor that runs as the agent uid, written once to the row, and every later call must come from the agent uid with that root, by pid and start time, in its kernel lineage; the caller's audit token must still name a live process. A missing, unknown, expired or revoked token, an ended session or a caller outside the tree all answer `Unauthenticated` with `ERROR_REASON_AGENT_TOKEN_INVALID`. `RequestSecret` is limited per session to 3 open store dialogs and 10 an hour (`ERROR_REASON_RATE_LIMITED`). A revoke, an expiry or a lost root ends open streams: proxy sessions authorized through the agent session get `STOP` with `PROXY_STOP_REASON_AGENT_SESSION_ENDED`. The `berth` command reaches the agent socket when `BERTH_AGENT_SOCKET` is set, reading the token from the 0600 file `BERTH_AGENT_TOKEN_FILE` names. The provisional picks and limits are in [the E3 plan](docs/plans/e3-isolated-agents.md#item-4-session-tokens-bound-to-the-agent-uid-and-its-process-tree).
 - Every request is validated against `protovalidate` rules in the schema before a handler acts on it.
 - Every mutating call carries a `request_id`; a retry gets the first response, and reusing an ID for another method is a typed error. Request IDs are scoped to the caller: the socket (owner or agent), the peer uid and the process's audit token, so a retry from the same process replays its reply while any other caller using the same ID gets its own call acted on, never someone else's stored reply.
 - Logs go through a redacting `slog` handler that blanks any attribute whose key names a secret; core dumps are turned off at start.
@@ -403,9 +428,10 @@ Instructions and prompts are never a security control.
 ### The agent surface
 
 - **Built:** a method is meant for agents only when the schema marks it `option (berth.v1.agent) = true`, and `TestAgentSurface` pins the list: `Handshake`, `RequestSecret`, `ListSecrets`, `AuthorizeUse`, `AuthorizeProxy`, `WatchProxySession` and `EndProxySession`. The last three accept only the signed `berth-proxy`, and only the audit token that authorized a session may watch or end it. The sessions methods, `WatchSessions` included, are not marked: listing shows every browser on the Mac, the person's own included, and stopping one is a cross session action; agents get methods scoped to their own session with session tokens in M4.
-- **Planned (M4):** agents get a session token that works only for their own session, only from their own process tree, and only for agent methods ([ADR 0006](docs/adr/0006-agents-are-scoped-by-session-token.md)); `berth-mcp` and the agent commands expose exactly the marked methods.
+- **Built for the agent socket (E3 item 4):** a session token works only for its own session, only from its own process tree and only for agent methods ([ADR 0006](docs/adr/0006-agents-are-scoped-by-session-token.md)); the request log keeps each session's replies apart. `ListSecrets` stays global and names only.
+- **Planned (M4):** browser sessions and CDP scoped by agent session; `berth-mcp` and the agent commands expose exactly the marked methods.
 - **Enforced for a separate agent user (E3):** the agent socket serves exactly the marked methods, read from the schema option, and `TestAgentSurface` pins both the list and the refusal of every other method there.
-- **Today's limit:** for an agent running as the same user, until session tokens exist, the daemon cannot tell it from the person; anything that can reach the socket can call any method, and the protections that hold are Touch ID on power actions, values never crossing the API, and use tickets going only to the signed `berth` CLI.
+- **Today's limit:** for an agent running as the same user, which reaches the owner socket, the daemon cannot tell it from the person; session tokens bind only the agent socket; anything that can reach the owner socket can call any method, and the protections that hold are Touch ID on power actions, values never crossing the API, and use tickets going only to the signed `berth` CLI.
 
 ### Secrets: store and use, never read
 
@@ -527,10 +553,11 @@ Running agents as a separate macOS user (E3, [ADR 0018](docs/adr/0018-agents-run
 - The store dialog's `NSSecureTextField` hands the value over as a Swift `String`, which cannot be wiped; `berth-native` copies it into a buffer it zeroes and clears the field, but the string's own memory lives until the process exits a moment later.
 - A granted interpreter can print the secret whatever the glob says; `--allow-interpreter` only makes that a deliberate choice.
 - The receiver check compares the socket peer's audit token pid with `getppid()`; a parent that exited would reparent the helper (to pid 1) and fail that comparison, and the audit token itself stops matching once its process exits or execs.
-- Until session tokens (M4), a malicious process running as the person can call every method; it still cannot read a value through the API or grant itself access without Touch ID.
+- A malicious process running as the person reaches the owner socket, which needs no token, and can call every method; it still cannot read a value through the API or grant itself access without Touch ID. Session tokens guard only the agent socket, for an agent running as another user.
 - **`berthd` cannot read another user's process arguments:** `kern.procargs2` fails for processes of another uid (checked on 2026-11-17), so `berthd` cannot see the debugging port of a Chrome the agent user starts itself; agent browsers must be launched through Berth (E3 item 8), and M2 lists such a Chrome as unmanaged, other user, by its path alone, and never stops it.
 - **The agent socket's path is checked twice, not bound through the checked descriptor:** Go cannot bind a Unix socket relative to a directory descriptor, so `berthd` walks the path before and after the bind. Every level is owned by root or the owner and writable by no one else, so only root could change it in between. The check ignores ACLs (a follow up in the E3 plan).
-- **Until E3 items 4 to 6 land, the agent socket only narrows the surface:** a separate agent user can call the agent methods with no session token, and `AuthorizeUse` and `AuthorizeProxy` answer it as they answer the owner, though their tickets lead to no value, since only a `berth-native` or `berth-proxy` on the owner socket can redeem them.
+- **Until E3 items 5 and 6 land, the agent socket only narrows the surface:** with a valid session token, `AuthorizeUse` and `AuthorizeProxy` answer a separate agent user as they answer the owner, though their tickets lead to no value, since only a `berth-native` or `berth-proxy` on the owner socket can redeem them.
+- **Session tokens bind on first use and to a process tree** (E3 item 4): whoever presents a token first binds it, so it must reach the harness before anything else reads it; a process that leaves the tree (a double fork, a launchd job) is adopted by launchd and refused, which fails closed; the lineage is read one parent at a time and stops at a parent that started after its child (a reused pid), so a race can only shorten it; with one user playing the agent, as in the tests, or with every session below one long lived agent uid process (`ssh`, `tmux`, a spawner), sessions share one root and the check separates nothing between them until item 7 binds a session to the harness `berthd` launches; with one shared agent user every agent process can read every session's token file; and whether `csops_audittoken` answers for another user's process is unconfirmed until the E3 spike. The store limit counts calls, so an agent that gives up frees its slot while the dialog stays open, and a restart resets the counts.
 - The peer adapter reads process facts through a raw `proc_info` syscall with a hardcoded struct offset, which a macOS update could break; its test guards it.
 - Builds are signed with a free Apple Development identity; the data protection keychain, notarization and Developer ID signing wait for the paid program at M8.
 
@@ -545,7 +572,7 @@ Each milestone starts from a plan in [`docs/plans/`](docs/plans) with acceptance
 | M1 Skeleton | Repository rules, `berth.v1` schema, machine kit, SQLite store, daemon machine, socket checks, `berth status` and `berth debug state` | Done ([plan](docs/plans/m1-skeleton.md)) |
 | E2a Terminal secrets | `berth secret request`, `add`, `ls`, `grant`, `berth run`, `berth-native`, secret and grant machines, audit rows, a Claude Code hook | Done: wired with the end to end canary test; the maintainer's manual check with real signing and Touch ID passed on 2026-11-17 ([plan](docs/plans/e2-terminal-secrets.md#manual-check-2026-11-17)) |
 | E2b Header proxy and secret lifecycle | `berth-proxy` and `berth run --proxy`, `berth secret proxy`, `revoke`, `rm`, `rotate`, the proxy session machine, and `berth run --env` starting its child suspended to check its live cdhash | Built: wired with the canary and lifecycle end to end tests, agent safety checklist walked ([exit gate](docs/plans/e2b-header-proxy.md#e2b-exit-gate)); item 7 catches a Mach-O consumer swapped between the check and the start (not an agent that also signals berth and the child); awaiting the maintainer's manual check with real signing, Touch ID and a real API. `copy` moved to E3 or M5, MCP tools to M4 ([plan](docs/plans/e2b-header-proxy.md)) |
-| E3 Isolated agents | Coding agents run as a separate macOS user (the scout's pick over Seatbelt and a VM), env consumers as a runner user `berthd` starts, so a hostile agent cannot reach your files, Keychain or `berth.db`; the agent surface becomes enforced | In progress: the agent socket is built (item 3); the separate macOS user is proposed in [ADR 0018](docs/adr/0018-agents-run-as-a-separate-macos-user.md) with provisional picks awaiting the maintainer, and the spike, setup and launching as another user need his admin rights ([plan](docs/plans/e3-isolated-agents.md)) |
+| E3 Isolated agents | Coding agents run as a separate macOS user (the scout's pick over Seatbelt and a VM), env consumers as a runner user `berthd` starts, so a hostile agent cannot reach your files, Keychain or `berth.db`; the agent surface becomes enforced | In progress: the agent socket (item 3) and session tokens bound to the agent uid and its process tree (item 4) are built; the separate macOS user is proposed in [ADR 0018](docs/adr/0018-agents-run-as-a-separate-macos-user.md) with provisional picks awaiting the maintainer, and the spike, setup and launching as another user need his admin rights ([plan](docs/plans/e3-isolated-agents.md)) |
 | M2 See every browser | `ProcessSource`, signature registry, owner chain, session machine (observed states), `berth ps`, `inspect`, `stop`, `leftovers` | In progress: every item built with the real headless Chromium end to end tests and the agent safety checklist walked; awaiting the maintainer's `berth ps` check on his Mac ([plan](docs/plans/m2-see-every-browser.md)) |
 | M3 Live terminal view | `WatchSessions` stream with resume, the TUI | Built, awaiting the maintainer's look: `WatchSessions` with resume, backpressure and a clean end on stop, and `berth top`, with golden view tests and a real headless Chromium end to end test ([plan](docs/plans/m3-live-terminal-view.md)) |
 | M4 Managed Chromium | `BrowserDriver` over a private CDP pipe, the token gated CDP proxy, profile locks, session tokens, `berth-mcp` | Planned |
