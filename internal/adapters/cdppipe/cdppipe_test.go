@@ -6,8 +6,10 @@ import (
 	"encoding/json"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -30,6 +32,15 @@ func TestMain(m *testing.M) {
 // fakeChrome replies to every message with its method, owns session own-1 after an attach, and
 // emits the event a message asks for with "emit".
 func fakeChrome() {
+	// A profile named helper-* starts a helper in the browser's process group, records its pid,
+	// and exits at once, as a crashing browser leaves its helpers behind.
+	if wd, _ := os.Getwd(); strings.HasPrefix(filepath.Base(wd), "helper-") {
+		helper := exec.CommandContext(context.Background(), "/bin/sleep", "60")
+		if helper.Start() == nil {
+			_ = os.WriteFile("helper.pid", []byte(strconv.Itoa(helper.Process.Pid)), 0o600)
+		}
+		os.Exit(0)
+	}
 	in, out := os.NewFile(3, "in"), os.NewFile(4, "out")
 	sc := bufio.NewScanner(in)
 	sc.Buffer(nil, 1<<20)
@@ -346,10 +357,48 @@ func TestKillAfterTheReapSignalsNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 	<-c.Done()
+	before := len(kills())
 	if err := c.Kill(); err != nil {
 		t.Fatalf("a second Kill after the reap = %v", err)
 	}
-	if got := kills(); len(got) != 1 || got[0] != c.Process().PID {
-		t.Fatalf("groups signalled = %v, want only the live one", got)
+	if got := kills(); len(got) != before || slices.ContainsFunc(got, func(g int) bool { return g != c.Process().PID }) {
+		t.Fatalf("groups signalled = %v; after the reap Kill must signal nothing", got)
+	}
+}
+
+// A helper that outlives its browser's leader is killed with the group before the leader is
+// reaped.
+func TestHelpersOutlivingTheLeaderAreKilled(t *testing.T) {
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(t.TempDir(), "helper-profile")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	c, err := cdppipe.Driver{}.Launch(t.Context(), ports.BrowserLaunch{Executable: exe, ProfileDir: dir})
+	if err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-c.Done():
+	case <-time.After(10 * time.Second):
+		t.Fatal("the fake browser did not exit")
+	}
+	b, err := os.ReadFile(filepath.Join(dir, "helper.pid"))
+	pid, _ := strconv.Atoi(string(b))
+	if err != nil || pid <= 0 {
+		t.Fatalf("no helper pid: %v", err)
+	}
+	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		if err := syscall.Kill(pid, 0); errors.Is(err, syscall.ESRCH) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatal("a helper outlived its browser's leader")
+		}
+		time.Sleep(20 * time.Millisecond)
 	}
 }

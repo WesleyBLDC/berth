@@ -129,12 +129,15 @@ func newConn(ctx context.Context, cmd *exec.Cmd, ref ports.ProcessRef, w, r *os.
 		c.read(r)
 	}()
 	go func() {
-		// Wait for the exit without reaping, then reap under reapMu: while the leader is an
-		// unreaped zombie its pid, and so the group id Kill signals, cannot name anything else.
+		// Wait for the exit without reaping, empty the group, then reap, all under reapMu: while
+		// the leader is an unreaped zombie its pid, and so the group id, cannot name anything
+		// else, so the SIGKILL reaches only helpers that outlived the leader. A watch that cannot
+		// register means the leader is already a zombie.
 		if exited, err := procscan.WatchPID(context.WithoutCancel(ctx), cmd.Process.Pid); err == nil {
 			<-exited
 		}
 		c.reapMu.Lock()
+		_ = killGroup(cmd.Process.Pid)
 		_ = cmd.Wait()
 		c.reaped = true
 		c.reapMu.Unlock()
