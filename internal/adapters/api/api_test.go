@@ -101,7 +101,13 @@ func TestAgentSurface(t *testing.T) {
 		return true
 	})
 	slices.Sort(agent)
-	if want := []string{"berth.v1.DaemonService.Handshake"}; !slices.Equal(agent, want) {
+	want := []string{
+		"berth.v1.DaemonService.Handshake",
+		"berth.v1.SecretsService.AuthorizeUse",
+		"berth.v1.SecretsService.ListSecrets",
+		"berth.v1.SecretsService.RequestSecret",
+	}
+	if !slices.Equal(agent, want) {
 		t.Fatalf("agent methods = %v, want %v", agent, want)
 	}
 }

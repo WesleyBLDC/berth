@@ -30,6 +30,16 @@ const (
 	ErrorReason_ERROR_REASON_PROTOCOL_MISMATCH ErrorReason = 1
 	ErrorReason_ERROR_REASON_REQUEST_ID_REUSED ErrorReason = 2
 	ErrorReason_ERROR_REASON_NOT_SERVING       ErrorReason = 3
+	// SECRET_NOT_FOUND means no secret with that name is in the Stored state.
+	ErrorReason_ERROR_REASON_SECRET_NOT_FOUND ErrorReason = 4
+	// SECRET_EXISTS refuses a store over a secret that is already Stored; replacing is rotate.
+	ErrorReason_ERROR_REASON_SECRET_EXISTS ErrorReason = 5
+	// EXECUTABLE_NOT_FOUND means berthd could not resolve or read the named executable.
+	ErrorReason_ERROR_REASON_EXECUTABLE_NOT_FOUND ErrorReason = 6
+	// TICKET_INVALID covers unknown, expired and already redeemed tickets alike.
+	ErrorReason_ERROR_REASON_TICKET_INVALID ErrorReason = 7
+	// PEER_NOT_TRUSTED means the calling process is not the signed berth-native helper.
+	ErrorReason_ERROR_REASON_PEER_NOT_TRUSTED ErrorReason = 8
 )
 
 // Enum value maps for ErrorReason.
@@ -39,12 +49,22 @@ var (
 		1: "ERROR_REASON_PROTOCOL_MISMATCH",
 		2: "ERROR_REASON_REQUEST_ID_REUSED",
 		3: "ERROR_REASON_NOT_SERVING",
+		4: "ERROR_REASON_SECRET_NOT_FOUND",
+		5: "ERROR_REASON_SECRET_EXISTS",
+		6: "ERROR_REASON_EXECUTABLE_NOT_FOUND",
+		7: "ERROR_REASON_TICKET_INVALID",
+		8: "ERROR_REASON_PEER_NOT_TRUSTED",
 	}
 	ErrorReason_value = map[string]int32{
-		"ERROR_REASON_UNSPECIFIED":       0,
-		"ERROR_REASON_PROTOCOL_MISMATCH": 1,
-		"ERROR_REASON_REQUEST_ID_REUSED": 2,
-		"ERROR_REASON_NOT_SERVING":       3,
+		"ERROR_REASON_UNSPECIFIED":          0,
+		"ERROR_REASON_PROTOCOL_MISMATCH":    1,
+		"ERROR_REASON_REQUEST_ID_REUSED":    2,
+		"ERROR_REASON_NOT_SERVING":          3,
+		"ERROR_REASON_SECRET_NOT_FOUND":     4,
+		"ERROR_REASON_SECRET_EXISTS":        5,
+		"ERROR_REASON_EXECUTABLE_NOT_FOUND": 6,
+		"ERROR_REASON_TICKET_INVALID":       7,
+		"ERROR_REASON_PEER_NOT_TRUSTED":     8,
 	}
 )
 
@@ -145,12 +165,17 @@ const file_berth_v1_options_proto_rawDesc = "" +
 	"\n" +
 	"\x16berth/v1/options.proto\x12\bberth.v1\x1a google/protobuf/descriptor.proto\":\n" +
 	"\tErrorInfo\x12-\n" +
-	"\x06reason\x18\x01 \x01(\x0e2\x15.berth.v1.ErrorReasonR\x06reason*\x91\x01\n" +
+	"\x06reason\x18\x01 \x01(\x0e2\x15.berth.v1.ErrorReasonR\x06reason*\xbf\x02\n" +
 	"\vErrorReason\x12\x1c\n" +
 	"\x18ERROR_REASON_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eERROR_REASON_PROTOCOL_MISMATCH\x10\x01\x12\"\n" +
 	"\x1eERROR_REASON_REQUEST_ID_REUSED\x10\x02\x12\x1c\n" +
-	"\x18ERROR_REASON_NOT_SERVING\x10\x03:6\n" +
+	"\x18ERROR_REASON_NOT_SERVING\x10\x03\x12!\n" +
+	"\x1dERROR_REASON_SECRET_NOT_FOUND\x10\x04\x12\x1e\n" +
+	"\x1aERROR_REASON_SECRET_EXISTS\x10\x05\x12%\n" +
+	"!ERROR_REASON_EXECUTABLE_NOT_FOUND\x10\x06\x12\x1f\n" +
+	"\x1bERROR_REASON_TICKET_INVALID\x10\a\x12!\n" +
+	"\x1dERROR_REASON_PEER_NOT_TRUSTED\x10\b:6\n" +
 	"\x05agent\x12\x1e.google.protobuf.MethodOptions\x18ц\x03 \x01(\bR\x05agentBy\n" +
 	"\fcom.berth.v1B\fOptionsProtoP\x01Z\x1aberth/gen/berth/v1;berthv1\xa2\x02\x03BXX\xaa\x02\bBerth.V1\xca\x02\bBerth\\V1\xe2\x02\x14Berth\\V1\\GPBMetadata\xea\x02\tBerth::V1b\x06proto3"
 

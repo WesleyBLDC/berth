@@ -16,6 +16,16 @@ enum ErrorReason {
   ERROR_REASON_PROTOCOL_MISMATCH = 1;
   ERROR_REASON_REQUEST_ID_REUSED = 2;
   ERROR_REASON_NOT_SERVING = 3;
+  // SECRET_NOT_FOUND means no secret with that name is in the Stored state.
+  ERROR_REASON_SECRET_NOT_FOUND = 4;
+  // SECRET_EXISTS refuses a store over a secret that is already Stored; replacing is rotate.
+  ERROR_REASON_SECRET_EXISTS = 5;
+  // EXECUTABLE_NOT_FOUND means berthd could not resolve or read the named executable.
+  ERROR_REASON_EXECUTABLE_NOT_FOUND = 6;
+  // TICKET_INVALID covers unknown, expired and already redeemed tickets alike.
+  ERROR_REASON_TICKET_INVALID = 7;
+  // PEER_NOT_TRUSTED means the calling process is not the signed berth-native helper.
+  ERROR_REASON_PEER_NOT_TRUSTED = 8;
 }
 
 message ErrorInfo {
