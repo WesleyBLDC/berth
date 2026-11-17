@@ -100,6 +100,7 @@ type fakeDaemon struct {
 func (f *fakeDaemon) ListAgentBrowsers(context.Context, *berthv1.ListAgentBrowsersRequest) (*berthv1.ListAgentBrowsersResponse, error) {
 	return &berthv1.ListAgentBrowsersResponse{Browsers: []*berthv1.AgentBrowser{
 		{Id: "0123456789abcdef", State: berthv1.BrowserState_BROWSER_STATE_READY, CdpEndpoint: "http://127.0.0.1:4321"},
+		{Id: "fedcba9876543210"},
 	}}, nil
 }
 
@@ -245,6 +246,9 @@ func TestServeOverStdio(t *testing.T) {
 	}
 	if listed, isErr := s.call(40, "browser_list", `{}`); isErr || !strings.Contains(mustJSON(t, listed), `"id":"0123456789abcdef"`) || strings.Contains(mustJSON(t, listed), cdpToken) {
 		t.Fatalf("browser_list = %v", listed)
+	}
+	if listed, _ := s.call(41, "browser_list", `{}`); !strings.Contains(mustJSON(t, listed), `"id":"fedcba9876543210","state":"starting"`) {
+		t.Fatalf("browser_list = %v; a browser with no state yet must read as starting", listed)
 	}
 	if closed, isErr := s.call(4, "browser_close", `{"id":"0123456789abcdef"}`); isErr || closed["state"] != "closed" {
 		t.Fatalf("browser_close = %v", closed)

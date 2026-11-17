@@ -351,9 +351,11 @@ func (s *Server) Close() {
 	}
 }
 
+// stateWord names a browser's state; a browser whose launch has not reported a state yet is
+// starting, never an empty word.
 func stateWord(st berthv1.BrowserState) string {
 	return map[berthv1.BrowserState]string{
-		berthv1.BrowserState_BROWSER_STATE_LAUNCHING: "launching", berthv1.BrowserState_BROWSER_STATE_READY: "ready",
+		berthv1.BrowserState_BROWSER_STATE_UNSPECIFIED: "starting", berthv1.BrowserState_BROWSER_STATE_LAUNCHING: "launching", berthv1.BrowserState_BROWSER_STATE_READY: "ready",
 		berthv1.BrowserState_BROWSER_STATE_CLOSING: "closing", berthv1.BrowserState_BROWSER_STATE_CLOSED: "closed",
 	}[st]
 }
