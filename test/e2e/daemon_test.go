@@ -3,6 +3,7 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,16 +25,19 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	// berth_e2e compiles in the one test trust rule: berthd trusts the unsigned fake helper,
-	// built here as berth-native beside it, to redeem tickets. Release builds lack the tag.
+	// berth_e2e compiles in the one test trust rule, which release builds lack: berthd pins the
+	// berth and fake berth-native built here by cdhash without Apple's chain, so they are signed
+	// ad hoc, with the hardened runtime the live check still demands.
 	for _, args := range [][]string{
-		{"build", "-tags", "berth_e2e", "-o", dir + "/", "berth/cmd/berthd", "berth/cmd/berth"},
-		{"build", "-o", filepath.Join(dir, "berth-native"), "berth/internal/adapters/native/fakehelper"},
+		{"go", "build", "-tags", "berth_e2e", "-o", dir + "/", "berth/cmd/berthd", "berth/cmd/berth"},
+		{"go", "build", "-o", filepath.Join(dir, "berth-native"), "berth/internal/adapters/native/fakehelper"},
+		{"go", "build", "-o", filepath.Join(dir, "consumer"), "berth/test/e2e/consumer"},
+		{"codesign", "--force", "-s", "-", "-o", "runtime", "-i", "com.wesleybldc.berth.cli", filepath.Join(dir, "berth")},
+		{"codesign", "--force", "-s", "-", "-o", "runtime", "-i", "com.wesleybldc.berth.native", filepath.Join(dir, "berth-native")},
 	} {
-		build := exec.CommandContext(context.Background(), "go", args...)
-		build.Stderr = os.Stderr
-		if err := build.Run(); err != nil {
-			panic(err)
+		build := exec.CommandContext(context.Background(), args[0], args[1:]...)
+		if out, err := build.CombinedOutput(); err != nil {
+			panic(fmt.Sprintf("%v: %v\n%s", args, err, out))
 		}
 	}
 	binDir = dir

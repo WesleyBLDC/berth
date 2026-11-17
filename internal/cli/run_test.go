@@ -109,3 +109,15 @@ func TestRunForwardsSIGTERMButNotSIGINT(t *testing.T) {
 		t.Fatalf("SIGINT was forwarded to the child; log %q", got)
 	}
 }
+
+func TestRunFromAnUnsignedBerthSaysToBuild(t *testing.T) {
+	fake := &fakeSecrets{useErr: reasonError(t, berthv1.ErrorReason_ERROR_REASON_PEER_NOT_TRUSTED)}
+	read := func(context.Context, []byte) ([]byte, error) {
+		t.Error("a refused run read a value")
+		return nil, nil
+	}
+	r := invoke(t, fake, read, "run", "--env", "KEY=gh-token", "--", "/bin/sh", "-c", "true")
+	if r.code != ExitError || !strings.Contains(r.stderr, "run make build") {
+		t.Fatalf("code %d, stderr %q", r.code, r.stderr)
+	}
+}

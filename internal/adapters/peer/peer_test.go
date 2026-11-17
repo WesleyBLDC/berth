@@ -4,12 +4,17 @@ package peer
 
 import (
 	"errors"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"testing"
 
 	"golang.org/x/sys/unix"
+
+	"berth/internal/adapters/execid"
+	"berth/internal/adapters/socket"
+	"berth/internal/core/ports"
 )
 
 func TestFactsForOwnProcess(t *testing.T) {
@@ -87,5 +92,61 @@ func TestFactsForMissingProcess(t *testing.T) {
 	}
 	if _, err := New().Facts(t.Context(), 0); err == nil {
 		t.Fatal("pid 0 was accepted")
+	}
+}
+
+// TestLiveCodeMatchesTheFile connects to itself over a socket, takes the audit token the
+// kernel reports, and checks the live cdhash equals what codesign reads from the test binary.
+func TestLiveCodeMatchesTheFile(t *testing.T) {
+	dir, err := os.MkdirTemp("", "berth-code-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	path := filepath.Join(dir, "s.sock")
+	var lc net.ListenConfig
+	ln, err := lc.Listen(t.Context(), "unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ln.Close() }()
+	accepted := make(chan net.Conn, 1)
+	go func() {
+		c, _ := ln.Accept()
+		accepted <- c
+	}()
+	var d net.Dialer
+	client, err := d.DialContext(t.Context(), "unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = client.Close() }()
+	server := <-accepted
+	defer func() { _ = server.Close() }()
+	token, err := socket.KernelPeerToken(server.(*net.UnixConn))
+	if err != nil {
+		t.Fatal(err)
+	}
+	live, err := NewCode().Live(t.Context(), ports.Peer{PID: os.Getpid(), AuditToken: token})
+	if err != nil {
+		t.Fatal(err)
+	}
+	self, _ := os.Executable()
+	want, err := execid.New(execid.DefaultCodesign).CDHash(t.Context(), self)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if live.CDHash != want || !live.Valid() {
+		t.Fatalf("live %x status %#x, file cdhash %x", live.CDHash, live.Status, want)
+	}
+	// The Go linker signs ad hoc without the hardened runtime.
+	if live.Hardened() {
+		t.Fatalf("test binary reported as hardened: %#x", live.Status)
+	}
+	if _, err := NewCode().Live(t.Context(), ports.Peer{PID: os.Getpid() + 1, AuditToken: token}); err == nil {
+		t.Fatal("a token for another pid was accepted")
+	}
+	if _, err := NewCode().Live(t.Context(), ports.Peer{PID: os.Getpid()}); err == nil {
+		t.Fatal("a missing token was accepted")
 	}
 }

@@ -69,11 +69,12 @@ type consumer struct {
 }
 
 type confirmRequest struct {
-	Action    string    `json:"action"`
-	Secret    string    `json:"secret"`
-	Consumer  consumer  `json:"consumer"`
-	ArgsGlob  string    `json:"args_glob"`
-	Requester requester `json:"requester"`
+	Action      string    `json:"action"`
+	Secret      string    `json:"secret"`
+	Consumer    consumer  `json:"consumer"`
+	ArgsGlob    string    `json:"args_glob"`
+	Interpreter bool      `json:"interpreter"`
+	Requester   requester `json:"requester"`
 }
 
 type outcome struct {
@@ -114,8 +115,9 @@ func (a *Approver) ConfirmPower(ctx context.Context, p ports.PowerPrompt) (ports
 			TeamID:    p.Consumer.TeamID,
 			SigningID: p.Consumer.SigningID,
 		},
-		ArgsGlob:  p.ArgsGlob,
-		Requester: toRequester(p.Requester),
+		ArgsGlob:    p.ArgsGlob,
+		Interpreter: p.Interpreter,
+		Requester:   toRequester(p.Requester),
 	}
 	out, err := a.ask(ctx, "confirm", req)
 	if err != nil {

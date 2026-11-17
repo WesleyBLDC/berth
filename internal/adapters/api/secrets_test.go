@@ -27,7 +27,7 @@ type fakeSecrets struct {
 	authorize int
 }
 
-func (f *fakeSecrets) RequestSecret(ctx context.Context, req *berthv1.RequestSecretRequest, _ int) (*berthv1.RequestSecretResponse, error) {
+func (f *fakeSecrets) RequestSecret(ctx context.Context, req *berthv1.RequestSecretRequest, _ ports.Peer) (*berthv1.RequestSecretResponse, error) {
 	if f.block != nil {
 		select {
 		case <-f.block:
@@ -45,18 +45,18 @@ func (f *fakeSecrets) ListSecrets(context.Context) (*berthv1.ListSecretsResponse
 	return &berthv1.ListSecretsResponse{}, nil
 }
 
-func (f *fakeSecrets) GrantSecret(context.Context, *berthv1.GrantSecretRequest, int) (*berthv1.GrantSecretResponse, error) {
+func (f *fakeSecrets) GrantSecret(context.Context, *berthv1.GrantSecretRequest, ports.Peer) (*berthv1.GrantSecretResponse, error) {
 	return nil, api.ErrExecutableNotFound
 }
 
-func (f *fakeSecrets) AuthorizeUse(context.Context, *berthv1.AuthorizeUseRequest, int) (*berthv1.AuthorizeUseResponse, error) {
+func (f *fakeSecrets) AuthorizeUse(context.Context, *berthv1.AuthorizeUseRequest, ports.Peer) (*berthv1.AuthorizeUseResponse, error) {
 	f.authorize++
 	return &berthv1.AuthorizeUseResponse{Outcome: berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED, Ticket: bytes.Repeat([]byte{7}, 32)}, nil
 }
 
-func (f *fakeSecrets) TrustRedeemer(context.Context, int) error { return f.trustErr }
+func (f *fakeSecrets) TrustRedeemer(context.Context, ports.Peer) error { return f.trustErr }
 
-func (f *fakeSecrets) RedeemUseTicket(context.Context, ports.Ticket, int) (*berthv1.RedeemUseTicketResponse, error) {
+func (f *fakeSecrets) RedeemUseTicket(context.Context, ports.Ticket, ports.Peer) (*berthv1.RedeemUseTicketResponse, error) {
 	f.redeems++
 	return &berthv1.RedeemUseTicketResponse{Name: "gh-token"}, nil
 }
@@ -98,6 +98,8 @@ func TestSecretsErrorsAreTyped(t *testing.T) {
 		{api.ErrSecretExists, connect.CodeAlreadyExists, berthv1.ErrorReason_ERROR_REASON_SECRET_EXISTS},
 		{api.ErrSecretNotFound, connect.CodeNotFound, berthv1.ErrorReason_ERROR_REASON_SECRET_NOT_FOUND},
 		{api.ErrTicketInvalid, connect.CodePermissionDenied, berthv1.ErrorReason_ERROR_REASON_TICKET_INVALID},
+		{api.ErrPeerNotTrusted, connect.CodePermissionDenied, berthv1.ErrorReason_ERROR_REASON_PEER_NOT_TRUSTED},
+		{api.ErrInterpreter, connect.CodeFailedPrecondition, berthv1.ErrorReason_ERROR_REASON_INTERPRETER},
 		{errors.New("helper said /secret/path"), connect.CodeInternal, berthv1.ErrorReason_ERROR_REASON_UNSPECIFIED},
 	}
 	for _, tc := range cases {

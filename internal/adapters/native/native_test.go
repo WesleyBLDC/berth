@@ -116,17 +116,18 @@ func TestConfirmPowerSendsConsumerFacts(t *testing.T) {
 	var sum [32]byte
 	sum[0], sum[31] = 0xab, 0x01
 	p := ports.PowerPrompt{
-		Action:    ports.PowerGrant,
-		Secret:    "gh-token",
-		Consumer:  ports.Executable{Path: "/usr/local/bin/gh", SHA256: sum, TeamID: "TEAM123456", SigningID: "com.github.gh"},
-		ArgsGlob:  "pr *",
-		Requester: ports.Requester{PID: 9, Executable: "/x", WorkingDir: "/"},
+		Action:      ports.PowerGrant,
+		Secret:      "gh-token",
+		Consumer:    ports.Executable{Path: "/usr/local/bin/gh", SHA256: sum, TeamID: "TEAM123456", SigningID: "com.github.gh"},
+		ArgsGlob:    "pr *",
+		Interpreter: true,
+		Requester:   ports.Requester{PID: 9, Executable: "/x", WorkingDir: "/"},
 	}
 	got, err := native.New(helper).ConfirmPower(t.Context(), p)
 	if err != nil || got != ports.PowerApproved {
 		t.Fatalf("got %q, %v; want approved", got, err)
 	}
-	want := `{"action":"grant","args_glob":"pr *","consumer":{"path":"/usr/local/bin/gh","sha256":"ab` + strings.Repeat("0", 60) + `01","signing_id":"com.github.gh","team_id":"TEAM123456"},"requester":{"executable":"/x","pid":9,"tree":[],"working_dir":"/"},"secret":"gh-token"}`
+	want := `{"action":"grant","args_glob":"pr *","consumer":{"path":"/usr/local/bin/gh","sha256":"ab` + strings.Repeat("0", 60) + `01","signing_id":"com.github.gh","team_id":"TEAM123456"},"interpreter":true,"requester":{"executable":"/x","pid":9,"tree":[],"working_dir":"/"},"secret":"gh-token"}`
 	if got := string(requests(t, home)[0].Request); got != want {
 		t.Fatalf("request\n got %s\nwant %s", got, want)
 	}

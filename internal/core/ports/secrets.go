@@ -10,6 +10,8 @@ type Executable struct {
 	// TeamID and SigningID are empty when the file is not validly signed.
 	TeamID    string
 	SigningID string
+	// Shebang is true when the file starts with #!, so it runs under an interpreter.
+	Shebang bool
 }
 
 // Signed reports whether the code signature named a team.
@@ -74,11 +76,13 @@ const (
 
 // PowerPrompt is everything a Touch ID confirmation may show, all verified by berthd.
 type PowerPrompt struct {
-	Action    PowerAction
-	Secret    string
-	Consumer  Executable
-	ArgsGlob  string
-	Requester Requester
+	Action   PowerAction
+	Secret   string
+	Consumer Executable
+	ArgsGlob string
+	// Interpreter warns that the consumer runs other code, so it could print the secret.
+	Interpreter bool
+	Requester   Requester
 }
 
 // Approver asks the person, through berth-native. A non nil error comes with the Failed

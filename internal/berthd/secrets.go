@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -29,33 +30,27 @@ const (
 	promptTimeout = 5 * time.Minute
 )
 
-// Helper identity: berthd answers RedeemUseTicket only for this signed berth-native.
-const (
-	HelperTeamID    = "XPJ7XA42J4"
-	HelperSigningID = "com.wesleybldc.berth.native"
-	// helperRequirement pins Apple's certificate chain as well as the team and identifier,
-	// which codesign -d alone would print for a self signed copy too.
-	helperRequirement = `anchor apple generic and certificate leaf[subject.OU] = "` + HelperTeamID +
-		`" and identifier "` + HelperSigningID + `"`
+// interpreters are executables that run other code, so a grant to one lets whatever it runs
+// print the secret. Names with versions (python3.12, perl5.34, ruby3.3) match by prefix.
+var (
+	interpreterNames    = []string{"sh", "bash", "zsh", "fish", "dash", "ksh", "csh", "tcsh", "env", "node", "deno", "bun", "osascript", "php", "lua", "tclsh"}
+	interpreterPrefixes = []string{"python", "perl", "ruby"}
 )
 
-// TrustHelper decides whether an identified executable is berth-native.
-type TrustHelper func(ctx context.Context, exe ports.Executable) (bool, error)
-
-// Satisfier checks a file against a code requirement (execid.Identity implements it).
-type Satisfier interface {
-	Satisfies(ctx context.Context, path, requirement string) (bool, error)
-}
-
-// SignedHelper is the release trust rule: the team and identifier codesign reports, and a
-// requirement check that only Apple's chain for that team can pass.
-func SignedHelper(s Satisfier) TrustHelper {
-	return func(ctx context.Context, exe ports.Executable) (bool, error) {
-		if exe.TeamID != HelperTeamID || exe.SigningID != HelperSigningID {
-			return false, nil
-		}
-		return s.Satisfies(ctx, exe.Path, helperRequirement)
+func isInterpreter(exe ports.Executable) bool {
+	if exe.Shebang {
+		return true
 	}
+	base := filepath.Base(exe.Path)
+	if slices.Contains(interpreterNames, base) {
+		return true
+	}
+	for _, p := range interpreterPrefixes {
+		if strings.HasPrefix(base, p) {
+			return true
+		}
+	}
+	return false
 }
 
 type secretsDeps struct {
@@ -67,7 +62,9 @@ type secretsDeps struct {
 	Execs    ports.ExecIdentity
 	Peers    ports.PeerFacts
 	Tickets  ports.TicketSource
-	Trust    TrustHelper
+	// CLI and Helper are the signed berth and berth-native beside berthd.
+	CLI    *trustedFile
+	Helper *trustedFile
 }
 
 // secrets runs one actor per secret and per grant and performs their effects. It implements
@@ -75,16 +72,15 @@ type secretsDeps struct {
 type secrets struct {
 	secretsDeps
 	// ctx outlives any one call, so a dialog keeps going when the caller that opened it leaves.
-	ctx     context.Context
-	secrets *actors[secret.State, secret.Event, secret.Effect]
-	grants  *actors[grant.State, grant.Event, grant.Effect]
+	ctx context.Context
+	// stopping closes when the daemon stops, which cancels every open prompt.
+	stopping chan struct{}
+	stopOnce sync.Once
+	secrets  *actors[secret.State, secret.Event, secret.Effect]
+	grants   *actors[grant.State, grant.Event, grant.Effect]
 
 	mu      sync.Mutex
 	flights map[string]*flight
-	// pending carries what an effect needs and its event cannot hold, keyed by entity; the
-	// entity's turn makes sure only one call uses an entry at a time.
-	pending map[string]any
-	issued  map[string]issued
 	live    map[ports.Ticket]liveTicket
 }
 
@@ -118,8 +114,8 @@ var _ api.Secrets = (*secrets)(nil)
 
 func newSecrets(ctx context.Context, d secretsDeps) *secrets {
 	s := &secrets{
-		secretsDeps: d, ctx: ctx,
-		flights: map[string]*flight{}, pending: map[string]any{}, issued: map[string]issued{}, live: map[ports.Ticket]liveTicket{},
+		secretsDeps: d, ctx: ctx, stopping: make(chan struct{}),
+		flights: map[string]*flight{}, live: map[ports.Ticket]liveTicket{},
 	}
 	s.secrets = &actors[secret.State, secret.Event, secret.Effect]{
 		ctx: ctx, log: d.Log, store: d.Store, clock: d.Clock,
@@ -134,7 +130,64 @@ func newSecrets(ctx context.Context, d secretsDeps) *secrets {
 	return s
 }
 
-func (s *secrets) RequestSecret(ctx context.Context, req *berthv1.RequestSecretRequest, peer int) (*berthv1.RequestSecretResponse, error) {
+// recover ends any store a previous run left Pending: its dialog died with that run.
+func (s *secrets) recover(ctx context.Context) error {
+	rows, err := s.Records.Secrets(ctx)
+	if err != nil {
+		return err
+	}
+	for _, r := range rows {
+		entity := secret.Entity(r.Name)
+		st, err := s.state(ctx, entity, "")
+		if err != nil {
+			return err
+		}
+		if secret.State(st) != secret.Pending {
+			continue
+		}
+		if _, _, err := step(ctx, s.secrets, entity, secret.Event{Kind: secret.StoreFailed, Note: "interrupted"}, nil, secret.StoreFailed); err != nil {
+			return fmt.Errorf("end interrupted store of %s: %w", r.Name, err)
+		}
+	}
+	return nil
+}
+
+// stop cancels open prompts, which kills their helper processes, and waits up to timeout for
+// each to record its ending, so no store is left Pending by a clean stop.
+func (s *secrets) stop(timeout time.Duration) bool {
+	s.stopOnce.Do(func() { close(s.stopping) })
+	deadline := time.Now().Add(timeout)
+	secretsDone := s.secrets.wait(timeout)
+	return s.grants.wait(max(time.Until(deadline), 0)) && secretsDone
+}
+
+func (s *secrets) stopped() bool {
+	select {
+	case <-s.stopping:
+		return true
+	default:
+		return false
+	}
+}
+
+// cancelOnStop ends a prompt's context when the daemon stops, or returns when the prompt ends.
+func (s *secrets) cancelOnStop(ctx context.Context, cancel context.CancelFunc) {
+	select {
+	case <-s.stopping:
+		cancel()
+	case <-ctx.Done():
+	}
+}
+
+// promptNote is the audit note for a prompt that did not succeed.
+func (s *secrets) promptNote() string {
+	if s.stopped() {
+		return "berthd stopped while the prompt was open"
+	}
+	return "the helper reported a failure"
+}
+
+func (s *secrets) RequestSecret(ctx context.Context, req *berthv1.RequestSecretRequest, peer ports.Peer) (*berthv1.RequestSecretResponse, error) {
 	name := req.GetName()
 	facts, err := s.facts(ctx, peer)
 	if err != nil {
@@ -193,8 +246,7 @@ func (s *secrets) store(p ports.StorePrompt) (ports.StoreOutcome, error) {
 	if err := s.Records.AddSecret(ctx, p.Name, s.Clock.Now()); err != nil {
 		return "", err
 	}
-	s.setPending(entity, p)
-	rec, err := step(ctx, s.secrets, entity, secret.Event{Kind: secret.StoreRequested},
+	rec, _, err := step(ctx, s.secrets, entity, secret.Event{Kind: secret.StoreRequested}, p,
 		secret.StoreSucceeded, secret.StoreDenied, secret.StoreFailed)
 	if err != nil {
 		return "", err
@@ -209,12 +261,13 @@ func (s *secrets) store(p ports.StorePrompt) (ports.StoreOutcome, error) {
 func (s *secrets) runSecret(entity string) machine.Runner[secret.Event, secret.Effect] {
 	return func(ctx context.Context, effect secret.Effect) ([]secret.Event, error) {
 		if effect.Kind == secret.PromptStore {
-			p, ok := s.takePending(entity).(ports.StorePrompt)
+			p, ok := s.secrets.input(entity).(ports.StorePrompt)
 			if !ok {
 				return []secret.Event{{Kind: secret.StoreFailed, Note: "no prompt to show"}}, nil
 			}
 			ctx, cancel := context.WithTimeout(ctx, promptTimeout)
 			defer cancel()
+			go s.cancelOnStop(ctx, cancel)
 			outcome, err := s.Approver.StoreSecret(ctx, p)
 			if err != nil {
 				s.Log.Warn("store prompt failed", "secret", p.Name, "err", err)
@@ -226,7 +279,7 @@ func (s *secrets) runSecret(entity string) machine.Runner[secret.Event, secret.E
 				return []secret.Event{{Kind: secret.StoreDenied}}, nil
 			case ports.StoreFailed:
 			}
-			return []secret.Event{{Kind: secret.StoreFailed, Note: "the helper reported a failure"}}, nil
+			return []secret.Event{{Kind: secret.StoreFailed, Note: s.promptNote()}}, nil
 		}
 		return nil, fmt.Errorf("unknown secret effect %q", effect.Kind)
 	}
@@ -260,7 +313,7 @@ func (s *secrets) ListSecrets(ctx context.Context) (*berthv1.ListSecretsResponse
 	return resp, nil
 }
 
-func (s *secrets) GrantSecret(ctx context.Context, req *berthv1.GrantSecretRequest, peer int) (*berthv1.GrantSecretResponse, error) {
+func (s *secrets) GrantSecret(ctx context.Context, req *berthv1.GrantSecretRequest, peer ports.Peer) (*berthv1.GrantSecretResponse, error) {
 	name, glob := req.GetName(), req.GetArgsGlob()
 	if _, err := path.Match(glob, ""); err != nil {
 		return nil, api.ErrBadGlob
@@ -272,6 +325,10 @@ func (s *secrets) GrantSecret(ctx context.Context, req *berthv1.GrantSecretReque
 	if err != nil {
 		return nil, err
 	}
+	interpreter := isInterpreter(exe)
+	if interpreter && !req.GetAllowInterpreter() {
+		return nil, api.ErrInterpreter
+	}
 	facts, err := s.facts(ctx, peer)
 	if err != nil {
 		return nil, err
@@ -281,8 +338,9 @@ func (s *secrets) GrantSecret(ctx context.Context, req *berthv1.GrantSecretReque
 		return nil, err
 	}
 	entity := grant.Entity(g.ID)
-	s.setPending(entity, ports.PowerPrompt{Action: ports.PowerGrant, Secret: name, Consumer: exe, ArgsGlob: glob, Requester: facts})
-	rec, err := step(ctx, s.grants, entity, grant.Event{Kind: grant.GrantRequested}, grant.GrantApproved, grant.GrantDenied, grant.GrantFailed)
+	prompt := ports.PowerPrompt{Action: ports.PowerGrant, Secret: name, Consumer: exe, ArgsGlob: glob, Interpreter: interpreter, Requester: facts}
+	rec, _, err := step(ctx, s.grants, entity, grant.Event{Kind: grant.GrantRequested}, prompt,
+		grant.GrantApproved, grant.GrantDenied, grant.GrantFailed)
 	if err != nil {
 		return nil, err
 	}
@@ -299,12 +357,13 @@ func (s *secrets) runGrant(entity string) machine.Runner[grant.Event, grant.Effe
 	return func(ctx context.Context, effect grant.Effect) ([]grant.Event, error) {
 		switch effect.Kind {
 		case grant.PromptPower:
-			p, ok := s.takePending(entity).(ports.PowerPrompt)
+			p, ok := s.grants.input(entity).(ports.PowerPrompt)
 			if !ok {
 				return []grant.Event{{Kind: grant.GrantFailed, Note: "no prompt to show"}}, nil
 			}
 			ctx, cancel := context.WithTimeout(ctx, promptTimeout)
 			defer cancel()
+			go s.cancelOnStop(ctx, cancel)
 			outcome, err := s.Approver.ConfirmPower(ctx, p)
 			if err != nil {
 				s.Log.Warn("grant prompt failed", "secret", p.Secret, "err", err)
@@ -316,7 +375,7 @@ func (s *secrets) runGrant(entity string) machine.Runner[grant.Event, grant.Effe
 				return []grant.Event{{Kind: grant.GrantDenied}}, nil
 			case ports.PowerFailed:
 			}
-			return []grant.Event{{Kind: grant.GrantFailed, Note: "the helper reported a failure"}}, nil
+			return []grant.Event{{Kind: grant.GrantFailed, Note: s.promptNote()}}, nil
 		case grant.IssueTicket:
 			s.issue(ctx, entity)
 			return nil, nil
@@ -325,35 +384,37 @@ func (s *secrets) runGrant(entity string) machine.Runner[grant.Event, grant.Effe
 	}
 }
 
-// issue makes the ticket for the use waiting on entity and counts the use. A failure is handed
-// to the waiting call, which answers with an internal error; the grant itself stays Active.
+// issue makes the ticket for the use its step carried in and counts the use. A failure is
+// handed back to the step, which answers with an internal error; the grant stays Active.
 func (s *secrets) issue(ctx context.Context, entity string) {
-	u, ok := s.takePending(entity).(useRequest)
+	u, ok := s.grants.input(entity).(useRequest)
 	if !ok {
-		s.setIssued(entity, issued{err: errors.New("no use request waiting")})
+		s.grants.output(entity, issued{err: errors.New("no use request in this step")})
 		return
 	}
 	t, err := s.Tickets.NewTicket(ctx)
 	if err != nil {
-		s.setIssued(entity, issued{err: fmt.Errorf("new ticket: %w", err)})
+		s.grants.output(entity, issued{err: fmt.Errorf("new ticket: %w", err)})
 		return
 	}
 	now := s.Clock.Now()
 	if err := s.Records.CountUse(ctx, u.grantID, now); err != nil {
-		s.setIssued(entity, issued{err: fmt.Errorf("count use: %w", err)})
+		s.grants.output(entity, issued{err: fmt.Errorf("count use: %w", err)})
 		return
 	}
 	expires := now.Add(ticketLife)
 	s.mu.Lock()
 	s.live[t] = liveTicket{name: u.name, sha256: u.sha256, pid: u.pid, expires: expires}
-	s.issued[entity] = issued{ticket: t, expires: expires}
 	s.mu.Unlock()
+	s.grants.output(entity, issued{ticket: t, expires: expires})
 }
 
-func (s *secrets) AuthorizeUse(ctx context.Context, req *berthv1.AuthorizeUseRequest, peer int) (*berthv1.AuthorizeUseResponse, error) {
+func (s *secrets) AuthorizeUse(ctx context.Context, req *berthv1.AuthorizeUseRequest, peer ports.Peer) (*berthv1.AuthorizeUseResponse, error) {
 	name := req.GetName()
-	if peer <= 0 {
-		return nil, api.ErrCallerUnknown
+	// A ticket lets its holder start berth-native and read the value, so only the signed berth
+	// CLI, which puts the value straight into its child, may get one.
+	if !s.CLI.runs(ctx, peer) {
+		return nil, api.ErrPeerNotTrusted
 	}
 	if err := s.requireStored(ctx, name); err != nil {
 		return nil, err
@@ -383,7 +444,7 @@ func (s *secrets) AuthorizeUse(ctx context.Context, req *berthv1.AuthorizeUseReq
 		switch grant.State(st) {
 		case grant.Active:
 			if g.Exe.SHA256 != exe.SHA256 {
-				if _, err := step(ctx, s.grants, grant.Entity(g.ID), grant.Event{Kind: grant.HashChanged, Note: "sha256 now " + shortHex(exe.SHA256)}, grant.HashChanged); err != nil {
+				if _, _, err := step(ctx, s.grants, grant.Entity(g.ID), grant.Event{Kind: grant.HashChanged, Note: "sha256 now " + shortHex(exe.SHA256)}, nil, grant.HashChanged); err != nil {
 					return nil, err
 				}
 				stale = true
@@ -415,7 +476,7 @@ func (s *secrets) AuthorizeUse(ctx context.Context, req *berthv1.AuthorizeUseReq
 	}
 	switch {
 	case refusing != nil:
-		_, err = step(ctx, s.grants, grant.Entity(refusing.ID), grant.Event{Kind: grant.UseRefused}, grant.UseRefused)
+		_, _, err = step(ctx, s.grants, grant.Entity(refusing.ID), grant.Event{Kind: grant.UseRefused}, nil, grant.UseRefused)
 	case stale:
 		// The HashChanged row already records this refusal.
 	default:
@@ -423,7 +484,7 @@ func (s *secrets) AuthorizeUse(ctx context.Context, req *berthv1.AuthorizeUseReq
 		if argsRefused {
 			note = "arguments do not match any grant for " + exe.Path
 		}
-		_, err = step(ctx, s.secrets, secret.Entity(name), secret.Event{Kind: secret.UseRefused, Note: note}, secret.UseRefused)
+		_, _, err = step(ctx, s.secrets, secret.Entity(name), secret.Event{Kind: secret.UseRefused, Note: note}, nil, secret.UseRefused)
 	}
 	if err != nil {
 		return nil, err
@@ -431,16 +492,14 @@ func (s *secrets) AuthorizeUse(ctx context.Context, req *berthv1.AuthorizeUseReq
 	return &berthv1.AuthorizeUseResponse{Outcome: outcome}, nil
 }
 
-func (s *secrets) authorize(ctx context.Context, g ports.GrantRecord, exe ports.Executable, peer int) (*berthv1.AuthorizeUseResponse, error) {
+func (s *secrets) authorize(ctx context.Context, g ports.GrantRecord, exe ports.Executable, peer ports.Peer) (*berthv1.AuthorizeUseResponse, error) {
 	entity := grant.Entity(g.ID)
-	s.setPending(entity, useRequest{grantID: g.ID, name: g.Secret, sha256: exe.SHA256, pid: peer})
-	if _, err := step(ctx, s.grants, entity, grant.Event{Kind: grant.UseAuthorized}, grant.UseAuthorized); err != nil {
+	use := useRequest{grantID: g.ID, name: g.Secret, sha256: exe.SHA256, pid: peer.PID}
+	_, out, err := step(ctx, s.grants, entity, grant.Event{Kind: grant.UseAuthorized}, use, grant.UseAuthorized)
+	if err != nil {
 		return nil, err
 	}
-	s.mu.Lock()
-	got, ok := s.issued[entity]
-	delete(s.issued, entity)
-	s.mu.Unlock()
+	got, ok := out.(issued)
 	if !ok {
 		return nil, errors.New("no ticket was issued")
 	}
@@ -453,23 +512,10 @@ func (s *secrets) authorize(ctx context.Context, g ports.GrantRecord, exe ports.
 	}, nil
 }
 
-func (s *secrets) TrustRedeemer(ctx context.Context, peer int) error {
-	if peer <= 0 {
-		return api.ErrPeerNotTrusted
-	}
-	facts, err := s.Peers.Facts(ctx, peer)
-	if err != nil {
-		s.Log.Warn("redeem from an unknown peer", "pid", peer, "err", err)
-		return api.ErrPeerNotTrusted
-	}
-	exe, err := s.Execs.Identify(ctx, facts.Executable)
-	if err != nil {
-		s.Log.Warn("redeem from an unidentified peer", "pid", peer, "err", err)
-		return api.ErrPeerNotTrusted
-	}
-	ok, err := s.Trust(ctx, exe)
-	if err != nil || !ok {
-		s.Log.Warn("redeem refused: peer is not berth-native", "pid", peer, "executable", exe.Path, "err", err)
+// TrustRedeemer accepts only a peer running the signed berth-native beside berthd, judged by
+// the kernel's live code identity rather than any path.
+func (s *secrets) TrustRedeemer(ctx context.Context, peer ports.Peer) error {
+	if !s.Helper.runs(ctx, peer) {
 		return api.ErrPeerNotTrusted
 	}
 	return nil
@@ -477,7 +523,7 @@ func (s *secrets) TrustRedeemer(ctx context.Context, peer int) error {
 
 // RedeemUseTicket spends a ticket. It is gone after the first attempt, even one that fails a
 // later check, so a ticket is never tried twice.
-func (s *secrets) RedeemUseTicket(ctx context.Context, ticket ports.Ticket, peer int) (*berthv1.RedeemUseTicketResponse, error) {
+func (s *secrets) RedeemUseTicket(ctx context.Context, ticket ports.Ticket, peer ports.Peer) (*berthv1.RedeemUseTicketResponse, error) {
 	now := s.Clock.Now()
 	s.mu.Lock()
 	t, ok := s.live[ticket]
@@ -491,23 +537,23 @@ func (s *secrets) RedeemUseTicket(ctx context.Context, ticket ports.Ticket, peer
 	if !ok || now.After(t.expires) {
 		return nil, api.ErrTicketInvalid
 	}
-	// The helper redeeming must be a child of the process the ticket was issued to, which is
-	// how berth run starts it.
-	facts, err := s.Peers.Facts(ctx, peer)
+	// The helper redeeming must be a child of the berth process the ticket was issued to,
+	// which is how berth run starts it.
+	facts, err := s.Peers.Facts(ctx, peer.PID)
 	if err != nil || len(facts.Tree) == 0 || facts.Tree[0].PID != t.pid {
-		s.Log.Warn("ticket redeemed by a helper the caller did not start", "pid", peer)
+		s.Log.Warn("ticket redeemed by a helper the caller did not start", "pid", peer.PID)
 		return nil, api.ErrTicketInvalid
 	}
 	return &berthv1.RedeemUseTicketResponse{Name: t.name}, nil
 }
 
-func (s *secrets) facts(ctx context.Context, peer int) (ports.Requester, error) {
-	if peer <= 0 {
+func (s *secrets) facts(ctx context.Context, peer ports.Peer) (ports.Requester, error) {
+	if peer.PID <= 0 {
 		return ports.Requester{}, api.ErrCallerUnknown
 	}
-	r, err := s.Peers.Facts(ctx, peer)
+	r, err := s.Peers.Facts(ctx, peer.PID)
 	if err != nil {
-		s.Log.Warn("cannot describe the caller", "pid", peer, "err", err)
+		s.Log.Warn("cannot describe the caller", "pid", peer.PID, "err", err)
 		return ports.Requester{}, api.ErrCallerUnknown
 	}
 	return r, nil
@@ -543,26 +589,6 @@ func (s *secrets) state(ctx context.Context, entity, initial string) (string, er
 		return initial, nil
 	}
 	return st.State, nil
-}
-
-func (s *secrets) setPending(entity string, v any) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.pending[entity] = v
-}
-
-func (s *secrets) takePending(entity string) any {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	v := s.pending[entity]
-	delete(s.pending, entity)
-	return v
-}
-
-func (s *secrets) setIssued(entity string, v issued) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.issued[entity] = v
 }
 
 // argsMatch applies a grant's glob to the arguments joined by spaces; an empty glob allows any.
@@ -616,127 +642,4 @@ func grantState(s grant.State) berthv1.GrantState {
 		return berthv1.GrantState_GRANT_STATE_REVOKED
 	}
 	return berthv1.GrantState_GRANT_STATE_UNSPECIFIED
-}
-
-// actors keeps one running actor per entity of one machine, created on first use.
-type actors[S ~string, E machine.Event, F any] struct {
-	ctx        context.Context
-	log        *slog.Logger
-	store      ports.Store
-	clock      ports.Clock
-	kind       string
-	initial    S
-	transition machine.Transition[S, E, F]
-	run        func(entity string) machine.Runner[E, F]
-
-	mu   sync.Mutex
-	live map[string]*slot[S, E, F]
-}
-
-type slot[S ~string, E machine.Event, F any] struct {
-	actor *machine.Actor[S, E, F]
-	// turn admits one call at a time, so the waiter sees only its own outcome.
-	turn    chan struct{}
-	stopped chan struct{}
-	mu      sync.Mutex
-	waiter  chan applied
-}
-
-type applied struct {
-	rec ports.TransitionRecord
-	err error
-}
-
-func (sl *slot[S, E, F]) tell(a applied) {
-	sl.mu.Lock()
-	defer sl.mu.Unlock()
-	if sl.waiter != nil {
-		select {
-		case sl.waiter <- a:
-		default:
-		}
-	}
-}
-
-func (sl *slot[S, E, F]) setWaiter(w chan applied) {
-	sl.mu.Lock()
-	defer sl.mu.Unlock()
-	sl.waiter = w
-}
-
-func (a *actors[S, E, F]) get(ctx context.Context, entity string) (*slot[S, E, F], error) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if sl, ok := a.live[entity]; ok {
-		return sl, nil
-	}
-	sl := &slot[S, E, F]{turn: make(chan struct{}, 1), stopped: make(chan struct{})}
-	actor, err := machine.NewActor(ctx, machine.Config[S, E, F]{
-		Entity: entity, Kind: a.kind, Initial: a.initial, Transition: a.transition, Run: a.run(entity),
-		Store: a.store, Clock: a.clock,
-		Rejected: func(err error) { sl.tell(applied{err: err}) },
-		Applied:  func(rec ports.TransitionRecord) { sl.tell(applied{rec: rec}) },
-	})
-	if err != nil {
-		return nil, err
-	}
-	sl.actor = actor
-	a.live[entity] = sl
-	go func() {
-		if err := actor.Run(a.ctx); err != nil {
-			a.log.Error("actor stopped", "entity", entity, "err", err)
-		}
-		// A stopped actor is dropped, so the next call reloads the entity from the store.
-		a.mu.Lock()
-		if a.live[entity] == sl {
-			delete(a.live, entity)
-		}
-		a.mu.Unlock()
-		close(sl.stopped)
-	}()
-	return sl, nil
-}
-
-// step sends event to the entity's actor and waits until one of the until events has been
-// applied (saved, with its effects run). An illegal event comes back as an error.
-func step[S ~string, E machine.Event, F any, K ~string](ctx context.Context, a *actors[S, E, F], entity string, event E, until ...K) (ports.TransitionRecord, error) {
-	names := make([]string, 0, len(until))
-	for _, u := range until {
-		names = append(names, string(u))
-	}
-	return a.step(ctx, entity, event, names)
-}
-
-func (a *actors[S, E, F]) step(ctx context.Context, entity string, event E, until []string) (ports.TransitionRecord, error) {
-	sl, err := a.get(ctx, entity)
-	if err != nil {
-		return ports.TransitionRecord{}, err
-	}
-	select {
-	case sl.turn <- struct{}{}:
-	case <-ctx.Done():
-		return ports.TransitionRecord{}, ctx.Err()
-	}
-	defer func() { <-sl.turn }()
-	w := make(chan applied, 16)
-	sl.setWaiter(w)
-	defer sl.setWaiter(nil)
-	if err := sl.actor.Send(ctx, event); err != nil {
-		return ports.TransitionRecord{}, err
-	}
-	for {
-		select {
-		case got := <-w:
-			if got.err != nil {
-				return ports.TransitionRecord{}, got.err
-			}
-			if slices.Contains(until, got.rec.Event) {
-				return got.rec, nil
-			}
-		case <-sl.stopped:
-			return ports.TransitionRecord{}, fmt.Errorf("actor for %s stopped", entity)
-		case <-ctx.Done():
-			return ports.TransitionRecord{}, ctx.Err()
-		}
-	}
 }

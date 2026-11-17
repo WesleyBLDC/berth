@@ -11,16 +11,16 @@ import (
 	"berth/internal/core/ports"
 )
 
-// Secrets is the daemon's secret and grant logic. peer is the caller's pid as the kernel
-// reported it for the connection, or 0 when unknown.
+// Secrets is the daemon's secret and grant logic. peer is the caller as the kernel reported it
+// for the connection; its zero value means unknown.
 type Secrets interface {
-	RequestSecret(ctx context.Context, req *berthv1.RequestSecretRequest, peer int) (*berthv1.RequestSecretResponse, error)
+	RequestSecret(ctx context.Context, req *berthv1.RequestSecretRequest, peer ports.Peer) (*berthv1.RequestSecretResponse, error)
 	ListSecrets(ctx context.Context) (*berthv1.ListSecretsResponse, error)
-	GrantSecret(ctx context.Context, req *berthv1.GrantSecretRequest, peer int) (*berthv1.GrantSecretResponse, error)
-	AuthorizeUse(ctx context.Context, req *berthv1.AuthorizeUseRequest, peer int) (*berthv1.AuthorizeUseResponse, error)
+	GrantSecret(ctx context.Context, req *berthv1.GrantSecretRequest, peer ports.Peer) (*berthv1.GrantSecretResponse, error)
+	AuthorizeUse(ctx context.Context, req *berthv1.AuthorizeUseRequest, peer ports.Peer) (*berthv1.AuthorizeUseResponse, error)
 	// TrustRedeemer returns ErrPeerNotTrusted unless peer is the signed berth-native helper.
-	TrustRedeemer(ctx context.Context, peer int) error
-	RedeemUseTicket(ctx context.Context, ticket ports.Ticket, peer int) (*berthv1.RedeemUseTicketResponse, error)
+	TrustRedeemer(ctx context.Context, peer ports.Peer) error
+	RedeemUseTicket(ctx context.Context, ticket ports.Ticket, peer ports.Peer) (*berthv1.RedeemUseTicketResponse, error)
 }
 
 // Errors Secrets returns for outcomes a client must react to; anything else is internal.
@@ -32,18 +32,19 @@ var (
 	ErrPeerNotTrusted     = errors.New("peer not trusted")
 	ErrBadGlob            = errors.New("malformed args glob")
 	ErrCallerUnknown      = errors.New("caller unknown")
+	ErrInterpreter        = errors.New("executable is an interpreter")
 )
 
 type peerKey struct{}
 
-// WithPeerPID records the connection's peer pid, from the socket, for the handlers.
-func WithPeerPID(ctx context.Context, pid int) context.Context {
-	return context.WithValue(ctx, peerKey{}, pid)
+// WithPeer records the connection's peer, from the socket, for the handlers.
+func WithPeer(ctx context.Context, p ports.Peer) context.Context {
+	return context.WithValue(ctx, peerKey{}, p)
 }
 
-func peerPID(ctx context.Context) int {
-	pid, _ := ctx.Value(peerKey{}).(int)
-	return pid
+func peerOf(ctx context.Context) ports.Peer {
+	p, _ := ctx.Value(peerKey{}).(ports.Peer)
+	return p
 }
 
 func (h *handlers) RequestSecret(ctx context.Context, req *berthv1.RequestSecretRequest) (*berthv1.RequestSecretResponse, error) {
@@ -51,7 +52,7 @@ func (h *handlers) RequestSecret(ctx context.Context, req *berthv1.RequestSecret
 		return nil, err
 	}
 	return once(ctx, h, "RequestSecret", req.GetRequestId(), &berthv1.RequestSecretResponse{}, func() (*berthv1.RequestSecretResponse, error) {
-		resp, err := h.d.Secrets.RequestSecret(ctx, req, peerPID(ctx))
+		resp, err := h.d.Secrets.RequestSecret(ctx, req, peerOf(ctx))
 		return resp, secretsError(err)
 	})
 }
@@ -69,7 +70,7 @@ func (h *handlers) GrantSecret(ctx context.Context, req *berthv1.GrantSecretRequ
 		return nil, err
 	}
 	return once(ctx, h, "GrantSecret", req.GetRequestId(), &berthv1.GrantSecretResponse{}, func() (*berthv1.GrantSecretResponse, error) {
-		resp, err := h.d.Secrets.GrantSecret(ctx, req, peerPID(ctx))
+		resp, err := h.d.Secrets.GrantSecret(ctx, req, peerOf(ctx))
 		return resp, secretsError(err)
 	})
 }
@@ -82,7 +83,7 @@ func (h *handlers) AuthorizeUse(ctx context.Context, req *berthv1.AuthorizeUseRe
 	// a retry learns the outcome but must ask again for a ticket.
 	return onceKeeping(ctx, h, "AuthorizeUse", req.GetRequestId(), &berthv1.AuthorizeUseResponse{},
 		func() (*berthv1.AuthorizeUseResponse, error) {
-			resp, err := h.d.Secrets.AuthorizeUse(ctx, req, peerPID(ctx))
+			resp, err := h.d.Secrets.AuthorizeUse(ctx, req, peerOf(ctx))
 			return resp, secretsError(err)
 		},
 		func(resp *berthv1.AuthorizeUseResponse) *berthv1.AuthorizeUseResponse {
@@ -98,7 +99,7 @@ func (h *handlers) RedeemUseTicket(ctx context.Context, req *berthv1.RedeemUseTi
 	}
 	// The peer is checked before the request log, so another process replaying a request id
 	// learns nothing from it.
-	peer := peerPID(ctx)
+	peer := peerOf(ctx)
 	if err := h.d.Secrets.TrustRedeemer(ctx, peer); err != nil {
 		return nil, secretsError(err)
 	}
@@ -129,8 +130,11 @@ func secretsError(err error) error {
 		return withReason(connect.NewError(connect.CodePermissionDenied, "the ticket is unknown, expired or used"),
 			berthv1.ErrorReason_ERROR_REASON_TICKET_INVALID)
 	case errors.Is(err, ErrPeerNotTrusted):
-		return withReason(connect.NewError(connect.CodePermissionDenied, "only the signed berth-native helper may redeem tickets"),
+		return withReason(connect.NewError(connect.CodePermissionDenied, "berthd trusts only the signed berth binaries for this call"),
 			berthv1.ErrorReason_ERROR_REASON_PEER_NOT_TRUSTED)
+	case errors.Is(err, ErrInterpreter):
+		return withReason(connect.NewError(connect.CodeFailedPrecondition, "the executable is an interpreter, which could print the secret; set allow_interpreter to grant it anyway"),
+			berthv1.ErrorReason_ERROR_REASON_INTERPRETER)
 	case errors.Is(err, ErrBadGlob):
 		return connect.NewError(connect.CodeInvalidArgument, "args_glob is not a valid pattern")
 	case errors.Is(err, ErrCallerUnknown):

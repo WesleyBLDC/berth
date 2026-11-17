@@ -32,6 +32,7 @@ type fakeSecrets struct {
 	use       berthv1.UseOutcome
 	useArgv   []string
 	useExe    string
+	useErr    error
 	authorize int
 }
 
@@ -50,6 +51,9 @@ func (f *fakeSecrets) ListSecrets(context.Context, *berthv1.ListSecretsRequest) 
 func (f *fakeSecrets) AuthorizeUse(_ context.Context, req *berthv1.AuthorizeUseRequest) (*berthv1.AuthorizeUseResponse, error) {
 	f.authorize++
 	f.useExe, f.useArgv = req.GetExePath(), req.GetArgv()
+	if f.useErr != nil {
+		return nil, f.useErr
+	}
 	resp := &berthv1.AuthorizeUseResponse{Outcome: f.use}
 	if f.use == berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED {
 		resp.Ticket = bytes.Repeat([]byte{7}, 32)

@@ -34,7 +34,7 @@ flowchart LR
 | Process | Language | Status | Job |
 |---|---|---|---|
 | `berthd` | Go | Built | The daemon: owns all state, runs the state machines, serves the API, decides every security question |
-| `berth` | Go | Built | The command line client: `status`, `debug state`, `secret request`, `secret add`, `secret ls`, `secret grant`, `run` |
+| `berth` | Go | Built | The command line client: `status`, `debug state`, `secret request`, `secret add`, `secret ls`, `secret grant`, `run`; `make build` signs it, since `berthd` gives use tickets only to the signed CLI |
 | `berth-native` | Swift | Built | The only Berth process that touches secret values: Keychain add and read, Touch ID, the secure input dialog |
 | `Berth.app` | Swift | Planned (M5) | Window and menu bar, live view and takeover, notifications, registers `berthd` as a login item |
 | `berth-mcp` | Go | Planned (M4) | A thin MCP shim for agents without a shell; holds no state and exposes only agent methods |
@@ -54,7 +54,7 @@ Swift does the native work because Keychain, Touch ID and ScreenCaptureKit are A
 |---|---|---|
 | `DaemonService` | `Handshake`, `Status`, `Shutdown` | Built |
 | `DebugService` | `GetState` (state and recent transitions of any entity) | Built |
-| `SecretsService` | `RequestSecret`, `ListSecrets`, `GrantSecret`, `AuthorizeUse`, `RedeemUseTicket` | Schema, client and CLI built; handlers are being wired in `berthd` (E2a item 6) |
+| `SecretsService` | `RequestSecret`, `ListSecrets`, `GrantSecret`, `AuthorizeUse`, `RedeemUseTicket` | Built |
 | Sessions, Profiles, Runbooks, Policies | `ListSessions`, `WatchSessions`, `LaunchSession`, `WatchScreen`, `SendInput`, `FillLogin` and more | Planned (M2 to M6) |
 
 ### The native helper protocol (built)
@@ -65,12 +65,12 @@ The helper reads one JSON object on one line from stdin and writes one JSON line
 | Command | Does | Replies |
 |---|---|---|
 | `store` | Shows the secure input dialog with facts `berthd` verified, then Touch ID, then writes Keychain item `berth.<name>` | `stored`, `denied` or `failed`; never the value |
-| `confirm` | Shows a Touch ID prompt for a power action (today: a grant) | `approved`, `denied` or `failed` |
-| `read` | Takes a single use ticket, redeems it with `berthd` over the socket, reads `berth.<name>` | The raw value bytes on stdout, or nothing and exit code 3 |
+| `confirm` | Shows a Touch ID prompt for a power action (today: a grant); with `"interpreter":true` the text starts with "<path> is an interpreter and can print this secret" | `approved`, `denied` or `failed` |
+| `read` | Checks its parent process is the signed `berth` CLI, takes a single use ticket, redeems it with `berthd` over the socket, reads `berth.<name>` | The raw value bytes on stdout, or nothing and exit code 3 |
 
 The exact message shapes are in [the E2 plan](docs/plans/e2-terminal-secrets.md#native-helper-protocol-items-2-4-and-6-must-match-it-exactly).
 Go tests use a fake helper written in Go ([`internal/adapters/native/fakehelper`](internal/adapters/native/fakehelper)), never the Swift binary.
-`scripts/build-native.sh` builds the helper in release mode and signs it with a stable Apple Development identity and identifier, because `berthd` trusts the helper by its signing team and Keychain items trust it by its designated requirement.
+`scripts/build-native.sh` builds the helper in release mode, and `scripts/sign.sh` signs it (and `make build` signs `bin/berth`) with a stable Apple Development identity, identifier and the hardened runtime, because `berthd` trusts both by team, identifier and cdhash, and Keychain items trust the helper by its designated requirement.
 
 ## Layers and import rules (built)
 
@@ -246,7 +246,7 @@ Instructions and prompts are never a security control.
 
 - **Built:** a method is meant for agents only when the schema marks it `option (berth.v1.agent) = true`, and `TestAgentSurface` pins the list: `Handshake`, `RequestSecret`, `ListSecrets` and `AuthorizeUse`.
 - **Planned (M4):** agents get a session token that works only for their own session, only from their own process tree, and only for agent methods ([ADR 0006](docs/adr/0006-agents-are-scoped-by-session-token.md)); `berth-mcp` and the agent commands expose exactly the marked methods.
-- **Today's limit:** until session tokens exist, the daemon cannot tell an agent from the person, because both run as the same user; anything that can reach the socket can call any method, and the protections that hold are Touch ID on power actions and values never crossing the API.
+- **Today's limit:** until session tokens exist, the daemon cannot tell an agent from the person, because both run as the same user; anything that can reach the socket can call any method, and the protections that hold are Touch ID on power actions, values never crossing the API, and use tickets going only to the signed `berth` CLI.
 
 ### Secrets: store and use, never read
 
@@ -258,7 +258,7 @@ Agents may store a secret (the person types it into a native dialog) and use one
 - Dialog and Touch ID text is built only from facts `berthd` verified from the kernel (peer process, executable, process tree, working directory) and from the file on disk (path, SHA-256, code signature); the requester's reason is shown quoted and labelled as the requester's claim, and never stored in an event.
 - Granting a consumer is a power action that needs Touch ID.
 
-How a use travels (E2a, being integrated):
+How a use travels (E2a):
 
 ```mermaid
 sequenceDiagram
@@ -266,19 +266,25 @@ sequenceDiagram
   participant D as berthd
   participant N as berth-native
   R->>D: AuthorizeUse(name, exe, argv)
-  D->>D: hash exe itself, match an Active grant
+  D->>D: caller is the signed berth? hash exe itself, match an Active grant
   D-->>R: ticket (32 bytes, 30 s, one use)
   R->>N: read, ticket on stdin
+  N->>N: parent is the signed berth?
   N->>D: RedeemUseTicket(ticket)
   D-->>N: name (only to the signed helper)
   N-->>R: value bytes over a pipe
   R->>R: put in child env, zero copy, mask output
 ```
 
+- **Who may hold a ticket.** A ticket lets its holder start `berth-native` and read the value, so `berthd` issues one only when the `AuthorizeUse` caller is the signed `berth` CLI, which puts the value straight into its child. Any other process, including one an agent wrote, gets `ERROR_REASON_PEER_NOT_TRUSTED`.
+- **How a binary is recognised.** At start `berthd` checks the `berth` and `berth-native` files beside it against the requirement `anchor apple generic and certificate leaf[subject.OU] = "XPJ7XA42J4" and identifier "<id>"` (`com.wesleybldc.berth.cli`, `com.wesleybldc.berth.native`) and pins each one's cdhash. A socket peer counts as that binary only when the kernel, asked by the peer's audit token (`LOCAL_PEERTOKEN`, then `csops_audittoken`), reports the same cdhash for the image it is running, a valid signature and the hardened runtime. Paths and names are never trusted, a reused pid or an exec'd process fails its audit token, and a debugger cannot attach to a hardened process. A cdhash that differs makes `berthd` read the file once more, so a fresh `make build` works without a restart.
+- `RedeemUseTicket` uses the same live check for `berth-native`, before the request log is read, and accepts a ticket only from a helper whose parent is the process the ticket was issued to. `berth-native read` checks the other direction too: its parent must satisfy the CLI requirement (`SecCode` by pid, with `getppid` read again afterwards).
+- An unsigned development `berth run` is refused with a message to run `make build`. The end to end tests compile a test only pin rule (`-tags berth_e2e`, no environment variable) that accepts ad hoc signed binaries beside `berthd`, still requiring the hardened runtime.
 - `berthd` identifies the executable itself and never trusts a client hash; a changed hash moves the grant to `Stale`.
-- A ticket is bound to the secret name, the executable hash and the caller's process ID, and is valid once for 30 seconds.
-- `RedeemUseTicket` is accepted only from a peer whose executable is the signed `berth-native`, checked before the request log is read.
+- A grant to an interpreter (a shell, `python`, `perl`, `ruby`, `node`, `osascript`, `env`, or any `#!` file) is refused unless `--allow-interpreter` is passed, and then the Touch ID text says the interpreter can print the secret.
+- A ticket is bound to the secret name, the executable hash and the caller's process ID, lives only in memory, and is valid once for 30 seconds.
 - `berth run` masks the value in the child's stdout and stderr as a backstop.
+- A store prompt open when `berthd` stops is cancelled (its helper killed) and records `StoreFailed` before the daemon drains; a store a crash left `Pending` is marked `StoreFailed` with the note `interrupted` at the next boot.
 
 ### Planned browser credentials (M6)
 
@@ -291,7 +297,10 @@ Other password stores plug in as `berth-secret-<name>` helper programs pinned by
 
 - Any process that holds a secret can leak it: environment injection is only as safe as the command it is pinned to, which is why grants pin the exact executable and an optional argument glob, and why the header proxy (E2b) will be the default for API keys.
 - The executable can change between `AuthorizeUse` hashing it and `berth run` starting it; closing that gap needs exec by file descriptor or a signed binary requirement (E2b).
-- Output masking catches the value only when it appears verbatim.
+- Output masking matches only the literal value: an encoded, split by the child, or transformed copy (base64, hex, one character per line) passes through unmasked.
+- The store dialog's `NSSecureTextField` hands the value over as a Swift `String`, which cannot be wiped; `berth-native` copies it into a buffer it zeroes and clears the field, but the string's own memory lives until the process exits a moment later.
+- A granted interpreter can print the secret whatever the glob says; `--allow-interpreter` only makes that a deliberate choice.
+- `berth-native` finds its parent by pid, because Security offers no way to get the parent's audit token; reading `getppid` again after the check catches a parent that exited meanwhile, and `berthd`'s audit token check of the CLI stays the main control.
 - Until session tokens (M4), a malicious process running as the person can call every method; it still cannot read a value through the API or grant itself access without Touch ID.
 - The peer adapter reads process facts through a raw `proc_info` syscall with a hardcoded struct offset, which a macOS update could break; its test guards it.
 - Builds are signed with a free Apple Development identity; the data protection keychain, notarization and Developer ID signing wait for the paid program at M8.
@@ -305,7 +314,7 @@ Each milestone starts from a plan in [`docs/plans/`](docs/plans) with acceptance
 |---|---|---|
 | M0 Spike | Five risky proofs: Swift streaming over the socket, Playwright MCP through a token proxy, 60 fps screencast in SwiftUI, Touch ID and Keychain from a signed helper, window capture by process ID | Done; code kept under the tag `m0-spike` ([ADR 0015](docs/adr/0015-m0-spike-results.md), [plan](docs/plans/m0-spike.md)) |
 | M1 Skeleton | Repository rules, `berth.v1` schema, machine kit, SQLite store, daemon machine, socket checks, `berth status` and `berth debug state` | Done ([plan](docs/plans/m1-skeleton.md)) |
-| E2a Terminal secrets | `berth secret request`, `add`, `ls`, `grant`, `berth run`, `berth-native`, secret and grant machines, audit rows, a Claude Code hook | In progress: contract, machines, adapters, CLI and `berth-native` merged; daemon wiring and the end to end canary test under way ([plan](docs/plans/e2-terminal-secrets.md)) |
+| E2a Terminal secrets | `berth secret request`, `add`, `ls`, `grant`, `berth run`, `berth-native`, secret and grant machines, audit rows, a Claude Code hook | In progress: built and wired with the end to end canary test; the manual Touch ID check remains ([plan](docs/plans/e2-terminal-secrets.md)) |
 | M2 See every browser | `ProcessSource`, signature registry, owner chain, session machine (observed states), `berth ps`, `inspect`, `stop`, `leftovers` | Planned, next |
 | M3 Live terminal view | `WatchSessions` stream with resume, the TUI | Planned |
 | M4 Managed Chromium | `BrowserDriver` over a private CDP pipe, the token gated CDP proxy, profile locks, session tokens, `berth-mcp` | Planned |

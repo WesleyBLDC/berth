@@ -37,8 +37,11 @@ public func confirmTouchIDReason(_ request: ConfirmRequest) -> String {
     var facts = ["sha256 \(consumer.sha256.prefix(12))"]
     if !consumer.teamID.isEmpty { facts.insert("team \(oneLine(consumer.teamID))", at: 0) }
     facts.append(request.argsGlob.isEmpty ? "any arguments" : "arguments \(quoted(request.argsGlob))")
-    return "let \(oneLine(consumer.path)) (\(facts.joined(separator: ", "))) use secret \(request.secret), "
+    let grant =
+        "let \(oneLine(consumer.path)) (\(facts.joined(separator: ", "))) use secret \(request.secret), "
         + "requested by \(oneLine(request.requester.executable))"
+    guard request.interpreter else { return grant }
+    return "\(oneLine(consumer.path)) is an interpreter and can print this secret. " + grant
 }
 
 /// Agent controlled text is folded onto one line and capped, so it cannot fake extra lines
@@ -53,3 +56,8 @@ func oneLine(_ text: String, limit: Int = 500) -> String {
 }
 
 func quoted(_ text: String) -> String { "\u{201C}\(oneLine(text))\u{201D}" }
+
+/// The code requirement berth-native holds its parent to: the berth CLI signed by Berth's team
+/// through Apple's chain, so a renamed or self signed copy cannot pass.
+public let berthCLIRequirement =
+    #"anchor apple generic and certificate leaf[subject.OU] = "XPJ7XA42J4" and identifier "com.wesleybldc.berth.cli""#

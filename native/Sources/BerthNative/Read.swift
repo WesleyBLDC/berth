@@ -15,6 +15,9 @@ func runRead(_ line: Data) -> Never {
     } catch {
         readFailed(error.description)
     }
+    // Defence in depth: berthd only issues tickets to the signed berth CLI, and this keeps a
+    // ticket from working in a helper that any other process started.
+    if let refusal = parentRefusal() { readFailed(refusal) }
     let path = socketPath(environment: ProcessInfo.processInfo.environment, fallbackHome: NSHomeDirectory())
     let name: String
     do {
@@ -29,6 +32,24 @@ func runRead(_ line: Data) -> Never {
     case .success(false): readFailed("could not write the value to stdout")
     case .failure(let error): readFailed("\(keychainService(for: name)): \(error.description)")
     }
+}
+
+/// nil when the parent process is the signed berth CLI. The parent is found by pid, so the pid is
+/// read again afterwards: had the parent exited and its pid been reused, this process would
+/// have been reparented and getppid would differ.
+private func parentRefusal() -> String? {
+    let parent = getppid()
+    var code: SecCode?
+    let attributes = [kSecGuestAttributePid: NSNumber(value: parent)] as CFDictionary
+    var status = SecCodeCopyGuestWithAttributes(nil, attributes, [], &code)
+    guard status == errSecSuccess, let code else { return "cannot identify the parent process (\(status))" }
+    var requirement: SecRequirement?
+    status = SecRequirementCreateWithString(berthCLIRequirement as CFString, [], &requirement)
+    guard status == errSecSuccess, let requirement else { return "cannot build the parent requirement (\(status))" }
+    status = SecCodeCheckValidity(code, [], requirement)
+    guard status == errSecSuccess else { return "the parent process is not the signed berth CLI (\(status))" }
+    guard getppid() == parent else { return "the parent process changed during the check" }
+    return nil
 }
 
 private func writeAll(_ bytes: UnsafeRawBufferPointer) -> Bool {

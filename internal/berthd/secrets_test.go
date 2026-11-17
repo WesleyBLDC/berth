@@ -18,14 +18,46 @@ import (
 )
 
 const (
-	agentPID  = 100
-	berthPID  = 200
-	helperPID = 300
-	otherPID  = 400
-	tool      = "/usr/local/bin/tool"
-	toolReal  = "/opt/tool/bin/tool"
-	helperExe = "/Applications/Berth.app/Contents/MacOS/berth-native"
+	agentPID   = 100
+	berthPID   = 200
+	berth2PID  = 210
+	helperPID  = 300
+	helper2PID = 310
+	otherPID   = 400
+	tool       = "/usr/local/bin/tool"
+	toolReal   = "/opt/tool/bin/tool"
+	helperExe  = "/Applications/Berth.app/Contents/MacOS/berth-native"
 )
+
+var (
+	cliHash    = ports.CDHash{0xc1}
+	helperHash = ports.CDHash{0xe1}
+	signedLive = ports.CSValid | ports.CSRuntime
+)
+
+func peerOf(pid int) ports.Peer { return ports.Peer{PID: pid, AuditToken: [32]byte{byte(pid)}} }
+
+// liveCode is a fake ports.CodeInspector: what the kernel would report per pid.
+type liveCode struct {
+	mu   sync.Mutex
+	byID map[int]ports.LiveCode
+}
+
+func (l *liveCode) set(pid int, c ports.LiveCode) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.byID[pid] = c
+}
+
+func (l *liveCode) Live(_ context.Context, p ports.Peer) (ports.LiveCode, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	c, ok := l.byID[p.PID]
+	if !ok {
+		return ports.LiveCode{}, errors.New("no such process")
+	}
+	return c, nil
+}
 
 type fixture struct {
 	s        *secrets
@@ -33,9 +65,16 @@ type fixture struct {
 	approver *testutil.Approver
 	execs    *testutil.ExecIdentity
 	clock    *testutil.Clock
+	code     *liveCode
+	pins     map[string]ports.CDHash
+	pinsMu   sync.Mutex
 }
 
 func newFixture(t *testing.T, approver ports.Approver) *fixture {
+	return newFixtureWith(t, approver, &testutil.TicketSource{})
+}
+
+func newFixtureWith(t *testing.T, approver ports.Approver, tickets ports.TicketSource) *fixture {
 	t.Helper()
 	store, err := sqlite.Open(t.Context(), filepath.Join(t.TempDir(), "b.db"))
 	if err != nil {
@@ -46,26 +85,53 @@ func newFixture(t *testing.T, approver ports.Approver) *fixture {
 	execs := testutil.NewExecIdentity()
 	execs.Set(tool, ports.Executable{Path: toolReal, SHA256: [32]byte{1}})
 	execs.Set(toolReal, ports.Executable{Path: toolReal, SHA256: [32]byte{1}})
-	execs.Set(helperExe, ports.Executable{Path: helperExe, SHA256: [32]byte{9}, TeamID: HelperTeamID, SigningID: HelperSigningID})
+	execs.Set("/bin/sh", ports.Executable{Path: "/bin/sh", SHA256: [32]byte{3}})
+	execs.Set("/opt/x/deploy.sh", ports.Executable{Path: "/opt/x/deploy.sh", SHA256: [32]byte{4}, Shebang: true})
 	peers := testutil.NewPeerFacts()
 	peers.Set(ports.Requester{PID: agentPID, Executable: "/usr/local/bin/claude", WorkingDir: "/w"})
 	peers.Set(ports.Requester{PID: berthPID, Executable: "/usr/local/bin/berth", Tree: []ports.Process{{PID: agentPID}}})
+	peers.Set(ports.Requester{PID: berth2PID, Executable: "/usr/local/bin/berth", Tree: []ports.Process{{PID: agentPID}}})
 	peers.Set(ports.Requester{PID: helperPID, Executable: helperExe, Tree: []ports.Process{{PID: berthPID}}})
+	peers.Set(ports.Requester{PID: helper2PID, Executable: helperExe, Tree: []ports.Process{{PID: berth2PID}}})
 	peers.Set(ports.Requester{PID: otherPID, Executable: helperExe, Tree: []ports.Process{{PID: agentPID}}})
+	code := &liveCode{byID: map[int]ports.LiveCode{
+		agentPID:   {CDHash: ports.CDHash{0xaa}, Status: signedLive},
+		berthPID:   {CDHash: cliHash, Status: signedLive},
+		berth2PID:  {CDHash: cliHash, Status: signedLive},
+		helperPID:  {CDHash: helperHash, Status: signedLive},
+		helper2PID: {CDHash: helperHash, Status: signedLive},
+		otherPID:   {CDHash: helperHash, Status: signedLive},
+	}}
 	clock := testutil.NewClock()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	s := newSecrets(ctx, secretsDeps{
-		Log: slog.New(slog.DiscardHandler), Store: store, Records: store, Clock: clock,
-		Approver: approver, Execs: execs, Peers: peers, Tickets: &testutil.TicketSource{},
-		Trust: func(_ context.Context, e ports.Executable) (bool, error) { return e.TeamID == HelperTeamID, nil },
+	f := &fixture{
+		store: store, approver: fake, execs: execs, clock: clock, code: code,
+		pins: map[string]ports.CDHash{CLISigningID: cliHash, HelperSigningID: helperHash},
+	}
+	pin := func(_ context.Context, _, identifier string) (ports.CDHash, bool, error) {
+		f.pinsMu.Lock()
+		defer f.pinsMu.Unlock()
+		h, ok := f.pins[identifier]
+		return h, ok, nil
+	}
+	log := slog.New(slog.DiscardHandler)
+	trusted := func(identifier string) *trustedFile {
+		tf := &trustedFile{path: "/bin/" + identifier, identifier: identifier, pin: pin, code: code, log: log}
+		tf.repin(ctx)
+		return tf
+	}
+	f.s = newSecrets(ctx, secretsDeps{
+		Log: log, Store: store, Records: store, Clock: clock,
+		Approver: approver, Execs: execs, Peers: peers, Tickets: tickets,
+		CLI: trusted(CLISigningID), Helper: trusted(HelperSigningID),
 	})
-	return &fixture{s: s, store: store, approver: fake, execs: execs, clock: clock}
+	return f
 }
 
 func (f *fixture) request(t *testing.T) berthv1.StoreOutcome {
 	t.Helper()
-	resp, err := f.s.RequestSecret(t.Context(), &berthv1.RequestSecretRequest{Name: "gh-token", Reason: "deploy"}, agentPID)
+	resp, err := f.s.RequestSecret(t.Context(), &berthv1.RequestSecretRequest{Name: "gh-token", Reason: "deploy"}, peerOf(agentPID))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -74,7 +140,7 @@ func (f *fixture) request(t *testing.T) berthv1.StoreOutcome {
 
 func (f *fixture) grant(t *testing.T, glob string) *berthv1.GrantSecretResponse {
 	t.Helper()
-	resp, err := f.s.GrantSecret(t.Context(), &berthv1.GrantSecretRequest{Name: "gh-token", ExePath: tool, ArgsGlob: glob}, berthPID)
+	resp, err := f.s.GrantSecret(t.Context(), &berthv1.GrantSecretRequest{Name: "gh-token", ExePath: tool, ArgsGlob: glob}, peerOf(berthPID))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -83,7 +149,7 @@ func (f *fixture) grant(t *testing.T, glob string) *berthv1.GrantSecretResponse 
 
 func (f *fixture) use(t *testing.T, argv ...string) *berthv1.AuthorizeUseResponse {
 	t.Helper()
-	resp, err := f.s.AuthorizeUse(t.Context(), &berthv1.AuthorizeUseRequest{Name: "gh-token", ExePath: tool, Argv: argv}, berthPID)
+	resp, err := f.s.AuthorizeUse(t.Context(), &berthv1.AuthorizeUseRequest{Name: "gh-token", ExePath: tool, Argv: argv}, peerOf(berthPID))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -114,7 +180,7 @@ func TestStoreGrantUseAndRedeem(t *testing.T) {
 	if len(prompts) != 1 || prompts[0].Requester.Executable != "/usr/local/bin/claude" || prompts[0].Reason != "deploy" {
 		t.Fatalf("store prompts %+v", prompts)
 	}
-	if _, err := f.s.RequestSecret(t.Context(), &berthv1.RequestSecretRequest{Name: "gh-token", Reason: "again"}, agentPID); !errors.Is(err, api.ErrSecretExists) {
+	if _, err := f.s.RequestSecret(t.Context(), &berthv1.RequestSecretRequest{Name: "gh-token", Reason: "again"}, peerOf(agentPID)); !errors.Is(err, api.ErrSecretExists) {
 		t.Fatalf("second store: %v", err)
 	}
 
@@ -132,14 +198,14 @@ func TestStoreGrantUseAndRedeem(t *testing.T) {
 		t.Fatalf("use %v", use)
 	}
 	ticket := ticketOf(use)
-	if err := f.s.TrustRedeemer(t.Context(), helperPID); err != nil {
+	if err := f.s.TrustRedeemer(t.Context(), peerOf(helperPID)); err != nil {
 		t.Fatalf("helper not trusted: %v", err)
 	}
-	redeemed, err := f.s.RedeemUseTicket(t.Context(), ticket, helperPID)
+	redeemed, err := f.s.RedeemUseTicket(t.Context(), ticket, peerOf(helperPID))
 	if err != nil || redeemed.GetName() != "gh-token" {
 		t.Fatalf("redeem %v, %v", redeemed, err)
 	}
-	if _, err := f.s.RedeemUseTicket(t.Context(), ticket, helperPID); !errors.Is(err, api.ErrTicketInvalid) {
+	if _, err := f.s.RedeemUseTicket(t.Context(), ticket, peerOf(helperPID)); !errors.Is(err, api.ErrTicketInvalid) {
 		t.Fatalf("replayed ticket: %v", err)
 	}
 
@@ -163,19 +229,19 @@ func TestTicketChecks(t *testing.T) {
 	f.grant(t, "")
 
 	// A helper berth did not start (its parent is the agent) cannot spend berth's ticket.
-	if _, err := f.s.RedeemUseTicket(t.Context(), ticketOf(f.use(t)), otherPID); !errors.Is(err, api.ErrTicketInvalid) {
+	if _, err := f.s.RedeemUseTicket(t.Context(), ticketOf(f.use(t)), peerOf(otherPID)); !errors.Is(err, api.ErrTicketInvalid) {
 		t.Fatalf("foreign helper: %v", err)
 	}
 	expired := ticketOf(f.use(t))
 	f.clock.Advance(ticketLife + time.Second)
-	if _, err := f.s.RedeemUseTicket(t.Context(), expired, helperPID); !errors.Is(err, api.ErrTicketInvalid) {
+	if _, err := f.s.RedeemUseTicket(t.Context(), expired, peerOf(helperPID)); !errors.Is(err, api.ErrTicketInvalid) {
 		t.Fatalf("expired ticket: %v", err)
 	}
-	if _, err := f.s.RedeemUseTicket(t.Context(), ports.Ticket{0xee}, helperPID); !errors.Is(err, api.ErrTicketInvalid) {
+	if _, err := f.s.RedeemUseTicket(t.Context(), ports.Ticket{0xee}, peerOf(helperPID)); !errors.Is(err, api.ErrTicketInvalid) {
 		t.Fatalf("unknown ticket: %v", err)
 	}
-	for _, pid := range []int{0, agentPID, 999} {
-		if err := f.s.TrustRedeemer(t.Context(), pid); !errors.Is(err, api.ErrPeerNotTrusted) {
+	for _, pid := range []int{0, agentPID, berthPID, 999} {
+		if err := f.s.TrustRedeemer(t.Context(), peerOf(pid)); !errors.Is(err, api.ErrPeerNotTrusted) {
 			t.Fatalf("peer %d: %v", pid, err)
 		}
 	}
@@ -204,17 +270,17 @@ func TestHashChangeMakesTheGrantStale(t *testing.T) {
 
 func TestRefusals(t *testing.T) {
 	f := newFixture(t, &testutil.Approver{})
-	if _, err := f.s.AuthorizeUse(t.Context(), &berthv1.AuthorizeUseRequest{Name: "missing", ExePath: tool}, berthPID); !errors.Is(err, api.ErrSecretNotFound) {
+	if _, err := f.s.AuthorizeUse(t.Context(), &berthv1.AuthorizeUseRequest{Name: "missing", ExePath: tool}, peerOf(berthPID)); !errors.Is(err, api.ErrSecretNotFound) {
 		t.Fatalf("missing secret: %v", err)
 	}
-	if _, err := f.s.GrantSecret(t.Context(), &berthv1.GrantSecretRequest{Name: "missing", ExePath: tool}, berthPID); !errors.Is(err, api.ErrSecretNotFound) {
+	if _, err := f.s.GrantSecret(t.Context(), &berthv1.GrantSecretRequest{Name: "missing", ExePath: tool}, peerOf(berthPID)); !errors.Is(err, api.ErrSecretNotFound) {
 		t.Fatalf("grant missing secret: %v", err)
 	}
 	f.request(t)
-	if _, err := f.s.GrantSecret(t.Context(), &berthv1.GrantSecretRequest{Name: "gh-token", ExePath: "/nope"}, berthPID); !errors.Is(err, api.ErrExecutableNotFound) {
+	if _, err := f.s.GrantSecret(t.Context(), &berthv1.GrantSecretRequest{Name: "gh-token", ExePath: "/nope"}, peerOf(berthPID)); !errors.Is(err, api.ErrExecutableNotFound) {
 		t.Fatalf("missing executable: %v", err)
 	}
-	if _, err := f.s.GrantSecret(t.Context(), &berthv1.GrantSecretRequest{Name: "gh-token", ExePath: tool, ArgsGlob: "["}, berthPID); !errors.Is(err, api.ErrBadGlob) {
+	if _, err := f.s.GrantSecret(t.Context(), &berthv1.GrantSecretRequest{Name: "gh-token", ExePath: tool, ArgsGlob: "["}, peerOf(berthPID)); !errors.Is(err, api.ErrBadGlob) {
 		t.Fatalf("bad glob: %v", err)
 	}
 	if got := f.use(t).GetOutcome(); got != berthv1.UseOutcome_USE_OUTCOME_NO_GRANT {
@@ -308,37 +374,240 @@ func TestOneStoreDialogPerName(t *testing.T) {
 	}
 }
 
-type satisfier struct {
-	calls int
-	ok    bool
-}
-
-func (s *satisfier) Satisfies(_ context.Context, _, requirement string) (bool, error) {
-	s.calls++
-	return s.ok && requirement == helperRequirement, nil
-}
-
-func TestSignedHelperNeedsTeamIdentifierAndRequirement(t *testing.T) {
-	signed := ports.Executable{Path: helperExe, TeamID: HelperTeamID, SigningID: HelperSigningID}
-	cases := []struct {
-		name string
-		exe  ports.Executable
-		req  bool
-		want bool
-	}{
-		{"signed and satisfies", signed, true, true},
-		{"signed but fails the requirement", signed, false, false},
-		{"other team", ports.Executable{Path: helperExe, TeamID: "OTHER", SigningID: HelperSigningID}, true, false},
-		{"other identifier", ports.Executable{Path: helperExe, TeamID: HelperTeamID, SigningID: "x"}, true, false},
-		{"unsigned", ports.Executable{Path: helperExe}, true, false},
+// TestOnlyTheSignedCLIGetsTickets is the store-and-use-never-read rule: a process an agent
+// wrote can start berth-native itself, so it must never hold a ticket.
+func TestOnlyTheSignedCLIGetsTickets(t *testing.T) {
+	f := newFixture(t, &testutil.Approver{})
+	f.request(t)
+	f.grant(t, "")
+	req := &berthv1.AuthorizeUseRequest{Name: "gh-token", ExePath: tool}
+	if _, err := f.s.AuthorizeUse(t.Context(), req, peerOf(agentPID)); !errors.Is(err, api.ErrPeerNotTrusted) {
+		t.Fatalf("agent process: %v", err)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			sat := &satisfier{ok: tc.req}
-			got, err := SignedHelper(sat)(t.Context(), tc.exe)
-			if err != nil || got != tc.want {
-				t.Fatalf("got %v, %v", got, err)
-			}
-		})
+	// berth-native is trusted to redeem, not to be issued tickets.
+	if _, err := f.s.AuthorizeUse(t.Context(), req, peerOf(helperPID)); !errors.Is(err, api.ErrPeerNotTrusted) {
+		t.Fatalf("helper as caller: %v", err)
+	}
+	f.code.set(berthPID, ports.LiveCode{CDHash: cliHash, Status: ports.CSValid})
+	if _, err := f.s.AuthorizeUse(t.Context(), req, peerOf(berthPID)); !errors.Is(err, api.ErrPeerNotTrusted) {
+		t.Fatalf("berth without the hardened runtime: %v", err)
+	}
+	f.code.set(berthPID, ports.LiveCode{CDHash: cliHash, Status: ports.CSRuntime})
+	if _, err := f.s.AuthorizeUse(t.Context(), req, peerOf(berthPID)); !errors.Is(err, api.ErrPeerNotTrusted) {
+		t.Fatalf("berth with an invalid signature: %v", err)
+	}
+	if _, err := f.s.AuthorizeUse(t.Context(), req, ports.Peer{PID: 999}); !errors.Is(err, api.ErrPeerNotTrusted) {
+		t.Fatalf("unknown process: %v", err)
+	}
+	if h := f.history(t, "grant/1"); len(h) != 2 {
+		t.Fatalf("a refused caller touched the grant: %+v", h)
+	}
+}
+
+func TestRebuiltCLIIsPinnedAgain(t *testing.T) {
+	f := newFixture(t, &testutil.Approver{})
+	f.request(t)
+	f.grant(t, "")
+	rebuilt := ports.CDHash{0xc2}
+	f.code.set(berthPID, ports.LiveCode{CDHash: rebuilt, Status: signedLive})
+	if _, err := f.s.AuthorizeUse(t.Context(), &berthv1.AuthorizeUseRequest{Name: "gh-token", ExePath: tool}, peerOf(berthPID)); !errors.Is(err, api.ErrPeerNotTrusted) {
+		t.Fatalf("before the file changed: %v", err)
+	}
+	f.pinsMu.Lock()
+	f.pins[CLISigningID] = rebuilt
+	f.pinsMu.Unlock()
+	if got := f.use(t).GetOutcome(); got != berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED {
+		t.Fatalf("after make build: %v", got)
+	}
+}
+
+func TestInterpreterGrantsNeedTheFlag(t *testing.T) {
+	f := newFixture(t, &testutil.Approver{})
+	f.request(t)
+	for _, exe := range []string{"/bin/sh", "/opt/x/deploy.sh"} {
+		req := &berthv1.GrantSecretRequest{Name: "gh-token", ExePath: exe}
+		if _, err := f.s.GrantSecret(t.Context(), req, peerOf(berthPID)); !errors.Is(err, api.ErrInterpreter) {
+			t.Fatalf("%s without the flag: %v", exe, err)
+		}
+	}
+	if len(f.approver.PowerPrompts()) != 0 {
+		t.Fatal("a refused interpreter grant prompted")
+	}
+	resp, err := f.s.GrantSecret(t.Context(), &berthv1.GrantSecretRequest{Name: "gh-token", ExePath: "/bin/sh", AllowInterpreter: true}, peerOf(berthPID))
+	if err != nil || resp.GetOutcome() != berthv1.GrantOutcome_GRANT_OUTCOME_GRANTED {
+		t.Fatalf("with the flag: %v, %v", resp, err)
+	}
+	if p := f.approver.PowerPrompts(); len(p) != 1 || !p[0].Interpreter {
+		t.Fatalf("prompt did not warn about the interpreter: %+v", p)
+	}
+	f.grant(t, "")
+	if p := f.approver.PowerPrompts(); p[1].Interpreter {
+		t.Fatalf("a compiled tool was flagged as an interpreter: %+v", p[1])
+	}
+}
+
+func TestIsInterpreter(t *testing.T) {
+	for path, want := range map[string]bool{
+		"/bin/zsh": true, "/usr/bin/python3.12": true, "/usr/bin/env": true, "/opt/homebrew/bin/node": true,
+		"/usr/bin/osascript": true, "/usr/local/bin/gh": false, "/usr/bin/curl": false,
+	} {
+		if got := isInterpreter(ports.Executable{Path: path}); got != want {
+			t.Errorf("%s: %v", path, got)
+		}
+	}
+}
+
+// slowTickets makes every ticket take a moment, so later uses queue up behind an earlier one.
+type slowTickets struct{ testutil.TicketSource }
+
+func (s *slowTickets) NewTicket(ctx context.Context) (ports.Ticket, error) {
+	time.Sleep(30 * time.Millisecond)
+	return s.TicketSource.NewTicket(ctx)
+}
+
+// TestConcurrentUsesKeepTheirOwnTickets queues two callers behind a use already in its effect,
+// the moment where data carried outside the entity's turn gets swapped or lost.
+func TestConcurrentUsesKeepTheirOwnTickets(t *testing.T) {
+	f := newFixtureWith(t, &testutil.Approver{}, &slowTickets{})
+	f.request(t)
+	f.grant(t, "")
+	type got struct {
+		caller int
+		ticket ports.Ticket
+		err    error
+	}
+	results := make(chan got, 3)
+	use := func(pid int) {
+		resp, err := f.s.AuthorizeUse(context.Background(), &berthv1.AuthorizeUseRequest{Name: "gh-token", ExePath: tool}, peerOf(pid))
+		results <- got{pid, ticketOf(resp), err}
+	}
+	go use(berthPID)
+	time.Sleep(10 * time.Millisecond)
+	go use(berthPID)
+	go use(berth2PID)
+	helperOf := map[int]int{berthPID: helperPID, berth2PID: helper2PID}
+	seen := map[ports.Ticket]bool{}
+	for range 3 {
+		r := <-results
+		if r.err != nil {
+			t.Fatalf("use by %d: %v", r.caller, r.err)
+		}
+		if seen[r.ticket] {
+			t.Fatal("two callers got the same ticket")
+		}
+		seen[r.ticket] = true
+		// Each ticket is bound to its own caller, so only that caller's helper can redeem it.
+		if _, err := f.s.RedeemUseTicket(t.Context(), r.ticket, peerOf(helperOf[r.caller])); err != nil {
+			t.Fatalf("ticket for %d did not redeem in its own helper: %v", r.caller, err)
+		}
+	}
+}
+
+func TestCancelledUseLeavesNothingForTheNext(t *testing.T) {
+	f := newFixtureWith(t, &testutil.Approver{}, &slowTickets{})
+	f.request(t)
+	f.grant(t, "")
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Millisecond)
+	defer cancel()
+	if _, err := f.s.AuthorizeUse(ctx, &berthv1.AuthorizeUseRequest{Name: "gh-token", ExePath: tool}, peerOf(berthPID)); !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("cancelled use: %v", err)
+	}
+	resp, err := f.s.AuthorizeUse(t.Context(), &berthv1.AuthorizeUseRequest{Name: "gh-token", ExePath: tool}, peerOf(berth2PID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.s.RedeemUseTicket(t.Context(), ticketOf(resp), peerOf(helper2PID)); err != nil {
+		t.Fatalf("the second caller got a ticket bound to someone else: %v", err)
+	}
+}
+
+// waitingApprover keeps every prompt open until its context ends, like a person away from the Mac.
+type waitingApprover struct {
+	testutil.Approver
+	opened chan struct{}
+}
+
+func (w *waitingApprover) StoreSecret(ctx context.Context, _ ports.StorePrompt) (ports.StoreOutcome, error) {
+	w.opened <- struct{}{}
+	<-ctx.Done()
+	return ports.StoreFailed, ctx.Err()
+}
+
+func TestStopEndsOpenStorePrompts(t *testing.T) {
+	approver := &waitingApprover{opened: make(chan struct{}, 1)}
+	f := newFixture(t, approver)
+	done := make(chan berthv1.StoreOutcome, 1)
+	go func() { done <- f.request(t) }()
+	<-approver.opened
+	if !f.s.stop(2 * time.Second) {
+		t.Fatal("stop timed out")
+	}
+	select {
+	case got := <-done:
+		if got != berthv1.StoreOutcome_STORE_OUTCOME_FAILED {
+			t.Fatalf("outcome %v", got)
+		}
+	default:
+		t.Fatal("stop returned before the caller had its answer")
+	}
+	h := f.history(t, "secret/gh-token")
+	if h[0].Event != "StoreFailed" || h[0].To != "Failed" || h[0].Detail != "berthd stopped while the prompt was open" {
+		t.Fatalf("history %+v", h)
+	}
+}
+
+func TestBootEndsStoresAPreviousRunLeftPending(t *testing.T) {
+	f := newFixture(t, &testutil.Approver{})
+	ctx := t.Context()
+	at := f.clock.Now()
+	for _, name := range []string{"left-open", "kept"} {
+		if err := f.store.AddSecret(ctx, name, at); err != nil {
+			t.Fatal(err)
+		}
+		if err := f.store.SaveTransition(ctx, ports.TransitionRecord{
+			Entity: "secret/" + name, Kind: "secret", Version: 1,
+			Event: "StoreRequested", From: "Pending", To: "Pending", At: at,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if err := f.store.SaveTransition(ctx, ports.TransitionRecord{
+		Entity: "secret/kept", Kind: "secret", Version: 2,
+		Event: "StoreSucceeded", From: "Pending", To: "Stored", At: at,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := f.s.recover(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if h := f.history(t, "secret/left-open"); h[0].To != "Failed" || h[0].Detail != "interrupted" {
+		t.Fatalf("pending secret %+v", h)
+	}
+	if h := f.history(t, "secret/kept"); len(h) != 2 || h[0].To != "Stored" {
+		t.Fatalf("stored secret was touched: %+v", h)
+	}
+}
+
+type codeFiles struct {
+	ok   bool
+	hash ports.CDHash
+}
+
+func (c codeFiles) Satisfies(_ context.Context, _, requirement string) (bool, error) {
+	return c.ok && requirement == Requirement(CLISigningID), nil
+}
+
+func (c codeFiles) CDHash(context.Context, string) (ports.CDHash, error) { return c.hash, nil }
+
+func TestSignedPinnerNeedsTheRequirement(t *testing.T) {
+	if h, ok, err := SignedPinner(codeFiles{ok: true, hash: cliHash})(t.Context(), "/b/berth", CLISigningID); err != nil || !ok || h != cliHash {
+		t.Fatalf("signed: %x %v %v", h, ok, err)
+	}
+	if _, ok, _ := SignedPinner(codeFiles{ok: false, hash: cliHash})(t.Context(), "/b/berth", CLISigningID); ok {
+		t.Fatal("a file failing the requirement was pinned")
+	}
+	want := `anchor apple generic and certificate leaf[subject.OU] = "XPJ7XA42J4" and identifier "com.wesleybldc.berth.cli"`
+	if got := Requirement(CLISigningID); got != want {
+		t.Fatalf("requirement %s", got)
 	}
 }

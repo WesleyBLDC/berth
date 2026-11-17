@@ -4,23 +4,20 @@ package main
 
 import (
 	"context"
-	"path/filepath"
 
+	"berth/internal/adapters/execid"
 	"berth/internal/berthd"
 	"berth/internal/core/ports"
-	"berth/internal/paths"
 )
 
-// testTrust exists only in binaries the end to end tests build with -tags berth_e2e: it trusts
-// the unsigned fake helper they put beside berthd as berth-native. No environment variable or
-// flag reaches it, and release builds do not compile this file.
-func testTrust() berthd.TrustHelper {
-	helper, err := paths.Beside("berth-native")
-	if err != nil {
-		return nil
-	}
-	return func(_ context.Context, exe ports.Executable) (bool, error) {
-		resolved, err := filepath.EvalSymlinks(helper)
-		return err == nil && exe.Path == resolved, nil
+// testPinner exists only in binaries the end to end tests build with -tags berth_e2e. It pins
+// the berth and berth-native beside berthd by cdhash without the Apple chain requirement, so
+// the tests can sign them ad hoc (with the hardened runtime, which the live check still
+// demands). No environment variable or flag reaches it, and release builds lack this file.
+func testPinner() berthd.Pinner {
+	x := execid.New(execid.DefaultCodesign)
+	return func(ctx context.Context, path, _ string) (ports.CDHash, bool, error) {
+		h, err := x.CDHash(ctx, path)
+		return h, err == nil, err
 	}
 }

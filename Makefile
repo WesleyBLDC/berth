@@ -2,8 +2,9 @@ export DEVELOPER_DIR ?= /Applications/Xcode.app/Contents/Developer
 
 .PHONY: build native gen test test-native e2e lint fmt vuln verify breaking check hooks
 
-build: ## Build berthd and berth into bin/
+build: ## Build berthd and berth into bin/, and sign berth so berthd trusts it with secrets
 	go build -o bin/ ./cmd/...
+	scripts/sign.sh bin/berth com.wesleybldc.berth.cli
 
 native: ## Build and sign bin/berth-native with the Personal Team identity
 	scripts/build-native.sh

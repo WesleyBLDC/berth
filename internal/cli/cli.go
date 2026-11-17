@@ -39,7 +39,7 @@ const usage = `usage:
   berth secret request <name> --why "<reason>"  ask the person to store a secret; prints only "saved <name>"
   berth secret add <name>                       store a secret yourself through the native dialog
   berth secret ls [--json]                      list secrets and their consumers, never values
-  berth secret grant <name> --exe <path> [--args <glob>]
+  berth secret grant <name> --exe <path> [--args <glob>] [--allow-interpreter]
                                                 let one executable use a secret, after Touch ID
   berth run --env KEY=<name> [--env ...] -- <command> [args...]
                                                 run a command with secrets in its environment,
@@ -199,7 +199,9 @@ func reportError(w io.Writer, err error, name, exe string) int {
 	case berthv1.ErrorReason_ERROR_REASON_TICKET_INVALID:
 		line = "the use ticket was invalid, used or expired; run the command again"
 	case berthv1.ErrorReason_ERROR_REASON_PEER_NOT_TRUSTED:
-		line = "berthd does not trust this caller"
+		line = "berthd gives secrets only to the signed berth binary; run make build and use bin/berth beside bin/berthd"
+	case berthv1.ErrorReason_ERROR_REASON_INTERPRETER:
+		line = fmt.Sprintf("%s is an interpreter, so anything it runs could print the secret; add --allow-interpreter only if that is what you want", exe)
 	case berthv1.ErrorReason_ERROR_REASON_UNSPECIFIED:
 		line = err.Error()
 	}

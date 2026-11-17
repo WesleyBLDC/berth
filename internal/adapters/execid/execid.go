@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -43,7 +44,7 @@ func (x *Identity) Identify(ctx context.Context, path string) (ports.Executable,
 	if err != nil {
 		return ports.Executable{}, fmt.Errorf("resolve executable: %w", err)
 	}
-	sum, err := hashFile(resolved)
+	sum, shebang, err := hashFile(resolved)
 	if err != nil {
 		return ports.Executable{}, err
 	}
@@ -51,29 +52,64 @@ func (x *Identity) Identify(ctx context.Context, path string) (ports.Executable,
 	if err != nil {
 		return ports.Executable{}, err
 	}
-	return ports.Executable{Path: resolved, SHA256: sum, TeamID: team, SigningID: signing}, nil
+	return ports.Executable{Path: resolved, SHA256: sum, TeamID: team, SigningID: signing, Shebang: shebang}, nil
 }
 
-func hashFile(path string) ([32]byte, error) {
+func hashFile(path string) (sum [32]byte, shebang bool, err error) {
 	f, err := os.Open(path) //nolint:gosec // identifying an arbitrary executable is this adapter's job
 	if err != nil {
-		return [32]byte{}, fmt.Errorf("open executable: %w", err)
+		return sum, false, fmt.Errorf("open executable: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 	info, err := f.Stat()
 	if err != nil {
-		return [32]byte{}, fmt.Errorf("stat executable: %w", err)
+		return sum, false, fmt.Errorf("stat executable: %w", err)
 	}
 	if !info.Mode().IsRegular() {
-		return [32]byte{}, fmt.Errorf("executable %s is not a regular file", path)
+		return sum, false, fmt.Errorf("executable %s is not a regular file", path)
 	}
 	h := sha256.New()
-	if _, err := io.Copy(h, f); err != nil {
-		return [32]byte{}, fmt.Errorf("read executable: %w", err)
+	var head headWriter
+	if _, err := io.Copy(io.MultiWriter(h, &head), f); err != nil {
+		return sum, false, fmt.Errorf("read executable: %w", err)
 	}
-	var sum [32]byte
 	h.Sum(sum[:0])
-	return sum, nil
+	return sum, head.n >= 2 && head.b[0] == '#' && head.b[1] == '!', nil
+}
+
+// headWriter keeps the first two bytes written to it.
+type headWriter struct {
+	b [2]byte
+	n int
+}
+
+func (w *headWriter) Write(p []byte) (int, error) {
+	w.n += copy(w.b[min(w.n, 2):], p)
+	return len(p), nil
+}
+
+// CDHash returns the code directory hash codesign reports for the file's native slice, which
+// is what the kernel reports for a process running it.
+func (x *Identity) CDHash(ctx context.Context, path string) (ports.CDHash, error) {
+	var stderr bytes.Buffer
+	show := exec.CommandContext(ctx, x.codesign, "-d", "--verbose=4", path) //nolint:gosec // fixed tool, path is an argument
+	show.Stderr = &stderr
+	if err := show.Run(); err != nil {
+		return ports.CDHash{}, fmt.Errorf("codesign display: %w", err)
+	}
+	sc := bufio.NewScanner(&stderr)
+	for sc.Scan() {
+		if v, ok := strings.CutPrefix(sc.Text(), "CDHash="); ok {
+			raw, err := hex.DecodeString(v)
+			var h ports.CDHash
+			if err != nil || len(raw) != len(h) {
+				return ports.CDHash{}, fmt.Errorf("codesign printed a malformed CDHash for %s", path)
+			}
+			copy(h[:], raw)
+			return h, nil
+		}
+	}
+	return ports.CDHash{}, fmt.Errorf("%s has no code directory hash", path)
 }
 
 // signature verifies the code signature before trusting what it names: codesign -dv alone

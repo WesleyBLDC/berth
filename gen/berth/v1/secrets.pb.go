@@ -687,9 +687,12 @@ type GrantSecretRequest struct {
 	Name      string                 `protobuf:"bytes,2,opt,name=name,proto3" json:"name,omitempty"`
 	ExePath   string                 `protobuf:"bytes,3,opt,name=exe_path,json=exePath,proto3" json:"exe_path,omitempty"`
 	// args_glob limits the arguments the grant allows; empty allows any.
-	ArgsGlob      string `protobuf:"bytes,4,opt,name=args_glob,json=argsGlob,proto3" json:"args_glob,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	ArgsGlob string `protobuf:"bytes,4,opt,name=args_glob,json=argsGlob,proto3" json:"args_glob,omitempty"`
+	// allow_interpreter accepts an interpreter executable; the Touch ID text then warns that it
+	// can print the secret.
+	AllowInterpreter bool `protobuf:"varint,5,opt,name=allow_interpreter,json=allowInterpreter,proto3" json:"allow_interpreter,omitempty"`
+	unknownFields    protoimpl.UnknownFields
+	sizeCache        protoimpl.SizeCache
 }
 
 func (x *GrantSecretRequest) Reset() {
@@ -748,6 +751,13 @@ func (x *GrantSecretRequest) GetArgsGlob() string {
 		return x.ArgsGlob
 	}
 	return ""
+}
+
+func (x *GrantSecretRequest) GetAllowInterpreter() bool {
+	if x != nil {
+		return x.AllowInterpreter
+	}
+	return false
 }
 
 type GrantSecretResponse struct {
@@ -1072,14 +1082,15 @@ const file_berth_v1_secrets_proto_rawDesc = "" +
 	"\flast_used_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"lastUsedAt\x12\x1b\n" +
 	"\tuse_count\x18\n" +
-	" \x01(\x03R\buseCount\"\xc7\x01\n" +
+	" \x01(\x03R\buseCount\"\xf4\x01\n" +
 	"\x12GrantSecretRequest\x12)\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tB\n" +
 	"\xbaH\ar\x05\x10\b\x18\x80\x01R\trequestId\x127\n" +
 	"\x04name\x18\x02 \x01(\tB#\xbaH r\x1e2\x1c^[a-z0-9][a-z0-9._-]{0,127}$R\x04name\x12&\n" +
 	"\bexe_path\x18\x03 \x01(\tB\v\xbaH\br\x06\x18\x80\b:\x01/R\aexePath\x12%\n" +
-	"\targs_glob\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\x80\bR\bargsGlob\"w\n" +
+	"\targs_glob\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\x80\bR\bargsGlob\x12+\n" +
+	"\x11allow_interpreter\x18\x05 \x01(\bR\x10allowInterpreter\"w\n" +
 	"\x13GrantSecretResponse\x120\n" +
 	"\aoutcome\x18\x01 \x01(\x0e2\x16.berth.v1.GrantOutcomeR\aoutcome\x12.\n" +
 	"\bconsumer\x18\x02 \x01(\v2\x12.berth.v1.ConsumerR\bconsumer\"\xc7\x01\n" +

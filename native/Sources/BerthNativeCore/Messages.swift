@@ -66,19 +66,36 @@ public struct ConfirmRequest: Codable, Equatable, Sendable {
     public var secret: String
     public var consumer: Consumer
     public var argsGlob: String
+    /// True when berthd found the consumer is an interpreter, which could print the secret.
+    /// Absent means false.
+    public var interpreter: Bool
     public var requester: Requester
 
     enum CodingKeys: String, CodingKey {
-        case action, secret, consumer, requester
+        case action, secret, consumer, requester, interpreter
         case argsGlob = "args_glob"
     }
 
-    public init(action: String, secret: String, consumer: Consumer, argsGlob: String, requester: Requester) {
+    public init(
+        action: String, secret: String, consumer: Consumer, argsGlob: String, interpreter: Bool = false,
+        requester: Requester
+    ) {
         self.action = action
         self.secret = secret
         self.consumer = consumer
         self.argsGlob = argsGlob
+        self.interpreter = interpreter
         self.requester = requester
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        action = try c.decode(String.self, forKey: .action)
+        secret = try c.decode(String.self, forKey: .secret)
+        consumer = try c.decode(Consumer.self, forKey: .consumer)
+        argsGlob = try c.decode(String.self, forKey: .argsGlob)
+        interpreter = try c.decodeIfPresent(Bool.self, forKey: .interpreter) ?? false
+        requester = try c.decode(Requester.self, forKey: .requester)
     }
 }
 

@@ -22,6 +22,7 @@ import (
 	"berth/internal/adapters/ticket"
 	"berth/internal/core/daemon"
 	"berth/internal/core/machine"
+	"berth/internal/core/ports"
 	"berth/internal/paths"
 
 	"connectrpc.com/connect/v2"
@@ -33,11 +34,13 @@ type Config struct {
 	Home    string
 	Version string
 	Log     *slog.Logger
-	// Helper is the berth-native path; empty means berth-native beside the berthd executable.
+	// Helper and CLI are the berth-native and berth paths; empty means beside berthd.
 	Helper string
-	// TrustHelper decides which peer may redeem use tickets. Nil means the signed release
-	// helper (SignedHelper); only Go test code sets anything else, never the environment.
-	TrustHelper TrustHelper
+	CLI    string
+	// Pinner decides which files berthd trusts as the berth CLI and berth-native. Nil means
+	// SignedPinner (Apple's chain, Berth's team and identifier); only Go test code sets
+	// anything else, never the environment.
+	Pinner Pinner
 }
 
 type shell struct {
@@ -114,6 +117,9 @@ func Run(ctx context.Context, cfg Config) (int, error) {
 func (s *shell) run(ctx context.Context, effect daemon.Effect) ([]daemon.Event, error) {
 	switch effect.Kind {
 	case daemon.Recover:
+		if err := s.secrets.recover(ctx); err != nil {
+			return []daemon.Event{{Kind: daemon.Failed, Note: "recover secrets: " + err.Error()}}, nil
+		}
 		note := fmt.Sprintf("previous run ended in %s", effect.Previous)
 		if effect.Unclean {
 			note += ": unclean shutdown"
@@ -126,6 +132,10 @@ func (s *shell) run(ctx context.Context, effect daemon.Effect) ([]daemon.Event, 
 		}
 		return nil, nil
 	case daemon.StopServing:
+		// Open prompts end first, so their callers get an answer before the server drains.
+		if !s.secrets.stop(stopPromptsTimeout) {
+			s.log.Warn("open prompts did not record an ending in time")
+		}
 		if s.server != nil {
 			shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
 			defer cancel()
@@ -146,22 +156,37 @@ func (s *shell) run(ctx context.Context, effect daemon.Effect) ([]daemon.Event, 
 	return nil, fmt.Errorf("unknown effect %q", effect.Kind)
 }
 
+// stopPromptsTimeout bounds how long a stop waits for open prompts to record their ending.
+const stopPromptsTimeout = 5 * time.Second
+
 func newSecretsFor(ctx context.Context, cfg Config, store *sqlite.Store) (*secrets, error) {
-	helper := cfg.Helper
+	helper, cli := cfg.Helper, cfg.CLI
+	var err error
 	if helper == "" {
-		var err error
 		if helper, err = paths.Beside("berth-native"); err != nil {
 			return nil, fmt.Errorf("find berth-native: %w", err)
 		}
 	}
+	if cli == "" {
+		if cli, err = paths.Beside("berth"); err != nil {
+			return nil, fmt.Errorf("find berth: %w", err)
+		}
+	}
 	execs := execid.New(execid.DefaultCodesign)
-	trust := cfg.TrustHelper
-	if trust == nil {
-		trust = SignedHelper(execs)
+	pin := cfg.Pinner
+	if pin == nil {
+		pin = SignedPinner(execs)
+	}
+	code := peer.NewCode()
+	trusted := func(path, identifier string) *trustedFile {
+		f := &trustedFile{path: path, identifier: identifier, pin: pin, code: code, log: cfg.Log}
+		f.repin(ctx)
+		return f
 	}
 	return newSecrets(ctx, secretsDeps{
 		Log: cfg.Log, Store: store, Records: store, Clock: clock.System{},
-		Approver: native.New(helper), Execs: execs, Peers: peer.New(), Tickets: ticket.New(), Trust: trust,
+		Approver: native.New(helper), Execs: execs, Peers: peer.New(), Tickets: ticket.New(),
+		CLI: trusted(cli, CLISigningID), Helper: trusted(helper, HelperSigningID),
 	}), nil
 }
 
@@ -188,8 +213,10 @@ func (s *shell) serve(ctx context.Context) error {
 		Handler: mux, Protocols: protocols, ReadHeaderTimeout: 5 * time.Second,
 		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
 			if uc, ok := c.(*net.UnixConn); ok {
-				if pid, err := socket.KernelPeerPID(uc); err == nil {
-					return api.WithPeerPID(ctx, pid)
+				pid, pidErr := socket.KernelPeerPID(uc)
+				token, tokenErr := socket.KernelPeerToken(uc)
+				if pidErr == nil && tokenErr == nil {
+					return api.WithPeer(ctx, ports.Peer{PID: pid, AuditToken: token})
 				}
 			}
 			return ctx

@@ -4,5 +4,6 @@ package main
 
 import "berth/internal/berthd"
 
-// testTrust is nil in every real build, so berthd trusts only the signed berth-native.
-func testTrust() berthd.TrustHelper { return nil }
+// testPinner is nil in every real build, so berthd trusts only Berth binaries signed by
+// Berth's team through Apple's chain.
+func testPinner() berthd.Pinner { return nil }
