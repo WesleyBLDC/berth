@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"slices"
 	"strings"
@@ -375,5 +376,57 @@ func TestAnIDLeftInFlightIsRefusedToTheNextConnection(t *testing.T) {
 	}
 	if len(fb.Sent()) != 1 {
 		t.Fatalf("browser got %q; the reused id must not reach it", fb.Sent())
+	}
+}
+
+// Connections without the token hold no descriptor for long: a refused request closes its
+// connection, and no more than MaxConns are open at once, whoever holds them.
+func TestConnectionsAreCappedAndRefusalsClose(t *testing.T) {
+	_, endpoint, _ := serve(t)
+	addr := strings.TrimPrefix(endpoint, "http://")
+	var d net.Dialer
+	raw, err := d.DialContext(t.Context(), "tcp", addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := raw.Write([]byte("GET /json/version HTTP/1.1\r\nHost: x\r\n\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	_ = raw.SetReadDeadline(time.Now().Add(5 * time.Second))
+	if _, err := io.ReadAll(raw); err != nil {
+		t.Fatalf("a request without the token must get its answer and a closed connection, got %v", err)
+	}
+	_ = raw.Close()
+
+	var held []net.Conn
+	for range cdpproxy.MaxConns {
+		c, err := d.DialContext(t.Context(), "tcp", addr)
+		if err != nil {
+			t.Fatal(err)
+		}
+		held = append(held, c)
+	}
+	defer func() {
+		for _, c := range held {
+			_ = c.Close()
+		}
+	}()
+	versionWithin := func(d time.Duration) error {
+		ctx, cancel := context.WithTimeout(t.Context(), d)
+		defer cancel()
+		req, _ := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/json/version", nil)
+		req.Header.Set(cdpproxy.TokenHeader, token)
+		resp, err := (&http.Client{Transport: &http.Transport{}}).Do(req)
+		if err == nil {
+			_ = resp.Body.Close()
+		}
+		return err
+	}
+	if err := versionWithin(300 * time.Millisecond); err == nil {
+		t.Fatalf("a request past %d open connections was served", cdpproxy.MaxConns)
+	}
+	_ = held[0].Close()
+	if err := versionWithin(5 * time.Second); err != nil {
+		t.Fatalf("a freed slot must serve the next request: %v", err)
 	}
 }

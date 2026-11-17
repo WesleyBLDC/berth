@@ -36,6 +36,11 @@ const (
 	// maxTracked bounds the calls in flight and the sessions one connection can have tracked, and
 	// the calls left in flight across connections.
 	maxTracked = 10_000
+	// MaxConns bounds the connections open to one endpoint, token or not; one agent needs a
+	// WebSocket and a /json/version request.
+	MaxConns = 8
+	// idleTimeout closes a kept alive connection that sends nothing more.
+	idleTimeout = 30 * time.Second
 	// DefaultResetWait bounds how long undoing a connection's state takes, and so how long the
 	// next connection waits.
 	DefaultResetWait = 5 * time.Second
@@ -74,8 +79,8 @@ func (p *Proxy) Serve(id string, conn ports.BrowserConn, tokenHash [32]byte) (st
 	mux.HandleFunc("GET /json/version/", e.version)
 	mux.HandleFunc("GET /devtools/browser/"+id, e.socket)
 	mux.HandleFunc("/", func(w http.ResponseWriter, _ *http.Request) { http.NotFound(w, nil) })
-	srv := &http.Server{Handler: e.gate(mux), ReadHeaderTimeout: 5 * time.Second}
-	go func() { _ = srv.Serve(ln) }()
+	srv := &http.Server{Handler: e.gate(mux), ReadHeaderTimeout: 5 * time.Second, IdleTimeout: idleTimeout}
+	go func() { _ = srv.Serve(newLimitListener(ln, MaxConns)) }()
 	var once sync.Once
 	stop := func() {
 		once.Do(func() {
@@ -126,10 +131,13 @@ func (e *endpoint) gate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		got := sha256.Sum256([]byte(r.Header.Get(TokenHeader)))
 		if subtle.ConstantTimeCompare(got[:], e.tokenHash[:]) != 1 {
+			// A caller without the token keeps no connection open.
+			w.Header().Set("Connection", "close")
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
 			return
 		}
 		if r.Header.Get("Origin") != "" {
+			w.Header().Set("Connection", "close")
 			http.Error(w, "requests from web pages are refused", http.StatusForbidden)
 			return
 		}
@@ -433,6 +441,50 @@ func (e *endpoint) answered(ctx context.Context, c *client) bool {
 			return false
 		}
 	}
+}
+
+// limitListener lets at most cap(slots) connections be open at once; Accept waits for a free
+// slot, so more connections wait in the kernel's queue instead of holding berthd's descriptors.
+type limitListener struct {
+	net.Listener
+	slots     chan struct{}
+	done      chan struct{}
+	closeOnce sync.Once
+}
+
+func newLimitListener(ln net.Listener, n int) *limitListener {
+	return &limitListener{Listener: ln, slots: make(chan struct{}, n), done: make(chan struct{})}
+}
+
+func (l *limitListener) Accept() (net.Conn, error) {
+	select {
+	case l.slots <- struct{}{}:
+	case <-l.done:
+		return nil, net.ErrClosed
+	}
+	c, err := l.Listener.Accept()
+	if err != nil {
+		<-l.slots
+		return nil, err
+	}
+	return &limitConn{Conn: c, release: func() { <-l.slots }}, nil
+}
+
+func (l *limitListener) Close() error {
+	l.closeOnce.Do(func() { close(l.done) })
+	return l.Listener.Close()
+}
+
+type limitConn struct {
+	net.Conn
+	once    sync.Once
+	release func()
+}
+
+func (c *limitConn) Close() error {
+	err := c.Conn.Close()
+	c.once.Do(c.release)
+	return err
 }
 
 // emptyResult is the success reply for a method the proxy answers itself.
