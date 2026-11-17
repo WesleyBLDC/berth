@@ -404,6 +404,35 @@ func TestStartProxyLimitsStartsPerHour(t *testing.T) {
 	}
 }
 
+// TestStartProxyCountsRefusalsAgainstTheLimit: a call refused for want of a grant counts too, so
+// an agent session cannot add UseRefused rows without limit.
+func TestStartProxyCountsRefusalsAgainstTheLimit(t *testing.T) {
+	f := newFixture(t, &testutil.Approver{})
+	f.request(t)
+	f.s.AgentLive = func(_ context.Context, id string) bool { return id == agentSession }
+	fs := newFakeStarter(t, f)
+	ctx := api.WithAgentSession(t.Context(), agentSession)
+	for i := range maxStartsPerHour + 3 {
+		var got *berthv1.StartProxyResponse
+		err := f.s.StartProxy(ctx, &berthv1.StartProxyRequest{Names: []string{"gh-token"}}, func(r *berthv1.StartProxyResponse) error { got = r; return nil })
+		switch {
+		case i < maxStartsPerHour && (err != nil || got.GetOutcome() != berthv1.UseOutcome_USE_OUTCOME_NO_GRANT):
+			t.Fatalf("call %d: %v %v", i, got, err)
+		case i >= maxStartsPerHour && !errors.Is(err, api.ErrRateLimited):
+			t.Fatalf("call %d past the limit: %v %v", i, got, err)
+		}
+	}
+	refused := 0
+	for _, r := range f.history(t, "secret/gh-token") {
+		if r.Event == "UseRefused" {
+			refused++
+		}
+	}
+	if fs.starts() != 0 || refused > maxStartsPerHour {
+		t.Fatalf("%d starts, %d refusals recorded, want at most %d", fs.starts(), refused, maxStartsPerHour)
+	}
+}
+
 func TestStartProxyWithAnUnreadableCAStopsTheProxy(t *testing.T) {
 	f := agentFixture(t)
 	fs := newFakeStarter(t, f)

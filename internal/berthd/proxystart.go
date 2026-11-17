@@ -17,8 +17,9 @@ const (
 	// maxStartedProxies bounds the berth-proxy processes one agent session can have berthd run
 	// at once, since each one is a process of the owner's that the agent asked for.
 	maxStartedProxies = 4
-	// maxStartsPerHour bounds how many proxies one agent session can have berthd start in any
-	// rolling hour, so a session cannot churn owner processes within the concurrent limit.
+	// maxStartsPerHour bounds how many proxies one agent session can ask berthd to start in any
+	// rolling hour, refused ones included, so a session can neither churn owner processes within
+	// the concurrent limit nor add audit rows without one.
 	maxStartsPerHour = 30
 	maxCAFile        = 64 << 10
 )
@@ -27,8 +28,15 @@ const (
 // agent never holds the process that holds the values: it cannot signal, trace or read it. The
 // proxy authorizes on the owner socket like any other, and berthd records the caller's agent
 // session on its proxy session, so the agent session's end stops it. It runs until ctx ends
-// (the caller's stream closed), its session stops, or it exits.
+// (the caller's stream closed), its session stops, or it exits. The call counts against the
+// agent session's limits before anything else, refusals included, since each NO_GRANT writes an
+// audit row.
 func (s *secrets) StartProxy(ctx context.Context, req *berthv1.StartProxyRequest, send func(*berthv1.StartProxyResponse) error) error {
+	agent := api.AgentSession(ctx)
+	if !s.reserveStart(agent) {
+		return api.ErrRateLimited
+	}
+	defer s.releaseStart(agent)
 	for _, name := range req.GetNames() {
 		_, ok, err := s.activeProxyGrant(ctx, name)
 		if err != nil {
@@ -38,11 +46,6 @@ func (s *secrets) StartProxy(ctx context.Context, req *berthv1.StartProxyRequest
 			return send(&berthv1.StartProxyResponse{Outcome: berthv1.UseOutcome_USE_OUTCOME_NO_GRANT})
 		}
 	}
-	agent := api.AgentSession(ctx)
-	if !s.reserveStart(agent) {
-		return api.ErrRateLimited
-	}
-	defer s.releaseStart(agent)
 	if s.StartProxyProcess == nil {
 		return api.ErrProxyNotStarted
 	}
