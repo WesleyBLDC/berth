@@ -278,10 +278,14 @@ Built on branch `m2a` from `main` at 6de1d7b: items 1 to 10, each with its own c
 
 ### Review fixes (2026-11-17)
 
-- **Bounded memory:** `actors.evict` stops a session's actor when it reaches `Stopped`; `ended` keeps at most 200 sessions and none older than an hour; kept strings are clipped (`discovery.Clip`). `TestChurnStaysBounded` churns 600 fake browsers and fails without either bound.
+- **Bounded memory:** `actors` stops a session's actor when it reaches `Stopped` (see Later fixes); `ended` keeps at most 200 sessions and none older than an hour; kept strings are clipped (`discovery.Clip`). `TestChurnStaysBounded` churns 600 fake browsers and fails without either bound.
 - **Terminal safety:** every process chosen string in `ps`, `inspect` and `stop` output goes through `shown`, which quotes it with `strconv.QuoteToGraphic` when it holds anything not graphic; `TestSessionTextIsEscaped` plants ESC, CR, LF, BEL, DEL, U+202E and U+0085.
 - **Stop branches:** tests fail if `App` leaves the force rule, or if the SIGKILL fan out drops the uid filter; `StopTimedOut` is driven through to `SignalKill` with a 20 ms grace.
 - **Leftover evidence:** a CDP port alone no longer counts (decision 5).
 - **procargs2:** argv is read at `4 + roundup(len(exec path) + 1, 8)`, measured on macOS 26.5 for exec paths of every length modulo 8; a buffer that does not fit that layout, or that has more than 4,096 arguments, is refused, and the session carries `args_unreadable`. An empty `argv[0]` from the real kernel reads back as `["", "30"]`; the old parser read the environment as the second argument.
 - **kqueue:** `WatchPID` blocks on an `EVFILT_USER` wake instead of a one second poll, so ending its context closes the kqueue at once; `WatchExit` ends a refused watch right away. `TestRefusedWatchesCloseTheirKqueue` fails without it (204 descriptors open after 200 refused watches).
 - The agent socket test names the three sessions methods.
+
+### Later fixes (2026-11-17)
+
+- **No actor outlives Stopped:** `actors` takes a `final` state; an actor stops itself once a transition reaches it, and none is started for an entity already in it, so the boot `recover` path, a `StopRequested` racing the exit, and the grace timer racing the exit can no longer leave a goroutine for a Stopped session. `TestBootEndsSessionsThatAreGone` and `TestLateEventsToAStoppedSessionStartNoActor` fail without it.

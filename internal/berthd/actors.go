@@ -22,6 +22,9 @@ type actors[S ~string, E machine.Event, F any] struct {
 	initial    S
 	transition machine.Transition[S, E, F]
 	run        func(entity string) machine.Runner[E, F]
+	// final, when set, is a state no event leaves: an actor stops once it reaches it, and none
+	// is started for an entity already in it, so no path leaves a goroutine behind for it.
+	final S
 
 	mu   sync.Mutex
 	live map[string]*slot[S, E, F]
@@ -35,7 +38,7 @@ type slot[S ~string, E machine.Event, F any] struct {
 	// finished with it, so a waiter only ever sees its own outcome and its own data.
 	turn    chan struct{}
 	stopped chan struct{}
-	// cancel stops this actor alone, for evict.
+	// cancel stops this actor alone, for drop.
 	cancel context.CancelFunc
 
 	mu     sync.Mutex
@@ -72,10 +75,18 @@ func (a *actors[S, E, F]) get(ctx context.Context, entity string) (*slot[S, E, F
 		Entity: entity, Kind: a.kind, Initial: a.initial, Transition: a.transition, Run: a.run(entity),
 		Store: a.store, Clock: a.clock,
 		Rejected: func(err error) { sl.tell(applied{err: err}) },
-		Applied:  func(rec ports.TransitionRecord) { sl.tell(applied{rec: rec}) },
+		Applied: func(rec ports.TransitionRecord) {
+			sl.tell(applied{rec: rec})
+			if a.final != "" && S(rec.To) == a.final {
+				a.drop(entity, sl)
+			}
+		},
 	})
 	if err != nil {
 		return nil, err
+	}
+	if a.final != "" && actor.State() == a.final {
+		return nil, fmt.Errorf("%w: %s is %s", machine.ErrIllegal, entity, a.final)
 	}
 	sl.actor = actor
 	a.live[entity] = sl
@@ -97,16 +108,14 @@ func (a *actors[S, E, F]) get(ctx context.Context, entity string) (*slot[S, E, F
 	return sl, nil
 }
 
-// evict stops an entity's actor and forgets it, so an entity that reached a final state holds no
-// goroutine; a later get reloads it from the store.
-func (a *actors[S, E, F]) evict(entity string) {
+// drop stops an actor that reached the final state and forgets it.
+func (a *actors[S, E, F]) drop(entity string, sl *slot[S, E, F]) {
 	a.mu.Lock()
-	sl := a.live[entity]
-	delete(a.live, entity)
-	a.mu.Unlock()
-	if sl != nil {
-		sl.cancel()
+	if a.live[entity] == sl {
+		delete(a.live, entity)
 	}
+	a.mu.Unlock()
+	sl.cancel()
 }
 
 // count is how many actors are running, for tests that check they stay bounded.
@@ -216,7 +225,17 @@ func waitApplied[S ~string, E machine.Event, F any](sl *slot[S, E, F], w chan ap
 				return got.rec, nil
 			}
 		case <-sl.stopped:
-			return ports.TransitionRecord{}, fmt.Errorf("actor stopped")
+			// An actor that stopped on reaching its final state told the waiter first.
+			for {
+				select {
+				case got := <-w:
+					if got.err == nil && slices.Contains(until, got.rec.Event) {
+						return got.rec, nil
+					}
+				default:
+					return ports.TransitionRecord{}, fmt.Errorf("actor stopped")
+				}
+			}
 		}
 	}
 }

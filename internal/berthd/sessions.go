@@ -76,7 +76,7 @@ func newBrowsers(ctx context.Context, d browsersDeps) *browsers {
 	}
 	b.actors = &actors[session.State, session.Event, session.Effect]{
 		ctx: ctx, log: d.Log, store: d.Store, clock: d.Clock,
-		kind: session.Kind, initial: session.Initial, transition: session.Transition, run: b.runSession,
+		kind: session.Kind, initial: session.Initial, final: session.Stopped, transition: session.Transition, run: b.runSession,
 		live: map[string]*slot[session.State, session.Event, session.Effect]{},
 	}
 	return b
@@ -248,10 +248,9 @@ func (b *browsers) send(ctx context.Context, id string, e session.Event) {
 	}
 }
 
-// end moves a stopped session out of live, stops its actor and trims ended. b.mu is held.
+// end moves a stopped session out of live and trims ended; its actor stopped itself. b.mu is held.
 func (b *browsers) end(id string, t *tracked) {
 	delete(b.live, id)
-	b.actors.evict(session.Entity(id))
 	b.ended[id] = t
 	b.endedOrder = append(b.endedOrder, id)
 	b.trimEnded()

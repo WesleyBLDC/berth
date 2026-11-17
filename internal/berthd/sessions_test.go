@@ -161,6 +161,32 @@ func TestBootEndsSessionsThatAreGone(t *testing.T) {
 	if st, _, _ := f.store.LoadState(t.Context(), gone); st.State != string(session.Stopped) {
 		t.Fatalf("a session gone at boot is %s", st.State)
 	}
+	if f.hasActor(gone) {
+		t.Fatal("a session ended at boot kept its actor")
+	}
+}
+
+func (f *browsersFixture) hasActor(entity string) bool {
+	f.b.actors.mu.Lock()
+	defer f.b.actors.mu.Unlock()
+	_, ok := f.b.actors.live[entity]
+	return ok
+}
+
+// An event that reaches a session after it is Stopped, as a stop or the grace timer racing the
+// exit does, must not start an actor that nothing will ever stop.
+func TestLateEventsToAStoppedSessionStartNoActor(t *testing.T) {
+	f := newBrowsersFixture(t)
+	id := f.id(100)
+	f.set(t, slices.DeleteFunc(slices.Clone(f.rows), func(r testutil.FakeProcess) bool { return r.PID == 100 || r.PID == 101 })...)
+	if st, _ := f.b.state(t.Context(), session.Entity(id)); st != session.Stopped {
+		t.Fatalf("the exited session is %s", st)
+	}
+	f.b.send(t.Context(), id, session.Event{Kind: session.StopRequested})
+	f.b.send(t.Context(), id, session.Event{Kind: session.StopTimedOut})
+	if f.hasActor(session.Entity(id)) {
+		t.Fatal("a late event to a Stopped session started an actor")
+	}
 }
 
 func (f *browsersFixture) set(t *testing.T, rows ...testutil.FakeProcess) {
