@@ -11,7 +11,7 @@ It borrows Docker's model: a browser and whoever drives it is a session, a saved
 It runs only on your own Mac, talks only over a Unix socket, and has no telemetry.
 
 Berth is in pre release development.
-Terminal secrets (E2a) are done: the maintainer's manual check with real signing and Touch ID passed on 2026-11-17. The header proxy with the secret lifecycle (E2b) is built and wired and awaits the maintainer's manual check; isolated agents (E3) are in progress, with the agent socket, session tokens and `berthd` starting the proxy of agent sessions built; seeing every browser (M2) is in progress, with discovery, `berth ps`, `inspect`, `stop` and `leftovers` built and awaiting the maintainer's check; the live terminal view (M3), `WatchSessions` and `berth top`, is built and awaits the maintainer's look; managed Chromium (M4) is in progress, with the pipe driver, the browser machine, profile locks, `berth browser` and the token gated CDP proxy built, and the agent methods and `berth-mcp` still to come.
+Terminal secrets (E2a) are done: the maintainer's manual check with real signing and Touch ID passed on 2026-11-17. The header proxy with the secret lifecycle (E2b) is built and wired and awaits the maintainer's manual check; isolated agents (E3) are in progress, with the agent socket, session tokens and `berthd` starting the proxy of agent sessions built; seeing every browser (M2) is in progress, with discovery, `berth ps`, `inspect`, `stop` and `leftovers` built and awaiting the maintainer's check; the live terminal view (M3), `WatchSessions` and `berth top`, is built and awaits the maintainer's look; managed Chromium (M4) is in progress, with the pipe driver, the browser machine, profile locks, `berth browser` and the token gated CDP proxy built, and the agent methods and `berth-mcp` still to come; the Mac app (M5) is in progress, with its `berthd` client, the session list window, the menu bar count and the signed bundle built.
 See [Milestones](#milestones) for the exact status.
 
 ## Processes
@@ -19,7 +19,7 @@ See [Milestones](#milestones) for the exact status.
 ```mermaid
 flowchart LR
   CLI["berth<br/>Go CLI"]
-  APP["Berth.app<br/>SwiftUI (planned)"]
+  APP["Berth.app<br/>SwiftUI"]
   MCP["berth-mcp<br/>Go shim (planned)"]
   D["berthd<br/>Go daemon"]
   P["berth-proxy<br/>Go, one per run"]
@@ -32,7 +32,7 @@ flowchart LR
   D -->|starts for agent<br/>sessions| P
   P -->|Connect over<br/>Unix socket| D
   P -->|read, value<br/>on fd 3| N
-  APP -.-> D
+  APP -->|Connect JSON over<br/>Unix socket| D
   MCP -.-> D
   D -->|one JSON line<br/>per run| N
   N --> K
@@ -46,7 +46,7 @@ flowchart LR
 | `berth` | Go | Built | The command line client: `status`, `debug state`, `secret request`, `secret add`, `secret ls`, `secret grant`, `secret proxy`, `secret revoke`, `secret rm`, `secret rotate`, `run`, `ps`, `inspect`, `stop`, `leftovers`, `top`, `agent session`, `browser launch`, `browser ls`, `browser close`; `make build` signs it, since `berthd` gives use tickets only to the signed CLI |
 | `berth-proxy` | Go | Built | A loopback HTTPS proxy, one per `berth run --proxy` (started by `berth`, or by `berthd` as the owner for an agent session through `StartProxy`), that writes one granted header into requests to the granted hosts and tunnels everything else; standard library only; `make build` signs it, since `berthd` authorizes only the signed proxy ([the E2b plan](docs/plans/e2b-header-proxy.md)) |
 | `berth-native` | Swift | Built | The only Berth process that reads secret values from the Keychain: add, read, replace and delete, Touch ID, the secure input dialog; `berth-proxy` holds a value only after reading it through this helper |
-| `Berth.app` | Swift | Planned (M5) | Window and menu bar, live view and takeover, notifications, registers `berthd` as a login item |
+| `Berth.app` | Swift | In progress (M5) | A menu bar count and a window listing every session live from `WatchSessions` (built); the bundle carries `berthd`, `berth`, `berth-native` and `berth-proxy` in `Contents/Helpers` and the LaunchAgent plist (built); login item, notifications, live view, takeover and window pictures (planned); see [the Mac app](#mac-app-in-progress-m5) |
 | Chromium | (Google) | Built (M4) | A browser `berthd` launches itself over `--remote-debugging-pipe`, on a profile under `$BERTH_HOME/profiles`, in its own process group, with no debugging port; see [managed browsers](#managed-browsers-built-m4) |
 | `berth-mcp` | Go | Planned (M4) | A thin MCP shim for agents without a shell; holds no state and exposes only agent methods |
 | TUI | Go | Built (M3) | `berth top`, a full screen live view of every browser session inside `berth`, on Bubble Tea v2; see [the live terminal view](#live-terminal-view-built-m3) |
@@ -373,8 +373,7 @@ stateDiagram-v2
 
 | Machine | Milestone | Owns |
 |---|---|---|
-| Screen stream | M5 | One live view stream to a client, dropping stale frames |
-| Control | M5 | Whether the agent or a person drives the page |
+| Control | M5 | Whether the agent or a person drives a managed browser: `Agent`, `Person`, `Ended`; a takeover holds the agent's CDP messages in a bounded queue and replays them at release ([the M5 plan](docs/plans/m5-mac-app.md#live-view-and-takeover-for-managed-browsers-items-9-to-12)) |
 | Fill | M6 | One attempt to type a secret into a page; the value exists only between reading and typing |
 | Browser grant | M6 | A Keychain item granted to one browser profile for one site |
 
@@ -447,6 +446,16 @@ flowchart LR
 - **The token** is in `LaunchBrowserResponse` once; the request log keeps the reply without it. `berth browser launch --token-file` writes it to a new `0600` file instead of printing it.
 - **Boot and shutdown:** `StopServing` closes every managed browser and kills the process groups left after 5 seconds. At boot every live `browser/` row gets `Exited`, and every scanned browser whose profile lies under `$BERTH_HOME/profiles` is stopped: a headless shell exits when its pipe closes, but Chrome for Testing does not (checked on 2026-11-17).
 - **Not on the agent surface:** `LaunchBrowser`, `ListBrowsers` and `CloseBrowser` name any profile and see every managed browser. Agents get `OpenAgentBrowser` and `CloseAgentBrowser`, scoped by their agent session, in a later M4 item.
+
+## Mac app (in progress, M5)
+
+`Berth.app` (`macos/`, a SwiftPM package beside `native/`) is a SwiftUI menu bar item and one window ([the M5 plan](docs/plans/m5-mac-app.md)).
+
+- **Built:** `BerthAppCore` holds a Connect client that speaks JSON over HTTP/1.1 on its own socket connection per call, unary and server streaming, and checks by the peer's audit token that the signed `berthd` answers before it writes a byte ([ADR 0019](docs/adr/0019-berth-app-speaks-connect-json-over-the-socket.md)); hand written models in the proto JSON mapping; a session store that folds `WatchSessions` exactly like `berth top` and resumes after the last event id, backing off 1 to 10 seconds; and `shown`, the Swift twin of the CLI's escaping. A Go test in `internal/cli` writes the session and `shown` fixtures the Swift tests read, so the models and the escaping cannot drift silently. The shell shows the number of live sessions in the menu bar and a window with every session.
+- **Bundle:** `scripts/build-app.sh` puts the app in `Contents/MacOS/Berth` and `berthd`, `berth`, `berth-native` and `berth-proxy` in `Contents/Helpers`, beside each other so every pin works as in `bin/`; the LaunchAgent plist for `SMAppService` runs `Contents/Helpers/berthd`. Each binary is signed with its own identifier, then the bundle as `com.wesleybldc.berth`, hardened, with no entitlements and no sandbox. `make check` builds it signed ad hoc and checks the layout, the plists, every signature and that `Berth` links no `SecItem`, `SecKeychain` or `SecAccess` symbol.
+- **Shared code:** `native/` has a `BerthSocket` library (the socket, `checkPeer`, the daemon requirement, the socket path) that both `berth-native` and the app import; the app links nothing else from `native/`.
+- **End to end:** `berth-app-probe`, the app's client in a command line tool, watches a real headless browser appear and stop through the real `berthd`, resumes after the snapshot's cursor with the same changes, and refuses the ad hoc signed `berthd` under the release requirement.
+- **Planned:** the login item, "needs you" notifications from a `WatchNeeds` stream, live view and takeover of managed browsers (`WatchScreen`, `TakeControl`, `SendInput`, `ReleaseControl`, only for the signed app, which `berthd` will pin from `Contents/MacOS/Berth`), window pictures of other browsers with ScreenCaptureKit, and headful agent browsers.
 
 ## Storage (built)
 
@@ -648,7 +657,7 @@ Each milestone starts from a plan in [`docs/plans/`](docs/plans) with acceptance
 | M2 See every browser | `ProcessSource`, signature registry, owner chain, session machine (observed states), `berth ps`, `inspect`, `stop`, `leftovers` | In progress: every item built with the real headless Chromium end to end tests and the agent safety checklist walked; awaiting the maintainer's `berth ps` check on his Mac ([plan](docs/plans/m2-see-every-browser.md)) |
 | M3 Live terminal view | `WatchSessions` stream with resume, the TUI | Built, awaiting the maintainer's look: `WatchSessions` with resume, backpressure and a clean end on stop, and `berth top`, with golden view tests and a real headless Chromium end to end test ([plan](docs/plans/m3-live-terminal-view.md)) |
 | M4 Managed Chromium | `BrowserDriver` over a private CDP pipe, the token gated CDP proxy, profile locks, session tokens, `berth-mcp` | In progress: the pipe driver, the browser machine, profile locks, `berth browser launch`, `ls` and `close` and the CDP proxy with its filter are built, with a real headless Chromium end to end test; the agent methods (item 7) and `berth-mcp` (item 8) remain ([plan](docs/plans/m4-managed-chromium.md)) |
-| M5 Mac app | `Berth.app`, login item registration, live view and takeover, window pictures, notifications | Planned |
+| M5 Mac app | `Berth.app`, login item registration, live view and takeover, window pictures, notifications | In progress: the `berthd` client, the session list window, the menu bar count and the signed bundle are built and tested; login item, notifications, live view, takeover, window pictures and headful agent browsers are planned, and the GUI awaits the maintainer's look ([plan](docs/plans/m5-mac-app.md)) |
 | M6 Credentials and runbooks | Browser grants, the atomic fill, hard limits per profile, runbooks served to agents | Planned |
 | E1 Other password stores | Helper contract with 1Password and Bitwarden helpers | Optional |
 | M7 Firefox and your daily Chrome | WebDriver BiDi adapter; connecting to your own Chrome as a Touch ID power action | Planned |
@@ -681,5 +690,6 @@ Every decision that binds code has a record in [`docs/adr/`](docs/adr):
 | [0016](docs/adr/0016-brand-sleeping-key.md) | Brand is the Sleeping key |
 | [0017](docs/adr/0017-public-development-repository.md) | Public repository for development |
 | [0018](docs/adr/0018-agents-run-as-a-separate-macos-user.md) | Agents run as a separate macOS user (proposed) |
+| [0019](docs/adr/0019-berth-app-speaks-connect-json-over-the-socket.md) | Berth.app speaks Connect JSON over the socket (proposed; supersedes ADR 0015's grpc-swift-2 line) |
 
 How several coding agents split a milestone is in [docs/agentic-work.md](docs/agentic-work.md), and the rules they follow are in [AGENTS.md](AGENTS.md).

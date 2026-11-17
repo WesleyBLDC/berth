@@ -218,3 +218,34 @@ Defaults taken while he was away; each is cheap to reverse before M5 closes.
 10. **The app never registers the login item or asks for notifications or Screen Recording on its own**; each starts from a button.
 11. **Reconnect backoff** 1 second doubling to 10; **200 stopped sessions** kept, like `berth top`.
 12. **Shared fixtures**: a Go test in `internal/cli` writes the session and `shown` fixtures the Swift tests read, so the hand written models and the escaping cannot drift silently from the schema and the CLI.
+
+## Exit notes (2026-11-17, items 1 to 5)
+
+Built on branch `m5`, rebased onto `main` at 4884507 (M4 merged): the plan with ADR 0019, the app core, the app shell and bundle, the make targets, then `ARCHITECTURE.md`, each with its own commit, with `make check` passing.
+Items 6 to 15 remain.
+
+- **No proto change** in this pass; `buf breaking` is clean against `main`, and no `ErrorReason` was added.
+- **`BerthSocket`** took `Socket.swift` (less the value channel check, now `ValueChannel.swift` in `BerthNativeCore`) and `Paths.swift` from `native/`; `UnixSocket` gained `readSome` and `shutdownBoth` for streams.
+- **The client** passes against the real `berthd`: `berth-app-probe` streams a `START` snapshot, the browser's `Seen` and `Exited` changes, resumes after the cursor with the same changes, and refuses the ad hoc signed `berthd` under the release requirement (`test/e2e/app_test.go`).
+- **The bundle** moved the four Go and Swift helpers from `Contents/MacOS` to `Contents/Helpers` after the first build: `berth` and `Berth` are one file on the default case insensitive volume.
+- **Not run:** the signed `make app` (it uses the team identity from the login keychain, which this pass did not touch) and the GUI; both are manual checks 1 to 3.
+- **Outside the plan:** `TestASlowAgentIsDroppedPastTheByteLimit` in `internal/adapters/cdpproxy` (from M4) failed about once in 30 runs, because the test emitted before the proxy set its sink and kept emitting after the proxy dropped it; the test now waits for the sink and stops at the drop.
+
+### Later, from the review (2026-11-17)
+
+- **Quadratic `removeFirst`.** `HTTPReader` and `EnvelopeReader` drop consumed bytes with `Array.removeFirst`, which copies the rest each time; a large message arriving in small reads costs time quadratic in its size. A read index that compacts now and then fixes it.
+- **The head cap is approximate.** `HTTPReader.head` counts line lengths without their line endings, and a single line may hold up to 64 KiB of buffered bytes before the cap trips, so a head can pass somewhat over 64 KiB.
+- **Unicode versions can drift.** The Swift `shown` asks ICU which characters are graphic and Go uses its own Unicode tables; a character assigned in one version and not the other can be escaped on one side only. The fixture uses only long assigned code points, so it cannot catch this.
+- **No total deadline on unary reads.** A unary call bounds each read at 10 seconds, but a server that sends one byte every few seconds can hold a call open for as long as it likes; a deadline over the whole call fixes it.
+- Added after the review: a fixture test that the Swift `berthDaemonRequirement` equals Go's release requirement for berthd byte for byte, and bundle checks that no binary carries entitlements and that `berth-app-probe` is not in the bundle.
+
+### Agent safety checklist (M5, items 1 to 5)
+
+1. No agent method was added; the app uses `Handshake` and `WatchSessions` on the owner socket only.
+2. The app holds no value: it links no Keychain call (the bundle check reads `Berth`'s imported symbols), and no fixture holds a secret.
+3. No new path carries a value, so no new canary; the app's only output is the session facts `WatchSessions` already serves.
+4. No power action was added.
+5. Every process chosen string the app shows goes through `shown`, checked against the CLI's own output for an injection corpus; error text is escaped too.
+6. No mutating method was added; the app makes no mutating call yet.
+7. Every client failure is a typed `ClientError` shown as "reconnecting" with its reason, and the loop backs off to 10 seconds; nothing retries silently.
+8. OWASP agentic risks: unchanged, except that the app refuses a `berthd` that is not the signed one (a fake daemon an agent started cannot feed the person's view or, later, receive their keystrokes).
