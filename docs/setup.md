@@ -12,3 +12,21 @@ Checked on 2026-11-16 on macOS 26.5.
 | `prek` | Pre-commit hooks | Installed (0.5.11) |
 | Node and `npx` | Playwright MCP in M0 and end to end tests | Used through `npx @playwright/mcp` |
 | Apple ID in Xcode | Free signing for M0 to M7 | Personal Team; Apple Development certificate valid, team `XPJ7XA42J4`. It needs Apple's WWDR G3 intermediate (`AppleWWDRCAG3.cer` from apple.com/certificateauthority) in the login keychain, added 2026-11-16 |
+
+## macOS permissions, all of them
+
+Permissions are tied to the bundle ID plus the signing certificate, so every build keeps one stable ID and is signed with the same Apple Development certificate. The app is `com.wesleybldc.berth` from the spike onward, so a grant made once carries to the real `Berth.app`.
+
+| Permission | Who holds it | When | One time setup |
+|---|---|---|---|
+| Screen and System Audio Recording | `Berth.app` (`com.wesleybldc.berth`) | M0 proof 5, then M5 window pictures for Safari and Cowork | System Settings, Privacy and Security, Screen and System Audio Recording: turn on Berth |
+| Touch ID | `berth-native` | M0 proof 4, M6, E2 | None: Touch ID needs no grant, only a finger per prompt |
+| Keychain access per item | `berth-native` | First use of each existing item (M6, E2) | Choose Always Allow once per item; items Berth creates trust it already |
+| Login Items and Extensions | `Berth.app` registering `berthd` | M5 | System Settings, General, Login Items: allow Berth once |
+| Notifications | `Berth.app` | M5 (Needs you alerts) | Allow on first launch |
+| Chrome remote debugging toggle | Your daily Chrome | M7 only | chrome://inspect/#remote-debugging, then Allow per connection |
+| Paste from other apps | `berth` CLI or app | E2 `--from-clipboard` | Allow if macOS asks |
+| 1Password or Bitwarden CLI | Their apps | E1 only | Turn on their CLI integration |
+| Paid Apple Developer Program | Signing | M8 release only | Enroll |
+
+Not needed: Accessibility (input goes through CDP, not synthetic events), Automation (no Apple Events), Full Disk Access (scanning your own processes needs none), Local Network (loopback only), camera and microphone.
