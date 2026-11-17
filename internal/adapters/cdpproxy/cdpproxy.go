@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/coder/websocket"
@@ -26,14 +27,18 @@ const (
 	// WebSocket to loopback but cannot set a header, and URLs end up in logs.
 	TokenHeader = "X-Berth-Token" //nolint:gosec // a header name, not a credential
 	maxMessage  = 64 << 20
-	// queued bounds the messages waiting for a slow agent; past it the agent is dropped, so the
-	// pipe's reader, which Berth's own calls share, never waits on an agent.
-	queued = 1024
+	// queued and DefaultMaxQueuedBytes bound what waits for a slow agent, by count and by size;
+	// past either the agent is dropped, so the pipe's reader, which Berth's own calls share, never
+	// waits on an agent and berthd never buffers without limit.
+	queued                = 1024
+	DefaultMaxQueuedBytes = 128 << 20
 )
 
 // Proxy opens one endpoint per ready browser.
 type Proxy struct {
 	Log *slog.Logger
+	// MaxQueuedBytes bounds the bytes waiting for one agent; zero means DefaultMaxQueuedBytes.
+	MaxQueuedBytes int64
 }
 
 // Serve listens on 127.0.0.1 on a free port until stop is called.
@@ -43,7 +48,11 @@ func (p *Proxy) Serve(id string, conn ports.BrowserConn, tokenHash [32]byte) (st
 	if err != nil {
 		return "", nil, err
 	}
-	e := &endpoint{log: p.Log, id: id, conn: conn, tokenHash: tokenHash, addr: ln.Addr().String()}
+	maxBytes := p.MaxQueuedBytes
+	if maxBytes <= 0 {
+		maxBytes = DefaultMaxQueuedBytes
+	}
+	e := &endpoint{log: p.Log, id: id, conn: conn, tokenHash: tokenHash, addr: ln.Addr().String(), maxBytes: maxBytes}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /json/version", e.version)
 	mux.HandleFunc("GET /json/version/", e.version)
@@ -67,6 +76,7 @@ type endpoint struct {
 	conn      ports.BrowserConn
 	tokenHash [32]byte
 	addr      string
+	maxBytes  int64
 
 	mu     sync.Mutex
 	active *websocket.Conn
@@ -135,7 +145,12 @@ func (e *endpoint) socket(w http.ResponseWriter, r *http.Request) {
 	out := make(chan []byte, queued)
 	var dropOnce sync.Once
 	drop := func() { dropOnce.Do(cancel) }
+	var queuedBytes atomic.Int64
 	push := func(raw []byte) {
+		if queuedBytes.Add(int64(len(raw))) > e.maxBytes {
+			drop()
+			return
+		}
 		select {
 		case out <- raw:
 		default:
@@ -149,7 +164,9 @@ func (e *endpoint) socket(w http.ResponseWriter, r *http.Request) {
 			case <-ctx.Done():
 				return
 			case raw := <-out:
-				if err := ws.Write(ctx, websocket.MessageText, raw); err != nil {
+				err := ws.Write(ctx, websocket.MessageText, raw)
+				queuedBytes.Add(-int64(len(raw)))
+				if err != nil {
 					drop()
 					return
 				}

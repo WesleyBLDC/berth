@@ -22,12 +22,16 @@ const token = "proxy-test-token-canary-0c4f"
 
 func serve(t *testing.T) (*testutil.FakeBrowser, string, func()) {
 	t.Helper()
+	return serveWith(t, &cdpproxy.Proxy{Log: slog.New(slog.DiscardHandler)})
+}
+
+func serveWith(t *testing.T, p *cdpproxy.Proxy) (*testutil.FakeBrowser, string, func()) {
+	t.Helper()
 	conn, err := (&testutil.Browsers{}).Launch(t.Context(), ports.BrowserLaunch{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	fb := conn.(*testutil.FakeBrowser)
-	p := &cdpproxy.Proxy{Log: slog.New(slog.DiscardHandler)}
 	endpoint, stop, err := p.Serve("0123456789abcdef", fb, sha256.Sum256([]byte(token)))
 	if err != nil {
 		t.Fatal(err)
@@ -191,5 +195,38 @@ func TestTheConnectionEndsWithTheBrowser(t *testing.T) {
 	defer cancel()
 	if _, _, err := ws.Read(ctx); err == nil || ctx.Err() != nil {
 		t.Fatalf("the connection must end when the browser does: %v", err)
+	}
+}
+
+// An agent that stops reading while large replies pile up is dropped once the queued bytes pass
+// the limit, long before the count limit, so berthd never buffers without bound.
+func TestASlowAgentIsDroppedPastTheByteLimit(t *testing.T) {
+	fb, endpoint, _ := serveWith(t, &cdpproxy.Proxy{Log: slog.New(slog.DiscardHandler), MaxQueuedBytes: 4 << 20})
+	ws, _, err := dial(t, endpoint, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ws.SetReadLimit(8 << 20)
+	big := []byte(`{"method":"Page.big","params":{"pad":"` + strings.Repeat("x", 1<<20) + `"}}`)
+	const sent = 64
+	for range sent {
+		if err := fb.Emit(big); err != nil {
+			t.Fatal(err)
+		}
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	got := 0
+	for {
+		if _, _, err := ws.Read(ctx); err != nil {
+			if ctx.Err() != nil {
+				t.Fatal("the connection neither ended nor delivered everything")
+			}
+			break
+		}
+		got++
+	}
+	if got >= sent {
+		t.Fatalf("the agent got all %d replies (%d MiB); the byte limit must drop it first", got, got)
 	}
 }
