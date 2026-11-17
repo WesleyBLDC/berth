@@ -8,9 +8,11 @@ import (
 	"os/signal"
 	"syscall"
 
+	"berth/internal/adapters/execid"
 	"berth/internal/berthd"
 	"berth/internal/logging"
 	"berth/internal/paths"
+	"berth/internal/peertrust"
 )
 
 var version = "dev"
@@ -28,7 +30,10 @@ func run() int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	code, err := berthd.Run(ctx, berthd.Config{Home: home, Version: version, Log: log, Pinner: testPinner()})
+	code, err := berthd.Run(ctx, berthd.Config{
+		Home: home, Version: version, Log: log,
+		Pinner: peertrust.Pinner(execid.New(execid.DefaultCodesign)), AllowLocalProxyTargets: peertrust.E2E,
+	})
 	if err != nil {
 		log.Error("berthd failed", "err", err)
 	}

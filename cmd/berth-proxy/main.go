@@ -5,23 +5,14 @@ package main
 import (
 	"context"
 	"errors"
-	"fmt"
-	"log/slog"
-	"net"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"berth/gen/berth/v1/berthv1connect"
-	"berth/internal/adapters/clock"
-	"berth/internal/adapters/execid"
 	"berth/internal/adapters/native"
-	"berth/internal/adapters/peer"
-	"berth/internal/adapters/socket"
-	"berth/internal/client"
-	"berth/internal/codetrust"
 	"berth/internal/core/ports"
-	"berth/internal/paths"
+	"berth/internal/peertrust"
 	"berth/internal/proxy"
 )
 
@@ -43,36 +34,10 @@ func main() {
 	os.Exit(code)
 }
 
-// connectTrusted connects only when the process answering on the socket is the signed berthd
-// beside this berth-proxy, judged by the kernel's live code identity, the same check berth run
-// makes, so a server an agent started at BERTH_HOME can never hand the proxy a ticket.
+// connectTrusted refuses any server but the signed berthd beside this berth-proxy, the same
+// check berth run makes.
 func connectTrusted(ctx context.Context) (berthv1connect.SecretsServiceClient, error) {
-	home, err := paths.Home()
-	if err != nil {
-		return nil, err
-	}
-	daemonPath, err := paths.Beside("berthd")
-	if err != nil {
-		return nil, err
-	}
-	log := slog.New(slog.DiscardHandler)
-	daemon := codetrust.New(ctx, daemonPath, codetrust.DaemonSigningID, filePinner(execid.New(execid.DefaultCodesign)),
-		peer.NewCode(), clock.System{}, log)
-	sock := paths.Socket(home)
-	cl, err := client.ConnectVerified(ctx, sock, "berth-proxy", func(c *net.UnixConn) error {
-		pid, err := socket.KernelPeerPID(c)
-		if err != nil {
-			return err
-		}
-		token, err := socket.KernelPeerToken(c)
-		if err != nil {
-			return err
-		}
-		if !daemon.Runs(ctx, ports.Peer{PID: pid, AuditToken: token}) {
-			return fmt.Errorf("the server on %s is not the signed berthd beside this berth-proxy", sock)
-		}
-		return nil
-	})
+	cl, err := peertrust.ConnectDaemon(ctx, "berth-proxy", "berth-proxy")
 	if err != nil {
 		return nil, err
 	}

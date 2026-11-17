@@ -41,6 +41,9 @@ func TestMain(m *testing.M) {
 			panic(fmt.Sprintf("%v: %v\n%s", args, err, out))
 		}
 	}
+	if err := buildProxy(dir); err != nil {
+		panic(err)
+	}
 	binDir = dir
 	code := m.Run()
 	_ = os.RemoveAll(dir)

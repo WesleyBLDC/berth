@@ -11,7 +11,7 @@ It borrows Docker's model: a browser and whoever drives it is a session, a saved
 It runs only on your own Mac, talks only over a Unix socket, and has no telemetry.
 
 Berth is in pre release development.
-The first useful slice, terminal secrets (E2a), is being integrated now; the browser features start at M2.
+Terminal secrets (E2a) and the header proxy with the secret lifecycle (E2b) are built and wired; the browser features start at M2.
 See [Milestones](#milestones) for the exact status.
 
 ## Processes
@@ -22,9 +22,13 @@ flowchart LR
   APP["Berth.app<br/>SwiftUI (planned)"]
   MCP["berth-mcp<br/>Go shim (planned)"]
   D["berthd<br/>Go daemon"]
+  P["berth-proxy<br/>Go, one per run"]
   N["berth-native<br/>Swift helper"]
   K[("Keychain<br/>Touch ID")]
   CLI -->|Connect over<br/>Unix socket| D
+  CLI -->|starts, one JSON<br/>line each way| P
+  P -->|Connect over<br/>Unix socket| D
+  P -->|read, value<br/>on fd 3| N
   APP -.-> D
   MCP -.-> D
   D -->|one JSON line<br/>per run| N
@@ -33,9 +37,10 @@ flowchart LR
 
 | Process | Language | Status | Job |
 |---|---|---|---|
-| `berthd` | Go | Built | The daemon: owns all state, runs the state machines, serves the API, decides every security question; `make build` signs it, since `berth` and `berth-native` talk only to the signed daemon |
-| `berth` | Go | Built | The command line client: `status`, `debug state`, `secret request`, `secret add`, `secret ls`, `secret grant`, `run`; `make build` signs it, since `berthd` gives use tickets only to the signed CLI |
-| `berth-native` | Swift | Built | The only Berth process that touches secret values: Keychain add and read, Touch ID, the secure input dialog |
+| `berthd` | Go | Built | The daemon: owns all state, runs the state machines, serves the API, decides every security question; `make build` signs it, since `berth`, `berth-proxy` and `berth-native` talk only to the signed daemon |
+| `berth` | Go | Built | The command line client: `status`, `debug state`, `secret request`, `secret add`, `secret ls`, `secret grant`, `secret proxy`, `secret revoke`, `secret rm`, `secret rotate`, `run`; `make build` signs it, since `berthd` gives use tickets only to the signed CLI |
+| `berth-proxy` | Go | Built | A loopback HTTPS proxy, one per `berth run --proxy`, that writes one granted header into requests to the granted hosts and tunnels everything else; standard library only; `make build` signs it, since `berthd` authorizes only the signed proxy ([the E2b plan](docs/plans/e2b-header-proxy.md)) |
+| `berth-native` | Swift | Built | The only Berth process that reads secret values from the Keychain: add, read, replace and delete, Touch ID, the secure input dialog; `berth-proxy` holds a value only after reading it through this helper |
 | `Berth.app` | Swift | Planned (M5) | Window and menu bar, live view and takeover, notifications, registers `berthd` as a login item |
 | `berth-mcp` | Go | Planned (M4) | A thin MCP shim for agents without a shell; holds no state and exposes only agent methods |
 | TUI | Go | Planned (M3) | A full screen terminal view inside `berth` |
@@ -54,7 +59,7 @@ Swift does the native work because Keychain, Touch ID and ScreenCaptureKit are A
 |---|---|---|
 | `DaemonService` | `Handshake`, `Status`, `Shutdown` | Built |
 | `DebugService` | `GetState` (state and recent transitions of any entity) | Built |
-| `SecretsService` | `RequestSecret`, `ListSecrets`, `GrantSecret`, `AuthorizeUse`, `RedeemUseTicket` | Built |
+| `SecretsService` | `RequestSecret`, `ListSecrets`, `GrantSecret`, `AuthorizeUse`, `RedeemUseTicket`, `GrantProxy`, `RevokeGrant`, `RemoveSecret`, `RotateSecret`, `AuthorizeProxy`, `WatchProxySession` (server stream), `EndProxySession` | Built |
 | Sessions, Profiles, Runbooks, Policies | `ListSessions`, `WatchSessions`, `LaunchSession`, `WatchScreen`, `SendInput`, `FillLogin` and more | Planned (M2 to M6) |
 
 ### The native helper protocol (built)
@@ -65,12 +70,45 @@ The helper reads one JSON object on one line from stdin and writes one JSON line
 | Command | Does | Replies |
 |---|---|---|
 | `store` | Shows the secure input dialog with facts `berthd` verified, then Touch ID, then writes Keychain item `berth.<name>` | `stored`, `denied` or `failed`; never the value |
-| `confirm` | Shows a Touch ID prompt for a power action (today: a grant); with `"interpreter":true` the text starts with "<path> is an interpreter and can print this secret", and `"pass_env"` names are listed | `approved`, `denied` or `failed` |
-| `read` | Refuses unless fd 3 is a connected Unix stream socket whose peer, by its audit token, is the helper's parent and satisfies the CLI requirement; connects to the daemon socket, checks by the peer's audit token that the signed `berthd` answers, then redeems the ticket and reads `berth.<name>` | The raw value bytes on fd 3, one end of a socketpair `berth run` created and passed in; or nothing and exit code 3. stdout carries nothing |
+| `confirm` | Shows a Touch ID prompt for a power action: `"action":"grant"` names a consumer executable (with `"interpreter":true` the text starts with "<path> is an interpreter and can print this secret", and `"pass_env"` names are listed); `"action":"proxy"` names a `target` (host, port, header, prefix, suffix, path glob, methods, placeholder variable) | `approved`, `denied` or `failed` |
+| `read` | Refuses unless fd 3 is a connected Unix stream socket whose peer, by its audit token, is the helper's parent and satisfies the CLI or the proxy requirement; connects to the daemon socket, checks by the peer's audit token that the signed `berthd` answers, then redeems the ticket; the answer must say action `USE` and the consumer kind of the parent (`EXECUTABLE` for `berth`, `PROXY` for `berth-proxy`), and only then reads `berth.<name>` | The raw value bytes on fd 3, one end of a socketpair the parent created and passed in; or nothing and exit code 3. stdout carries nothing |
+| `rotate` | Reads `{"name","ticket","requester"}`, redeems the action ticket first (it must say `ROTATE` for the same name), then shows the store dialog in replace mode and Touch ID, then `SecItemUpdate` | `stored`, `denied` or `failed` |
+| `remove` | The same shape; redeems an action ticket that must say `REMOVE`, asks Touch ID, then `SecItemDelete`; an item already gone counts as removed | `removed`, `denied` or `failed` |
 
-The exact message shapes are in [the E2 plan](docs/plans/e2-terminal-secrets.md#native-helper-protocol-items-2-4-and-6-must-match-it-exactly).
+The exact message shapes are in [the E2 plan](docs/plans/e2-terminal-secrets.md#native-helper-protocol-items-2-4-and-6-must-match-it-exactly) and, for `rotate`, `remove` and the proxy confirm, [the E2b plan](docs/plans/e2b-header-proxy.md#notes-for-the-integration-item-item-6).
+`berthd` starts the helper for `rotate` and `remove` itself, so their action tickets are bound to `berthd`'s pid, the parent the redeem must come from.
 Go tests use a fake helper written in Go ([`internal/adapters/native/fakehelper`](internal/adapters/native/fakehelper)), never the Swift binary.
-`scripts/build-native.sh` builds the helper in release mode, and `scripts/sign.sh` signs it (and `make build` signs `bin/berth`) with a stable Apple Development identity, identifier and the hardened runtime, because `berthd` trusts both by team, identifier and cdhash, and Keychain items trust the helper by its designated requirement.
+`scripts/build-native.sh` builds the helper in release mode, and `scripts/sign.sh` signs it (and `make build` signs `bin/berth`, `bin/berthd` and `bin/berth-proxy`) with a stable Apple Development identity, identifier and the hardened runtime, because `berthd` trusts the CLI, the helper and the proxy by team, identifier and cdhash, `berth` and `berth-proxy` trust `berthd` the same way, and Keychain items trust the helper by its designated requirement.
+
+### The proxy control protocol (built)
+
+`berth run --proxy <name> [--proxy <name2>] -- <command>` starts the `berth-proxy` beside its own resolved executable (the `BERTH_PROXY` override exists only under `berth_e2e`) in its own process group, with only `HOME`, `PATH`, `BERTH_HOME` and `TMPDIR`.
+
+| Direction | Line | Meaning |
+|---|---|---|
+| `berth` to proxy, stdin | `{"secrets":["name",...]}` | The names to serve, 1 to 16; stdin then stays open for the run |
+| Proxy to `berth`, stdout | `{"port":N,"credential":"<32 hex>","ca_file":"<abs>","bundle_file":"<abs>","placeholders":{"VAR":"berth-proxy-placeholder"}}` | Written only after `berthd` sent `SERVING`; carries no value |
+| `berth` closes stdin | | The child exited: the proxy closes its listener, zeroes its values, deletes its folder, calls `EndProxySession` with counts and exits |
+
+`berth` reads nothing else from the proxy and kills it 5 seconds after closing its stdin.
+The proxy exits 0 when it ended normally, 1 on an error (berthd, `berth-native` or the network), 2 when it refused its environment, the request or a grant before serving, and 3 when `berthd` stopped the session, the watch stream broke or the CA expired.
+
+### The berth command line (built)
+
+| Exit code | Meaning |
+|---|---|
+| 0 | Success |
+| 1 | `berthd` unreachable, or it refused the request; the message says why |
+| 2 | Usage error |
+| 3 | The person denied the dialog or Touch ID |
+| 4 | The store, grant, rotate or remove failed |
+| 5 | `run`: no grant lets this executable use the secret; nothing started |
+| 6 | `run`: the executable changed since it was granted; nothing started |
+| 7 | The secret is busy: a store, rotate or remove dialog or a grant's Touch ID is open (`ERROR_REASON_BUSY`) |
+| 8 | `run --proxy`: `berth-proxy` did not start or answered badly; nothing started |
+
+Once its command starts, `berth run` exits with the command's own code.
+`berth secret ls` prints one line per consumer under each secret, starting with the grant id that `berth secret revoke <grant id>` takes; an executable consumer shows its path, hash, team, argument glob and state, and a proxy consumer its host and port, header, methods, path glob and state.
 
 ## Layers and import rules (built)
 
@@ -91,12 +129,12 @@ flowchart LR
 
 | Layer | Path | May import | Holds |
 |---|---|---|---|
-| Ports | `internal/core/ports/` | stdlib only | `Store`, `Clock`, `RequestLog`, `ExecIdentity`, `PeerFacts`, `Approver`, `TicketSource` and their domain types |
+| Ports | `internal/core/ports/` | stdlib only | `Store`, `Clock`, `RequestLog`, `ExecIdentity`, `PeerFacts`, `CodeInspector`, `Approver`, `TicketSource`, `SecretRecords`, `ProxySessionRecords` and their domain types |
 | Machine kit | `internal/core/machine/` | ports | `Transition`, `Actor`, `machinetest.Walk` |
-| Machines | `internal/core/{daemon,secret,grant}/` | machine, ports | One transition table each |
+| Machines | `internal/core/{daemon,secret,grant,proxysession}/` | machine, ports | One transition table each |
 | Adapters | `internal/adapters/{sqlite,socket,api,clock,native,execid,peer,ticket}/` | core, gen | Implementations of the ports and the API handlers |
 | Shell | `internal/berthd/` | everything | Wires adapters, runs actors, performs effects |
-| Clients | `internal/client/`, `internal/cli/`, `cmd/` | gen, api | The Go client, the CLI logic, thin entry points |
+| Clients | `internal/client/`, `internal/cli/`, `internal/proxy/`, `internal/peertrust/`, `cmd/` | gen, api, adapters | The Go client, the CLI logic, the `berth-proxy` logic, the shared rule for trusting signed Berth peers and the signed `berthd` (release or `berth_e2e`), thin entry points |
 | Fakes | `internal/testutil/` | ports | In memory store, fake clock, scriptable secrets fakes |
 
 The rules are enforced by `golangci-lint`, not by convention:
@@ -117,7 +155,7 @@ type Transition[S ~string, E Event, F any] func(state S, event E) (S, []F, error
 ```
 
 - **Pure:** a transition does no I/O, logging, randomness or clock reads; it returns the next state and the effects to run, or an error wrapping `machine.ErrIllegal`.
-- **Actors:** one goroutine owns each entity (`daemon`, `secret/<name>`, `grant/<id>`) and applies its events one at a time from a bounded inbox, so state is never shared or locked.
+- **Actors:** one goroutine owns each entity (`daemon`, `secret/<name>`, `grant/<id>`, `proxy/<session id>`) and applies its events one at a time from a bounded inbox, so state is never shared or locked.
 - **Persist before effects:** the actor writes the new state and the event row in one SQLite transaction, and only then runs the effects; if the write fails, the actor stops rather than act on a state it could not record ([ADR 0004](docs/adr/0004-state-and-event-rows-in-one-transaction.md)).
 - **Failures are events:** an effect that fails returns a follow up event (for example `Failed` with a note), so failure is a state, not a silent retry.
 - **Illegal events are rejected, not fatal:** the actor reports them and keeps running; nothing is persisted.
@@ -151,7 +189,7 @@ stateDiagram-v2
 `Boot` is legal from every state because a process start is a fact; booting from anything but `Starting` or `Stopped` means the last run crashed, and the `Recover` effect records that as an unclean shutdown.
 SIGTERM, SIGINT and the `Shutdown` call all send `StopRequested`.
 
-### Secret machine (built, 7 legal pairs)
+### Secret machine (built, 17 legal pairs)
 
 Source: [`internal/core/secret/secret.go`](internal/core/secret/secret.go).
 One entity per secret name; the value never appears in the machine.
@@ -162,15 +200,26 @@ stateDiagram-v2
   Pending --> Pending: StoreRequested / PromptStore
   Denied --> Pending: StoreRequested / PromptStore
   Failed --> Pending: StoreRequested / PromptStore
+  Removed --> Pending: StoreRequested / PromptStore
   Pending --> Stored: StoreSucceeded
   Pending --> Denied: StoreDenied
   Pending --> Failed: StoreFailed
   Stored --> Stored: UseRefused
+  Rotating --> Rotating: UseRefused
+  Stored --> Rotating: RotateRequested / PromptRotate
+  Rotating --> Stored: RotateSucceeded, RotateDenied or RotateFailed
+  Stored --> Removing: RemoveRequested / PromptRemove
+  Removing --> Removed: RemoveSucceeded / RevokeAll
+  Removing --> Stored: RemoveDenied or RemoveFailed
 ```
 
 - `PromptStore` asks `berth-native store` to show the dialog; its outcome comes back as `StoreSucceeded`, `StoreDenied` or `StoreFailed`.
-- A `Stored` secret refuses another store with `ERROR_REASON_SECRET_EXISTS`; replacing a value is `rotate`, planned for E2b.
+- `PromptRotate` and `PromptRemove` make an action ticket bound to `berthd`'s pid and run `berth-native rotate` or `remove`, which redeems it before any prompt; the ticket is dropped when the helper exits.
+- `RevokeAll` revokes every grant of the secret, drops its live use tickets and stops the proxy sessions holding its grants; `RemoveSecret` answers with the revoked grant ids.
+- A `Stored` secret refuses another store with `ERROR_REASON_SECRET_EXISTS`; `Rotating` and `Removing` answer `ERROR_REASON_BUSY` to a store, rotate or remove, and so does a secret with a grant waiting for Touch ID. The shell checks this before it sends the event, so the table never sees a request it refuses.
+- Uses accept `Stored` and `Rotating`: a run during a rotate gets the old value. `Removing` and `Removed` refuse uses, and `Removed` frees the name for a new store.
 - `UseRefused` records a refused use of a stored secret that has no grant to record it on.
+- Boot recovery fails `Rotating` and `Removing` with the note `interrupted` (`RotateFailed`, `RemoveFailed`) and revokes any grant of a `Removed` secret left Active by a crash.
 
 ### Grant machine (built, 11 legal pairs)
 
@@ -194,7 +243,33 @@ stateDiagram-v2
 
 - `PromptPower` asks `berth-native confirm` for Touch ID; `IssueTicket` makes a single use ticket and counts the use on the grant row.
 - A `Denied`, `Stale` or `Revoked` grant is never approved again; granting again creates a new grant, which is a new entity.
-- No API method sends `Revoke` yet; revoking from the CLI is planned with E2b.
+- A grant pins either an executable (kind `exe`) or a proxy target (kind `proxy`); the kind is data on the grant row, not a state, and a proxy grant never sees `HashChanged`. `Consumer.kind` in `ListSecrets` comes from the row.
+- `RevokeGrant` (`berth secret revoke`) and a remove's `RevokeAll` send `Revoke`, with no Touch ID since it only lowers privilege; revoking also stops the proxy sessions holding the grant.
+
+### Proxy session machine (built, 9 legal pairs)
+
+Source: [`internal/core/proxysession/proxysession.go`](internal/core/proxysession/proxysession.go).
+One entity per `berth-proxy` run, `proxy/<session id>`; the row in `proxy_sessions` holds the proxy's pid and counts only.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Authorized
+  Authorized --> Serving: ProxyReady
+  Authorized --> Stopping: StopRequested / SendStop
+  Serving --> Stopping: StopRequested / SendStop
+  Authorized --> Ended: ProxyEnded
+  Serving --> Ended: ProxyEnded
+  Stopping --> Ended: ProxyEnded
+  Authorized --> Lost: ProxyLost
+  Serving --> Lost: ProxyLost
+  Stopping --> Lost: ProxyLost
+```
+
+- `AuthorizeProxy` creates the session in `Authorized`; `ProxyReady` comes when the proxy opens `WatchProxySession`, and `berthd` then sends `SERVING`.
+- `StopRequested` comes from a revoke, a remove or `berthd` stopping; `SendStop` sends `STOP` with the reason on the watch stream, or waits for the stream if the proxy has not opened it yet.
+- `ProxyEnded` comes from `EndProxySession` and records the counts once; `ProxyLost` records zero counts and comes when the proxy's pid exits (kqueue `NOTE_EXIT`), when no `ProxyReady` arrives within 30 seconds, when the watch stream drops without an `EndProxySession` within 2 seconds, or at boot for any session a previous run left open.
+- Revoke and remove can race on one session, so a second `StopRequested` in `Stopping` is illegal and the shell ignores it.
+- Fails closed: a `STOP` or a broken stream makes the proxy zero its values and exit, and a session `berthd` marks `Lost` while its proxy still listens has its stream ended, so the proxy exits too.
 
 ### Planned machines
 
@@ -224,7 +299,9 @@ One SQLite file, `$BERTH_HOME/berth.db`, through the pure Go driver `modernc.org
 | `machine_event` | 0001 | Every transition: entity, version, event, from and to state, a secret free detail, time; unique per entity and version |
 | `request_log` | 0001 | The first response to each mutating `request_id`, so retries replay instead of acting twice |
 | `secrets` | 0002 | Secret names and creation time; never values |
-| `grants` | 0002 | Pinned consumers: resolved path, SHA-256, team and signing ID, argument glob, use count, last use |
+| `grants` | 0002, rebuilt by 0004 | Pinned consumers: kind (`exe` or `proxy`); for `exe` the resolved path, SHA-256, team and signing ID, argument glob and passed variables; for `proxy` the host, port, header, value prefix and suffix, path glob, methods and placeholder variable; use count and last use. CHECKs refuse a row mixing the two, and the rebuild kept every id |
+| `proxy_sessions` | 0005 | One row per `berth-proxy` run: id, proxy pid, created and ended time, injected and refused counts; never paths, request details or values |
+| `proxy_session_grants` | 0005 | Which proxy grants each session holds tickets for, so a revoke finds the sessions to stop |
 
 Single use tickets live only in `berthd` memory and are never persisted.
 
@@ -244,7 +321,7 @@ Instructions and prompts are never a security control.
 
 ### The agent surface
 
-- **Built:** a method is meant for agents only when the schema marks it `option (berth.v1.agent) = true`, and `TestAgentSurface` pins the list: `Handshake`, `RequestSecret`, `ListSecrets` and `AuthorizeUse`.
+- **Built:** a method is meant for agents only when the schema marks it `option (berth.v1.agent) = true`, and `TestAgentSurface` pins the list: `Handshake`, `RequestSecret`, `ListSecrets`, `AuthorizeUse`, `AuthorizeProxy`, `WatchProxySession` and `EndProxySession`. The last three accept only the signed `berth-proxy`, and only the audit token that authorized a session may watch or end it.
 - **Planned (M4):** agents get a session token that works only for their own session, only from their own process tree, and only for agent methods ([ADR 0006](docs/adr/0006-agents-are-scoped-by-session-token.md)); `berth-mcp` and the agent commands expose exactly the marked methods.
 - **Today's limit:** until session tokens exist, the daemon cannot tell an agent from the person, because both run as the same user; anything that can reach the socket can call any method, and the protections that hold are Touch ID on power actions, values never crossing the API, and use tickets going only to the signed `berth` CLI.
 
@@ -252,11 +329,11 @@ Instructions and prompts are never a security control.
 
 Agents may store a secret (the person types it into a native dialog) and use one (Berth injects it where it was granted), but never read one ([ADR 0012](docs/adr/0012-agents-can-store-and-use-secrets-never-read-them.md)).
 
-- No message in the schema carries a value; values exist only inside `berth-native` and in the child process `berth run` starts.
+- No message in the schema carries a value; values exist only inside `berth-native`, in the child process `berth run --env` starts, and in the `berth-proxy` of a `berth run --proxy`, never in its child.
 - In Go a value is a `[]byte`, zeroed after use, never a `string`, never in a log, error, event note or reply.
 - Keychain items Berth creates use the service prefix `berth.` so they never collide with existing items.
 - Dialog and Touch ID text is built only from facts `berthd` verified from the kernel (peer process, executable, process tree, working directory) and from the file on disk (path, SHA-256, code signature); the requester's reason is shown quoted and labelled as the requester's claim, and never stored in an event.
-- Granting a consumer is a power action that needs Touch ID.
+- Granting a consumer, removing a secret and rotating one are power actions that need Touch ID; revoking a grant is not, since it only lowers privilege.
 
 How a use travels (E2a):
 
@@ -290,6 +367,46 @@ sequenceDiagram
 - `berth run` masks the value in the child's stdout and stderr as a backstop.
 - A store prompt open when `berthd` stops is cancelled (its helper killed) and records `StoreFailed` before the daemon drains; a store a crash left `Pending` is marked `StoreFailed` with the note `interrupted` at the next boot.
 
+### The header proxy (built, E2b)
+
+API keys reach HTTP APIs without entering the calling process, the agent, `berth` or `berthd`: `berth-proxy` writes the granted header itself, and the child only ever holds a proxy credential and a placeholder.
+
+```mermaid
+sequenceDiagram
+  participant R as berth run --proxy
+  participant P as berth-proxy
+  participant D as berthd
+  participant N as berth-native
+  R->>P: {"secrets":[names]} on stdin
+  P->>D: AuthorizeProxy(names), after checking the signed berthd answers
+  D->>D: caller is the signed berth-proxy? an Active proxy grant per name?
+  D-->>P: session id, one ticket per grant (name, proxy pid, kind PROXY), targets
+  P->>N: read, ticket on stdin, socketpair end on fd 3
+  N->>D: RedeemUseTicket(ticket)
+  D-->>N: name, kind PROXY, action USE
+  N-->>P: value bytes over the socketpair
+  P->>D: WatchProxySession(session id)
+  D-->>P: SERVING
+  P-->>R: control line: port, credential, CA files, placeholders
+  R->>R: start the child with HTTPS_PROXY and the CA variables
+```
+
+- **How berthd trusts the proxy.** `berthd` pins the `berth-proxy` beside it like the CLI and the helper, through `codetrust` with the requirement identifier `com.wesleybldc.berth.proxy` (the `berth_e2e` pin rule accepts the ad hoc signed test proxy). `TrustProxy` checks the caller's live cdhash, valid signature and hardened runtime by its audit token before the request log is read, for `AuthorizeProxy`, `WatchProxySession` and `EndProxySession`. A session is bound to the audit token that authorized it; an unknown session and one authorized by another process both answer `PEER_NOT_TRUSTED`, so ids cannot be probed. `berthd` registers a kqueue `NOTE_EXIT` watch on the proxy's pid, then checks the audit token again, so a reused pid cannot stand in for the proxy.
+- **Tickets.** `AuthorizeProxy` answers `AUTHORIZED` only when every name has an Active proxy grant, and records the session row before it issues any ticket, so a revoke that lands in between finds the session. Each ticket is bound to the secret name and the proxy's pid, records consumer kind `PROXY` and action `USE`, and lives 30 seconds. `berth-native read` refuses a ticket whose kind is not its parent's: a proxy ticket redeemed under the CLI, or a CLI ticket under the proxy, is refused after the redeem, and the redeem itself must come from a helper whose parent is the pid the ticket was issued to.
+- **What the proxy accepts.** It refuses to start if its environment holds anything beyond `HOME`, `PATH`, `BERTH_HOME` and `TMPDIR` (so `GODEBUG`, `SSL_CERT_FILE`, `HTTPS_PROXY` or `GOTRACEBACK` cannot change how it verifies TLS, where it dials or what a crash prints), turns core dumps off, and checks every target `berthd` sends against the same rules the schema applies.
+- **Who may connect.** The proxy listens on `127.0.0.1` on a fresh port and accepts only `CONNECT` with a 128 bit per run credential in `Proxy-Authorization: Basic`, compared in constant time; anything else gets 407.
+- **Injection rules.** Absolute form plain HTTP gets 405, so nothing is ever injected over cleartext. A `CONNECT` to exactly a granted host and port (lowercase, default 443) is terminated with a leaf from the run CA; anything else is a plain tunnel with no header, and the child verifies that host itself. On the granted host the `Host` header must match (else 421), an optional method list and path glob apply (else 403, counted as refused), every client copy of the header is removed and `<Header>: <prefix><value><suffix>` is written from bytes, hop by hop headers are dropped, and redirects are passed back, never followed. Upstream, the proxy dials the target itself with `ServerName` set to the granted host, TLS 1.2 or later, the system verifier and no proxy from the environment; a failed verification answers 502 with zero request bytes sent.
+- **Grants berthd refuses.** Header names that frame or route a request (`Host`, `Content-Length`, `Transfer-Encoding`, `Connection`, `Upgrade`, `TE`, `Trailer`, `Proxy-*`) fail schema validation. `berthd` answers `BAD_PROXY_TARGET` for IP literals, an all numeric last label such as `127.1`, and `localhost` or `*.localhost`, except in `berth_e2e` builds. The proxy refuses a value with CR, LF or NUL and two grants on one host and port in one run.
+- **The CA.** Each run makes a fresh ECDSA P-256 CA with `CA:TRUE, pathlen 0` and critical name constraints that permit only the granted hosts and exclude their subdomains and every IP range, valid for the run and at most 24 hours. Its key and the leaf keys exist only in proxy memory. `ca.pem` and `bundle.pem` (`/etc/ssl/cert.pem` plus the CA) go into a fresh 0700 folder under `TMPDIR` that the proxy deletes when it exits; nothing is added to the login keychain or any trust store.
+- **The child's environment.** `berth` passes the caller's environment except the variables Berth owns: `HTTPS_PROXY` and `https_proxy` (`http://berth:<credential>@127.0.0.1:<port>`), `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE` and `CURL_CA_BUNDLE` (the bundle), `NODE_EXTRA_CA_CERTS` (the CA), `NODE_USE_ENV_PROXY=1` and each grant's placeholder variable are set; `NO_PROXY`, `no_proxy`, `HTTP_PROXY`, `http_proxy`, `ALL_PROXY` and `all_proxy` are removed. The child holds no secret, so it needs no allowlist, and `berth` never reads a value in proxy mode.
+- **Values in the proxy.** Each value is read through `berth-native` into locked memory outside the Go heap, never becomes a Go string, and is zeroed on every exit path before `EndProxySession`.
+- **Redaction.** As a backstop the proxy replaces the exact value with asterisks in response headers and identity encoded response bodies.
+- **Ending.** When the child exits `berth` closes the proxy's stdin and the proxy ends its session with counts. A revoke, a remove or a daemon stop sends `STOP`; `berthd` stopping first sends `STOP` to every serving session and gives the proxies 3 seconds to end their sessions while it still serves.
+- **Lifecycle.** `berth secret revoke <grant id>` revokes one grant and stops its sessions; `berth secret rm <name>` deletes the Keychain item after Touch ID and then revokes every grant, drops live tickets and stops sessions; `berth secret rotate <name>` replaces the value through the store dialog and Touch ID, grants stay Active, and running sessions keep the old value until they end.
+
+Tools that work through the proxy, from the end to end tests: `/usr/bin/curl` and Node (24, through `NODE_USE_ENV_PROXY` and `NODE_EXTRA_CA_CERTS`), and a Go program that loads `SSL_CERT_FILE` into its own pool.
+Tools that use only the macOS trust store cannot: standard Go binaries on macOS (which ignore `SSL_CERT_FILE`) and Swift `URLSession`.
+
 ### Planned browser credentials (M6)
 
 A grant ties one Keychain item to one browser profile and one site, approved once with Touch ID and then free unless the person sets ask every fill or strict mode ([ADR 0007](docs/adr/0007-grants-per-browser-profile-free-after-one-approval.md)).
@@ -301,13 +418,19 @@ Other password stores plug in as `berth-secret-<name>` helper programs pinned by
 
 E2a defends against agents that are honest, confused, or prompt injected into asking for or printing secrets, and against casual misuse of the signed binaries (copying them, wrapping the helper, pointing them at a fake daemon).
 A determined agent running as the same user that can run arbitrary code can still leak an environment injected secret through tool configuration (dotfiles, `PATH`, `HOME`).
-The header proxy (E2b) and, beyond that, running agents under a separate user or in a sandbox are the stronger isolation.
+The header proxy (E2b) keeps API keys out of every process an agent controls, and every check it rests on is a kernel fact (audit tokens, live cdhash, kqueue), never a path or the caller's environment.
+Running agents under a separate user or in a sandbox (E3) is the stronger isolation beyond that.
 
 ### Honest limits
 
-- Any process that holds a secret can leak it: environment injection is only as safe as the command it is pinned to, which is why grants pin the exact executable and an optional argument glob, and why the header proxy (E2b) will be the default for API keys.
-- The executable can change between `AuthorizeUse` hashing it and `berth run` starting it; closing that gap needs exec by file descriptor or a signed binary requirement (E2b).
-- Environment injection protects against accidental exposure and limits what an agent can steer through variables, but a process running as the same user can still configure a tool through its dotfiles (for example `~/.gitconfig` or `~/.npmrc`), so a hostile agent can make a configurable tool reveal a secret from its environment. The consumer also gets the caller's `PATH` and `HOME`, so a tool that starts other programs through `PATH` can start one the agent placed earlier in `PATH`, and one that reads files under `HOME` reads what the agent left there. The header proxy (E2b) is the mode for strong isolation of API keys.
+- Any process that holds a secret can leak it: environment injection is only as safe as the command it is pinned to, which is why grants pin the exact executable and an optional argument glob, and why the header proxy is the mode for API keys.
+- The executable can change between `AuthorizeUse` hashing it and `berth run` starting it; E2b item 7 closes that gap by starting the child suspended and comparing its live cdhash before it runs.
+- Environment injection protects against accidental exposure and limits what an agent can steer through variables, but a process running as the same user can still configure a tool through its dotfiles (for example `~/.gitconfig` or `~/.npmrc`), so a hostile agent can make a configurable tool reveal a secret from its environment. The consumer also gets the caller's `PATH` and `HOME`, so a tool that starts other programs through `PATH` can start one the agent placed earlier in `PATH`, and one that reads files under `HOME` reads what the agent left there. The header proxy is the mode for strong isolation of API keys.
+- **The proxy credential sits in the child's environment**, readable by any process of the same user while the run lives. It grants only use of the granted hosts, within the grant's method and path limits, until the run ends or the grant is revoked; never the value.
+- **What a hostile same user agent can still do with the proxy:** use the key against the granted host while a run lives; turn use into a readable credential if the API mints keys or echoes request headers (the method and path limits narrow this); exfiltrate data through the granted API itself; start `berth-proxy` directly, which gives it nothing beyond `berth run --proxy`; and deny service. It cannot read the value, send it to another host, send it over cleartext, keep using it after a revoke or remove, or find it in `berth`, `berthd`, the child, files or logs.
+- **A response header that echoes the value** is redacted on the way to the child, but it already exists as a Go string inside `net/http`'s response parser in the proxy, which the proxy cannot zero; it lives until the garbage collector reuses that memory and the proxy exits.
+- **Tools that trust only the macOS trust store** (standard Go binaries, Swift `URLSession`) cannot use the proxy, because the run CA is passed through environment variables rather than added to the keychain; adding a persistent CA would be a global trust change.
+- A rotate does not reach a run already going: its proxy keeps the old value until the run ends.
 - Two small denials of service: junk an agent writes into `bin/` beside the binaries makes a pin fail, and the 10 second re-pin limit keeps uses refused for that window; and the first use right after a rebuild can be refused for up to 10 seconds, until the next re-pin.
 - Output masking matches only the literal value: an encoded, split by the child, or transformed copy (base64, hex, one character per line) passes through unmasked.
 - The store dialog's `NSSecureTextField` hands the value over as a Swift `String`, which cannot be wiped; `berth-native` copies it into a buffer it zeroes and clears the field, but the string's own memory lives until the process exits a moment later.
@@ -332,7 +455,7 @@ Each milestone starts from a plan in [`docs/plans/`](docs/plans) with acceptance
 | M4 Managed Chromium | `BrowserDriver` over a private CDP pipe, the token gated CDP proxy, profile locks, session tokens, `berth-mcp` | Planned |
 | M5 Mac app | `Berth.app`, login item registration, live view and takeover, window pictures, notifications | Planned |
 | M6 Credentials and runbooks | Browser grants, the atomic fill, hard limits per profile, runbooks served to agents | Planned |
-| E2b Terminal secrets, rest | Header proxy, `copy`, `rotate`, `rm`, revoke, Keychain access list audit, MCP tools | Planned |
+| E2b Header proxy and secret lifecycle | `berth-proxy` and `berth run --proxy`, `berth secret proxy`, `revoke`, `rm`, `rotate`, the proxy session machine | In progress: built and wired with the canary and lifecycle end to end tests; item 7 (the hash to exec race) and the manual check with real signing, Touch ID and a real API remain. `copy` moved to E3 or M5, MCP tools to M4 ([plan](docs/plans/e2b-header-proxy.md)) |
 | E1 Other password stores | Helper contract with 1Password and Bitwarden helpers | Optional |
 | M7 Firefox and your daily Chrome | WebDriver BiDi adapter; connecting to your own Chrome as a Touch ID power action | Planned |
 | M8 Release | License, signed and notarized build, tamper evident audit log, published signature format, first tagged release | Planned |

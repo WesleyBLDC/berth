@@ -26,6 +26,10 @@ const (
 	helperPID  = 300
 	helper2PID = 310
 	otherPID   = 400
+	proxyPID   = 500
+	proxyHelp  = 510
+	berthdPID  = 600
+	daemonHelp = 610
 	tool       = "/usr/local/bin/tool"
 	toolReal   = "/opt/tool/bin/tool"
 	helperExe  = "/Applications/Berth.app/Contents/MacOS/berth-native"
@@ -34,6 +38,7 @@ const (
 var (
 	cliHash    = ports.CDHash{0xc1}
 	helperHash = ports.CDHash{0xe1}
+	proxyHash  = ports.CDHash{0xf1}
 	signedLive = ports.CSValid | ports.CSRuntime
 )
 
@@ -68,8 +73,30 @@ type fixture struct {
 	execs    *testutil.ExecIdentity
 	clock    *testutil.Clock
 	code     *liveCode
+	exits    *exits
 	pins     map[string]ports.CDHash
 	pinsMu   sync.Mutex
+}
+
+// exits is a fake process exit watcher: a test closes a pid's channel to make it exit.
+type exits struct {
+	mu   sync.Mutex
+	byID map[int]chan struct{}
+}
+
+func (e *exits) watch(_ context.Context, pid int) (<-chan struct{}, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if _, ok := e.byID[pid]; !ok {
+		e.byID[pid] = make(chan struct{})
+	}
+	return e.byID[pid], nil
+}
+
+func (e *exits) exit(pid int) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	close(e.byID[pid])
 }
 
 func newFixture(t *testing.T, approver ports.Approver) *fixture {
@@ -96,6 +123,9 @@ func newFixtureWith(t *testing.T, approver ports.Approver, tickets ports.TicketS
 	peers.Set(ports.Requester{PID: helperPID, Executable: helperExe, Tree: []ports.Process{{PID: berthPID}}})
 	peers.Set(ports.Requester{PID: helper2PID, Executable: helperExe, Tree: []ports.Process{{PID: berth2PID}}})
 	peers.Set(ports.Requester{PID: otherPID, Executable: helperExe, Tree: []ports.Process{{PID: agentPID}}})
+	peers.Set(ports.Requester{PID: proxyPID, Executable: "/usr/local/bin/berth-proxy", Tree: []ports.Process{{PID: berthPID}}})
+	peers.Set(ports.Requester{PID: proxyHelp, Executable: helperExe, Tree: []ports.Process{{PID: proxyPID}}})
+	peers.Set(ports.Requester{PID: daemonHelp, Executable: helperExe, Tree: []ports.Process{{PID: berthdPID}}})
 	code := &liveCode{byID: map[int]ports.LiveCode{
 		agentPID:   {CDHash: ports.CDHash{0xaa}, Status: signedLive},
 		berthPID:   {CDHash: cliHash, Status: signedLive},
@@ -103,13 +133,16 @@ func newFixtureWith(t *testing.T, approver ports.Approver, tickets ports.TicketS
 		helperPID:  {CDHash: helperHash, Status: signedLive},
 		helper2PID: {CDHash: helperHash, Status: signedLive},
 		otherPID:   {CDHash: helperHash, Status: signedLive},
+		proxyPID:   {CDHash: proxyHash, Status: signedLive},
+		proxyHelp:  {CDHash: helperHash, Status: signedLive},
+		daemonHelp: {CDHash: helperHash, Status: signedLive},
 	}}
 	clock := testutil.NewClock()
 	ctx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	f := &fixture{
-		store: store, approver: fake, execs: execs, clock: clock, code: code,
-		pins: map[string]ports.CDHash{codetrust.CLISigningID: cliHash, codetrust.HelperSigningID: helperHash},
+		store: store, approver: fake, execs: execs, clock: clock, code: code, exits: &exits{byID: map[int]chan struct{}{}},
+		pins: map[string]ports.CDHash{codetrust.CLISigningID: cliHash, codetrust.HelperSigningID: helperHash, codetrust.ProxySigningID: proxyHash},
 	}
 	pin := func(_ context.Context, _, identifier string) (ports.CDHash, bool, error) {
 		f.pinsMu.Lock()
@@ -122,9 +155,10 @@ func newFixtureWith(t *testing.T, approver ports.Approver, tickets ports.TicketS
 		return codetrust.New(ctx, "/bin/"+identifier, identifier, pin, code, clock, log)
 	}
 	f.s = newSecrets(ctx, secretsDeps{
-		Log: log, Store: store, Records: store, Clock: clock,
+		Log: log, Store: store, Records: store, Sessions: store, Clock: clock,
 		Approver: approver, Execs: execs, Peers: peers, Tickets: tickets,
-		CLI: trusted(codetrust.CLISigningID), Helper: trusted(codetrust.HelperSigningID),
+		CLI: trusted(codetrust.CLISigningID), Helper: trusted(codetrust.HelperSigningID), Proxy: trusted(codetrust.ProxySigningID),
+		PID: berthdPID, Exits: f.exits.watch,
 	})
 	return f
 }

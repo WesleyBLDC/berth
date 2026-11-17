@@ -35,13 +35,19 @@ type Config struct {
 	Home    string
 	Version string
 	Log     *slog.Logger
-	// Helper and CLI are the berth-native and berth paths; empty means beside berthd.
+	// Helper, CLI and Proxy are the berth-native, berth and berth-proxy paths; empty means
+	// beside berthd.
 	Helper string
 	CLI    string
-	// Pinner decides which files berthd trusts as the berth CLI and berth-native. Nil means
-	// codetrust.SignedPinner (Apple's chain, Berth's team and identifier); only Go test code sets
-	// anything else, never the environment.
+	Proxy  string
+	// Pinner decides which files berthd trusts as the berth CLI, berth-native and berth-proxy.
+	// Nil means codetrust.SignedPinner (Apple's chain, Berth's team and identifier); cmd/berthd
+	// passes peertrust.Pinner, which is that rule in every release build, and nothing reads the
+	// environment for it.
 	Pinner codetrust.Pinner
+	// AllowLocalProxyTargets lets a proxy grant name localhost or an IP literal; only binaries
+	// built with -tags berth_e2e set it, for the test servers on loopback.
+	AllowLocalProxyTargets bool
 }
 
 type shell struct {
@@ -133,9 +139,10 @@ func (s *shell) run(ctx context.Context, effect daemon.Effect) ([]daemon.Event, 
 		}
 		return nil, nil
 	case daemon.StopServing:
-		// Open prompts end first, so their callers get an answer before the server drains.
+		// Proxy sessions are told to stop and open prompts end first, while the server still
+		// takes their EndProxySession calls and their callers still get an answer.
 		if !s.secrets.stop(stopPromptsTimeout) {
-			s.log.Warn("open prompts did not record an ending in time")
+			s.log.Warn("open prompts or proxy sessions did not record an ending in time")
 		}
 		if s.server != nil {
 			shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
@@ -161,17 +168,19 @@ func (s *shell) run(ctx context.Context, effect daemon.Effect) ([]daemon.Event, 
 const stopPromptsTimeout = 5 * time.Second
 
 func newSecretsFor(ctx context.Context, cfg Config, store *sqlite.Store) (*secrets, error) {
-	helper, cli := cfg.Helper, cfg.CLI
-	var err error
-	if helper == "" {
-		if helper, err = paths.Beside("berth-native"); err != nil {
-			return nil, fmt.Errorf("find berth-native: %w", err)
+	helper, cli, proxy := cfg.Helper, cfg.CLI, cfg.Proxy
+	for _, f := range []struct {
+		path *string
+		name string
+	}{{&helper, "berth-native"}, {&cli, "berth"}, {&proxy, "berth-proxy"}} {
+		if *f.path != "" {
+			continue
 		}
-	}
-	if cli == "" {
-		if cli, err = paths.Beside("berth"); err != nil {
-			return nil, fmt.Errorf("find berth: %w", err)
+		p, err := paths.Beside(f.name)
+		if err != nil {
+			return nil, fmt.Errorf("find %s: %w", f.name, err)
 		}
+		*f.path = p
 	}
 	execs := execid.New(execid.DefaultCodesign)
 	pin := cfg.Pinner
@@ -183,9 +192,11 @@ func newSecretsFor(ctx context.Context, cfg Config, store *sqlite.Store) (*secre
 		return codetrust.New(ctx, path, identifier, pin, code, clock.System{}, cfg.Log)
 	}
 	return newSecrets(ctx, secretsDeps{
-		Log: cfg.Log, Store: store, Records: store, Clock: clock.System{},
+		Log: cfg.Log, Store: store, Records: store, Sessions: store, Clock: clock.System{},
 		Approver: native.New(helper), Execs: execs, Peers: peer.New(), Tickets: ticket.New(),
 		CLI: trusted(cli, codetrust.CLISigningID), Helper: trusted(helper, codetrust.HelperSigningID),
+		Proxy: trusted(proxy, codetrust.ProxySigningID), PID: os.Getpid(), Exits: watchExit,
+		AllowLocalTargets: cfg.AllowLocalProxyTargets,
 	}), nil
 }
 

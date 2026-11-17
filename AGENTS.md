@@ -17,7 +17,7 @@ Paste its last lines in your report; a failure is investigated to its root cause
 | `make lint` | Every linter, including untracked files |
 | `make fmt` | Format Go, Protobuf, Swift, Python |
 | `make gen` | Regenerate `gen/` after editing `proto/` |
-| `make build` | `bin/berthd` and `bin/berth` |
+| `make build` | `bin/berthd`, `bin/berth` and `bin/berth-proxy`, signed |
 
 ## Where things live
 

@@ -107,7 +107,7 @@ func run(ctx context.Context, d Deps) (int, []*Grant) {
 		return fail(ExitError, "berthd refused to authorize the proxy", err), nil
 	}
 	if resp.GetOutcome() != berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED {
-		return fail(ExitRefused, "no active proxy grant for every name; grant them with berth secret grant --proxy", nil), nil
+		return fail(ExitRefused, "no active proxy grant for every name; grant them with berth secret proxy", nil), nil
 	}
 	grants, err := buildGrants(names, resp.GetTickets(), d.AllowLocal)
 	if err != nil {

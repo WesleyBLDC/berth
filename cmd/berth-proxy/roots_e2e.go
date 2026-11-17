@@ -3,15 +3,11 @@
 package main
 
 import (
-	"context"
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
 	"os"
 
-	"berth/internal/adapters/execid"
-	"berth/internal/codetrust"
-	"berth/internal/core/ports"
 	"berth/internal/paths"
 )
 
@@ -34,14 +30,6 @@ func nativeHelper() (string, error) {
 		return h, nil
 	}
 	return paths.Beside("berth-native")
-}
-
-// filePinner accepts the ad hoc signed test berthd by its identifier, without Apple's chain;
-// the live check still demands a valid signature and the hardened runtime.
-func filePinner(x *execid.Identity) codetrust.Pinner {
-	return func(ctx context.Context, path, identifier string) (ports.CDHash, bool, error) {
-		return x.PinSigned(ctx, path, `identifier "`+identifier+`"`)
-	}
 }
 
 // roots is the system pool plus the compiled in test root; on macOS the system pool keeps the

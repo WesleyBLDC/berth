@@ -22,6 +22,7 @@ import (
 	"berth/internal/core/grant"
 	"berth/internal/core/machine"
 	"berth/internal/core/ports"
+	"berth/internal/core/proxysession"
 	"berth/internal/core/secret"
 )
 
@@ -69,9 +70,18 @@ type secretsDeps struct {
 	Execs    ports.ExecIdentity
 	Peers    ports.PeerFacts
 	Tickets  ports.TicketSource
-	// CLI and Helper are the signed berth and berth-native beside berthd.
+	Sessions ports.ProxySessionRecords
+	// CLI, Helper and Proxy are the signed berth, berth-native and berth-proxy beside berthd.
 	CLI    *codetrust.File
 	Helper *codetrust.File
+	Proxy  *codetrust.File
+	// PID is berthd's own; rotate and remove tickets are bound to it, since berthd starts the
+	// helper that redeems them.
+	PID int
+	// Exits reports when a process exits (kqueue NOTE_EXIT in berthd).
+	Exits func(ctx context.Context, pid int) (<-chan struct{}, error)
+	// AllowLocalTargets accepts localhost and IP literal proxy grants; only berth_e2e builds.
+	AllowLocalTargets bool
 }
 
 // secrets runs one actor per secret and per grant and performs their effects. It implements
@@ -85,10 +95,14 @@ type secrets struct {
 	stopOnce sync.Once
 	secrets  *actors[secret.State, secret.Event, secret.Effect]
 	grants   *actors[grant.State, grant.Event, grant.Effect]
+	sessions *actors[proxysession.State, proxysession.Event, proxysession.Effect]
+	// readyTimeout is how long a proxy has to open its watch stream before its session is Lost.
+	readyTimeout time.Duration
 
 	mu      sync.Mutex
 	flights map[string]*flight
 	live    map[ports.Ticket]liveTicket
+	running map[string]*proxySession
 }
 
 type flight struct {
@@ -138,8 +152,8 @@ var _ api.Secrets = (*secrets)(nil)
 
 func newSecrets(ctx context.Context, d secretsDeps) *secrets {
 	s := &secrets{
-		secretsDeps: d, ctx: ctx, stopping: make(chan struct{}),
-		flights: map[string]*flight{}, live: map[ports.Ticket]liveTicket{},
+		secretsDeps: d, ctx: ctx, stopping: make(chan struct{}), readyTimeout: proxyReadyTimeout,
+		flights: map[string]*flight{}, live: map[ports.Ticket]liveTicket{}, running: map[string]*proxySession{},
 	}
 	s.secrets = &actors[secret.State, secret.Event, secret.Effect]{
 		ctx: ctx, log: d.Log, store: d.Store, clock: d.Clock,
@@ -151,14 +165,29 @@ func newSecrets(ctx context.Context, d secretsDeps) *secrets {
 		kind: grant.Kind, initial: grant.Initial, transition: grant.Transition, run: s.runGrant,
 		live: map[string]*slot[grant.State, grant.Event, grant.Effect]{},
 	}
+	s.sessions = &actors[proxysession.State, proxysession.Event, proxysession.Effect]{
+		ctx: ctx, log: d.Log, store: d.Store, clock: d.Clock,
+		kind: proxysession.Kind, initial: proxysession.Initial, transition: proxysession.Transition, run: s.runSession,
+		live: map[string]*slot[proxysession.State, proxysession.Event, proxysession.Effect]{},
+	}
 	return s
 }
 
-// recover ends any store a previous run left Pending: its dialog died with that run.
+// recover ends what a previous run left open: proxy sessions become Lost, since their proxies
+// lost their watch streams with it; a dialog that died with it fails as "interrupted"; and the
+// grants of a removed secret are revoked, in case the run ended before it revoked them all.
 func (s *secrets) recover(ctx context.Context) error {
+	if err := s.recoverSessions(ctx); err != nil {
+		return err
+	}
 	rows, err := s.Records.Secrets(ctx)
 	if err != nil {
 		return err
+	}
+	interrupted := map[secret.State]secret.EventKind{
+		secret.Pending:  secret.StoreFailed,
+		secret.Rotating: secret.RotateFailed,
+		secret.Removing: secret.RemoveFailed,
 	}
 	for _, r := range rows {
 		entity := secret.Entity(r.Name)
@@ -166,23 +195,31 @@ func (s *secrets) recover(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		if secret.State(st) != secret.Pending {
+		if secret.State(st) == secret.Removed {
+			s.revokeAll(ctx, r.Name, proxysession.StopSecretRemoved)
 			continue
 		}
-		if _, _, err := step(ctx, s.secrets, entity, secret.Event{Kind: secret.StoreFailed, Note: "interrupted"}, nil, secret.StoreFailed); err != nil {
-			return fmt.Errorf("end interrupted store of %s: %w", r.Name, err)
+		kind, ok := interrupted[secret.State(st)]
+		if !ok {
+			continue
+		}
+		if _, _, err := step(ctx, s.secrets, entity, secret.Event{Kind: kind, Note: "interrupted"}, nil, kind); err != nil {
+			return fmt.Errorf("end interrupted %s of %s: %w", st, r.Name, err)
 		}
 	}
 	return nil
 }
 
-// stop cancels open prompts, which kills their helper processes, and waits up to timeout for
-// each to record its ending, so no store is left Pending by a clean stop.
+// stop tells every running proxy session to stop and gives the proxies a moment to end their
+// sessions, then cancels open prompts, which kills their helper processes, and waits up to
+// timeout in all for each to record its ending, so no store is left Pending by a clean stop.
 func (s *secrets) stop(timeout time.Duration) bool {
-	s.stopOnce.Do(func() { close(s.stopping) })
 	deadline := time.Now().Add(timeout)
-	secretsDone := s.secrets.wait(timeout)
-	return s.grants.wait(max(time.Until(deadline), 0)) && secretsDone
+	sessionsDone := s.stopAllSessions(min(timeout, sessionStopWait))
+	s.stopOnce.Do(func() { close(s.stopping) })
+	secretsDone := s.secrets.wait(max(time.Until(deadline), 0))
+	grantsDone := s.grants.wait(max(time.Until(deadline), 0))
+	return s.sessions.wait(max(time.Until(deadline), 0)) && grantsDone && secretsDone && sessionsDone
 }
 
 func (s *secrets) stopped() bool {
@@ -264,8 +301,12 @@ func (s *secrets) store(p ports.StorePrompt) (ports.StoreOutcome, error) {
 	if err != nil {
 		return "", err
 	}
-	if secret.State(state) == secret.Stored {
+	switch secret.State(state) {
+	case secret.Stored:
 		return "", api.ErrSecretExists
+	case secret.Rotating, secret.Removing:
+		return "", api.ErrBusy
+	case secret.Pending, secret.Denied, secret.Failed, secret.Removed:
 	}
 	if err := s.Records.AddSecret(ctx, p.Name, s.Clock.Now()); err != nil {
 		return "", err
@@ -284,7 +325,15 @@ func (s *secrets) store(p ports.StorePrompt) (ports.StoreOutcome, error) {
 
 func (s *secrets) runSecret(entity string) machine.Runner[secret.Event, secret.Effect] {
 	return func(ctx context.Context, effect secret.Effect) ([]secret.Event, error) {
-		if effect.Kind == secret.PromptStore {
+		switch effect.Kind {
+		case secret.PromptRotate:
+			return s.promptRotate(ctx, entity), nil
+		case secret.PromptRemove:
+			return s.promptRemove(ctx, entity), nil
+		case secret.RevokeAll:
+			s.secrets.output(entity, s.revokeAll(ctx, strings.TrimPrefix(entity, "secret/"), proxysession.StopSecretRemoved))
+			return nil, nil
+		case secret.PromptStore:
 			p, ok := s.secrets.input(entity).(ports.StorePrompt)
 			if !ok {
 				return []secret.Event{{Kind: secret.StoreFailed, Note: "no prompt to show"}}, nil
@@ -443,8 +492,10 @@ func (s *secrets) AuthorizeUse(ctx context.Context, req *berthv1.AuthorizeUseReq
 	if !s.CLI.Runs(ctx, peer) {
 		return nil, api.ErrPeerNotTrusted
 	}
-	if err := s.requireStored(ctx, name); err != nil {
+	if usable, err := s.usable(ctx, name); err != nil {
 		return nil, err
+	} else if !usable {
+		return nil, api.ErrSecretNotFound
 	}
 	// Identified here, never taken from the client, and matched by the resolved path.
 	exe, err := s.identify(ctx, req.GetExePath())
@@ -520,28 +571,39 @@ func (s *secrets) AuthorizeUse(ctx context.Context, req *berthv1.AuthorizeUseReq
 }
 
 func (s *secrets) authorize(ctx context.Context, g ports.GrantRecord, exe ports.Executable, peer ports.Peer) (*berthv1.AuthorizeUseResponse, error) {
-	entity := grant.Entity(g.ID)
-	kind := g.Kind
-	if kind == "" {
-		kind = ports.ConsumerExe
-	}
-	use := useRequest{grantID: g.ID, name: g.Secret, sha256: exe.SHA256, pid: peer.PID, kind: kind}
-	_, out, err := step(ctx, s.grants, entity, grant.Event{Kind: grant.UseAuthorized}, use, grant.UseAuthorized)
+	got, err := s.issueFor(ctx, useRequest{grantID: g.ID, name: g.Secret, sha256: exe.SHA256, pid: peer.PID, kind: kindOf(g)})
 	if err != nil {
 		return nil, err
-	}
-	got, ok := out.(issued)
-	if !ok {
-		return nil, errors.New("no ticket was issued")
-	}
-	if got.err != nil {
-		s.Log.Error("ticket not issued", "entity", entity, "err", got.err)
-		return nil, got.err
 	}
 	return &berthv1.AuthorizeUseResponse{
 		Outcome: berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED, Ticket: got.ticket[:], ExpiresAt: timestamppb.New(got.expires),
 		PassEnv: envpolicy.Filter(g.PassEnv),
 	}, nil
+}
+
+// issueFor sends UseAuthorized to the grant and returns the ticket its IssueTicket effect made.
+func (s *secrets) issueFor(ctx context.Context, use useRequest) (issued, error) {
+	entity := grant.Entity(use.grantID)
+	_, out, err := step(ctx, s.grants, entity, grant.Event{Kind: grant.UseAuthorized}, use, grant.UseAuthorized)
+	if err != nil {
+		return issued{}, err
+	}
+	got, ok := out.(issued)
+	if !ok {
+		return issued{}, errors.New("no ticket was issued")
+	}
+	if got.err != nil {
+		s.Log.Error("ticket not issued", "entity", entity, "err", got.err)
+		return issued{}, got.err
+	}
+	return got, nil
+}
+
+func kindOf(g ports.GrantRecord) ports.ConsumerKind {
+	if g.Kind == "" {
+		return ports.ConsumerExe
+	}
+	return g.Kind
 }
 
 // TrustRedeemer accepts only a peer running the signed berth-native beside berthd, judged by
@@ -611,6 +673,16 @@ func (s *secrets) requireStored(ctx context.Context, name string) error {
 	return nil
 }
 
+// usable reports whether a secret serves uses: Stored, or Rotating, which keeps the old value
+// until the new one is in.
+func (s *secrets) usable(ctx context.Context, name string) (bool, error) {
+	st, err := s.state(ctx, secret.Entity(name), "")
+	if err != nil {
+		return false, err
+	}
+	return secret.State(st) == secret.Stored || secret.State(st) == secret.Rotating, nil
+}
+
 // state reads an entity's persisted state; actors save before they act, so this is current.
 func (s *secrets) state(ctx context.Context, entity, initial string) (string, error) {
 	st, found, err := s.Store.LoadState(ctx, entity)
@@ -635,10 +707,16 @@ func argsMatch(glob, args string) bool {
 func shortHex(sum [32]byte) string { return hex.EncodeToString(sum[:6]) }
 
 func consumer(g ports.GrantRecord, st grant.State) *berthv1.Consumer {
+	kind := kindOf(g)
 	c := &berthv1.Consumer{
-		GrantId: g.ID, State: grantState(st), ExePath: g.Exe.Path, Sha256: hex.EncodeToString(g.Exe.SHA256[:]),
+		GrantId: g.ID, State: grantState(st), Kind: consumerKinds[kind], ExePath: g.Exe.Path,
 		TeamId: g.Exe.TeamID, SigningId: g.Exe.SigningID, ArgsGlob: g.ArgsGlob,
 		CreatedAt: timestamppb.New(g.CreatedAt), UseCount: g.UseCount, PassEnv: g.PassEnv,
+	}
+	if kind == ports.ConsumerProxy {
+		c.Proxy = proxyTarget(g.Proxy)
+	} else {
+		c.Sha256 = hex.EncodeToString(g.Exe.SHA256[:])
 	}
 	if !g.LastUsedAt.IsZero() {
 		c.LastUsedAt = timestamppb.New(g.LastUsedAt)
