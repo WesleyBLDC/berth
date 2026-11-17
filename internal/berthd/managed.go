@@ -359,7 +359,7 @@ func findBrowser() string {
 		matches, _ := filepath.Glob(glob)
 		if len(matches) > 0 {
 			slices.Sort(matches)
-			return matches[len(matches)-1]
+			return strings.ToValidUTF8(matches[len(matches)-1], "\uFFFD")
 		}
 	}
 	return ""

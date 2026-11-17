@@ -209,3 +209,12 @@ func TestPinSignedReadsAPrivateCopy(t *testing.T) {
 		t.Fatal("pinned against another team's requirement")
 	}
 }
+
+func TestIdentifiedPathIsValidUTF8(t *testing.T) {
+	if got := sendable("/Volumes/usb/x\xffy"); got != "/Volumes/usb/x\uFFFDy" {
+		t.Fatalf("sendable gave %q", got)
+	}
+	if got := sendable("/usr/bin/true"); got != "/usr/bin/true" {
+		t.Fatalf("a valid path changed to %q", got)
+	}
+}

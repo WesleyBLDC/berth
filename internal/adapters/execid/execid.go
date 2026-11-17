@@ -63,8 +63,13 @@ func (x *Identity) Identify(ctx context.Context, path string) (ports.Executable,
 			cdhash = ports.CDHash{}
 		}
 	}
-	return ports.Executable{Path: resolved, SHA256: sum, TeamID: team, SigningID: signing, Signature: signature, Shebang: shebang, CDHash: cdhash}, nil
+	return ports.Executable{Path: sendable(resolved), SHA256: sum, TeamID: team, SigningID: signing, Signature: signature, Shebang: shebang, CDHash: cdhash}, nil
 }
+
+// sendable is a path as grant records and audit notes keep it: protobuf must send those, so
+// invalid UTF-8, which APFS refuses but another volume may hold, shows as U+FFFD. The hashes,
+// not the path, pin the file.
+func sendable(path string) string { return strings.ToValidUTF8(path, "\uFFFD") }
 
 // hashFile hashes the file and, for a #! script, returns the interpreter path its first line
 // names (empty unless absolute).
