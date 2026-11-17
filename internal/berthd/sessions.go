@@ -26,6 +26,10 @@ const (
 	stopGrace = 5 * time.Second
 	// stopWait bounds how long StopSession waits for the browser to be gone.
 	stopWait = 10 * time.Second
+	// endedMax and endedAge bound what berthd keeps in memory about stopped sessions, whichever is
+	// smaller, since anything that can start processes can churn through browsers.
+	endedMax = 200
+	endedAge = time.Hour
 )
 
 type browsersDeps struct {
@@ -49,8 +53,12 @@ type browsers struct {
 	mu sync.Mutex
 	// live holds every session the last scan saw or that has not yet reached Stopped.
 	live map[string]*tracked
-	// ended holds sessions that stopped since berthd started, for ListSessions include_stopped.
-	ended map[string]*tracked
+	// ended holds recently stopped sessions, at most endedMax and none older than endedAge, for
+	// ListSessions include_stopped; endedOrder is their ids, oldest first.
+	ended      map[string]*tracked
+	endedOrder []string
+	// grace is stopGrace, shorter in tests.
+	grace time.Duration
 	// scanning admits one scan at a time.
 	scanning sync.Mutex
 }
@@ -63,7 +71,7 @@ type tracked struct {
 
 func newBrowsers(ctx context.Context, d browsersDeps) *browsers {
 	b := &browsers{
-		browsersDeps: d, ctx: ctx, kick: make(chan struct{}, 1),
+		browsersDeps: d, ctx: ctx, kick: make(chan struct{}, 1), grace: stopGrace,
 		live: map[string]*tracked{}, ended: map[string]*tracked{},
 	}
 	b.actors = &actors[session.State, session.Event, session.Effect]{
@@ -211,6 +219,9 @@ func (b *browsers) apply(ctx context.Context, id string, t *tracked, o *discover
 	if o != nil {
 		t.obs = *o
 	}
+	if o == nil && t.disc.State == session.Stopped {
+		b.end(id, t)
+	}
 	b.mu.Unlock()
 	for _, e := range events {
 		b.send(ctx, id, e)
@@ -233,9 +244,32 @@ func (b *browsers) send(ctx context.Context, id string, e session.Event) {
 	}
 	t.disc.State, t.since = session.State(rec.To), rec.At
 	if t.disc.State == session.Stopped {
-		delete(b.live, id)
-		b.ended[id] = t
+		b.end(id, t)
 	}
+}
+
+// end moves a stopped session out of live, stops its actor and trims ended. b.mu is held.
+func (b *browsers) end(id string, t *tracked) {
+	delete(b.live, id)
+	b.actors.evict(session.Entity(id))
+	b.ended[id] = t
+	b.endedOrder = append(b.endedOrder, id)
+	b.trimEnded()
+}
+
+// trimEnded drops stopped sessions beyond endedMax or older than endedAge. b.mu is held.
+func (b *browsers) trimEnded() {
+	cutoff := b.Clock.Now().Add(-endedAge)
+	drop := 0
+	for drop < len(b.endedOrder) {
+		t := b.ended[b.endedOrder[drop]]
+		if len(b.endedOrder)-drop <= endedMax && (t == nil || !t.since.Before(cutoff)) {
+			break
+		}
+		delete(b.ended, b.endedOrder[drop])
+		drop++
+	}
+	b.endedOrder = slices.Delete(b.endedOrder, 0, drop)
 }
 
 func (b *browsers) runSession(entity string) machine.Runner[session.Event, session.Effect] {
@@ -254,7 +288,7 @@ func (b *browsers) runSession(entity string) machine.Runner[session.Event, sessi
 		switch effect.Kind {
 		case session.SignalTerm:
 			b.signal(ctx, o.Root.ProcessRef, ports.SignalTerm)
-			time.AfterFunc(stopGrace, func() {
+			time.AfterFunc(b.grace, func() {
 				if st, err := b.state(b.ctx, entity); err == nil && st == session.Stopping {
 					b.send(b.ctx, id, session.Event{Kind: session.StopTimedOut})
 				}
@@ -292,6 +326,10 @@ func (b *browsers) StopSession(ctx context.Context, req *berthv1.StopSessionRequ
 	b.mu.Unlock()
 	if !live {
 		if ended {
+			return &berthv1.StopSessionResponse{State: berthv1.SessionState_SESSION_STATE_STOPPED}, nil
+		}
+		// A session trimmed from memory is still Stopped in the database.
+		if st, found, err := b.Store.LoadState(ctx, session.Entity(id)); err == nil && found && session.State(st.State) == session.Stopped {
 			return &berthv1.StopSessionResponse{State: berthv1.SessionState_SESSION_STATE_STOPPED}, nil
 		}
 		return nil, api.ErrSessionNotFound
@@ -334,6 +372,7 @@ func (b *browsers) StopSession(ctx context.Context, req *berthv1.StopSessionRequ
 func (b *browsers) ListSessions(_ context.Context, req *berthv1.ListSessionsRequest) (*berthv1.ListSessionsResponse, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.trimEnded()
 	resp := &berthv1.ListSessionsResponse{}
 	add := func(t *tracked) {
 		s := sessionProto(t)

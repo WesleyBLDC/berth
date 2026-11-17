@@ -35,6 +35,8 @@ type slot[S ~string, E machine.Event, F any] struct {
 	// finished with it, so a waiter only ever sees its own outcome and its own data.
 	turn    chan struct{}
 	stopped chan struct{}
+	// cancel stops this actor alone, for evict.
+	cancel context.CancelFunc
 
 	mu     sync.Mutex
 	waiter chan applied
@@ -59,7 +61,7 @@ func (sl *slot[S, E, F]) tell(a applied) {
 	}
 }
 
-func (a *actors[S, E, F]) get(ctx context.Context, entity string) (*slot[S, E, F], error) {
+func (a *actors[S, E, F]) get(ctx context.Context, entity string) (*slot[S, E, F], error) { //nolint:contextcheck // an actor outlives the call that first needed it
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	if sl, ok := a.live[entity]; ok {
@@ -77,8 +79,11 @@ func (a *actors[S, E, F]) get(ctx context.Context, entity string) (*slot[S, E, F
 	}
 	sl.actor = actor
 	a.live[entity] = sl
+	actorCtx, cancel := context.WithCancel(a.ctx)
+	sl.cancel = cancel
 	go func() {
-		if err := actor.Run(a.ctx); err != nil {
+		defer cancel()
+		if err := actor.Run(actorCtx); err != nil {
 			a.log.Error("actor stopped", "entity", entity, "err", err)
 		}
 		// A stopped actor is dropped, so the next call reloads the entity from the store.
@@ -90,6 +95,25 @@ func (a *actors[S, E, F]) get(ctx context.Context, entity string) (*slot[S, E, F
 		close(sl.stopped)
 	}()
 	return sl, nil
+}
+
+// evict stops an entity's actor and forgets it, so an entity that reached a final state holds no
+// goroutine; a later get reloads it from the store.
+func (a *actors[S, E, F]) evict(entity string) {
+	a.mu.Lock()
+	sl := a.live[entity]
+	delete(a.live, entity)
+	a.mu.Unlock()
+	if sl != nil {
+		sl.cancel()
+	}
+}
+
+// count is how many actors are running, for tests that check they stay bounded.
+func (a *actors[S, E, F]) count() int {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return len(a.live)
 }
 
 // input is called from an effect to read what its step carried in.

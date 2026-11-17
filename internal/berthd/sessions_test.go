@@ -162,3 +162,98 @@ func TestBootEndsSessionsThatAreGone(t *testing.T) {
 		t.Fatalf("a session gone at boot is %s", st.State)
 	}
 }
+
+func (f *browsersFixture) set(t *testing.T, rows ...testutil.FakeProcess) {
+	t.Helper()
+	f.rows = rows
+	f.procs.Set(rows...)
+	if err := f.b.scan(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func waitSignals(t *testing.T, procs *testutil.Processes, n int) []testutil.SentSignal {
+	t.Helper()
+	deadline := time.Now().Add(3 * time.Second)
+	for len(procs.Signals()) < n && time.Now().Before(deadline) {
+		time.Sleep(5 * time.Millisecond)
+	}
+	return procs.Signals()
+}
+
+// A spawner of short lived fake browsers must not grow berthd: stopped sessions give up their
+// actor, and only the newest endedMax stay in memory, none older than endedAge.
+func TestChurnStaysBounded(t *testing.T) {
+	f := newBrowsersFixture(t)
+	base := slices.Clone(f.rows)
+	for i := range 3 * endedMax {
+		fake := row(1000+i, 80, testUID, shellPath, shellPath, "--headless")
+		f.set(t, append(slices.Clone(base), fake)...)
+		f.set(t, base...)
+	}
+	f.b.mu.Lock()
+	live, ended, order := len(f.b.live), len(f.b.ended), len(f.b.endedOrder)
+	f.b.mu.Unlock()
+	if actors := f.b.actors.count(); actors > live {
+		t.Errorf("%d actors running for %d live sessions", actors, live)
+	}
+	if live != 3 || ended != endedMax || order != endedMax {
+		t.Errorf("live %d, ended %d (order %d); want 3 and %d", live, ended, order, endedMax)
+	}
+	f.b.Clock.(*testutil.Clock).Advance(endedAge + time.Minute)
+	all, err := f.b.ListSessions(t.Context(), &berthv1.ListSessionsRequest{IncludeStopped: true})
+	if err != nil || len(all.GetSessions()) != 3 {
+		t.Fatalf("after an hour include_stopped lists %d sessions, want the 3 live ones (%v)", len(all.GetSessions()), err)
+	}
+	// A trimmed session is still Stopped in the database.
+	resp, err := f.b.StopSession(t.Context(), &berthv1.StopSessionRequest{Id: discovery.ID(row(1000, 80, testUID, shellPath).ProcessRef)})
+	if err != nil || resp.GetState() != berthv1.SessionState_SESSION_STATE_STOPPED {
+		t.Fatalf("stop of a trimmed session: %v %v", resp, err)
+	}
+}
+
+func TestStopRefusesAnAppsBrowserWithoutForce(t *testing.T) {
+	f := newBrowsersFixture(t)
+	f.set(t, append(slices.Clone(f.rows),
+		row(60, 1, testUID, "/Applications/Cursor.app/Contents/MacOS/Cursor"),
+		row(61, 60, testUID, "/opt/homebrew/bin/node", "node", "server.js"),
+		row(110, 61, testUID, shellPath, shellPath, "--headless"),
+	)...)
+	id := f.id(110)
+	if _, err := f.b.StopSession(t.Context(), &berthv1.StopSessionRequest{Id: id}); !errors.Is(err, api.ErrSessionNotStoppable) {
+		t.Fatalf("stop an app's browser without force: %v", err)
+	}
+	if len(f.procs.Signals()) != 0 {
+		t.Fatalf("signals sent: %v", f.procs.Signals())
+	}
+	go func() { _, _ = f.b.StopSession(t.Context(), &berthv1.StopSessionRequest{Id: id, Force: true}) }()
+	if got := waitSignals(t, f.procs, 1); !slices.Equal(got, []testutil.SentSignal{{PID: 110, Signal: ports.SignalTerm}}) {
+		t.Fatalf("forced stop sent %v", got)
+	}
+}
+
+// A browser that ignores SIGTERM gets SIGKILL after the grace, on every process of the session
+// berthd's user owns and on no other.
+func TestStopTimesOutIntoSIGKILLOfOwnProcessesOnly(t *testing.T) {
+	f := newBrowsersFixture(t)
+	f.b.grace = 20 * time.Millisecond
+	f.set(t, append(slices.Clone(f.rows), row(102, 100, 502, shellPath))...)
+	id := f.id(100)
+	done := make(chan *berthv1.StopSessionResponse, 1)
+	go func() {
+		resp, _ := f.b.StopSession(t.Context(), &berthv1.StopSessionRequest{Id: id})
+		done <- resp
+	}()
+	got := waitSignals(t, f.procs, 3)
+	want := []testutil.SentSignal{{PID: 100, Signal: ports.SignalTerm}, {PID: 100, Signal: ports.SignalKill}, {PID: 101, Signal: ports.SignalKill}}
+	if !slices.Equal(got, want) {
+		t.Fatalf("signals %v, want %v", got, want)
+	}
+	if st, _ := f.b.state(t.Context(), session.Entity(id)); st != session.Stopping {
+		t.Fatalf("after SIGKILL the session is %s, want Stopping until it is gone", st)
+	}
+	f.set(t, slices.DeleteFunc(slices.Clone(f.rows), func(r testutil.FakeProcess) bool { return r.PID >= 100 && r.PID <= 102 })...)
+	if resp := <-done; resp.GetState() != berthv1.SessionState_SESSION_STATE_STOPPED {
+		t.Fatalf("stop answered %v", resp)
+	}
+}
