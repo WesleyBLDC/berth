@@ -37,9 +37,13 @@ Only the item that owns them may edit these; everything else names them as a fol
 - A change to behaviour or structure updates `ARCHITECTURE.md` in the same commit.
 - A reviewer reads the diff against its brief; a tester proves anything user or agent facing.
 - The leash is `held`: work branches stay local and Wesley merges, or tells the lead to merge, contract first, then build items smallest diff first, then integration.
-- The lead pushes `main` to the public repository after `make check` passes and review; there are no releases or tags before M8 (ADR 0017).
+- Right before the final check the branch is rebased onto `main` and `make check` runs again, `buf breaking` included: parallel branches take the same `ErrorReason` numbers and migration numbers, and only the rebased tree shows the clash (M2 renumbered its reasons after E3 took 13; M4 started at 19 because E3 item 4 held 16 to 18).
+- The lead pushes `main` to the public repository only after `make check` printed `check: PASS` on the exact commit and the review is done; there are no releases or tags before M8 (ADR 0017).
+- Subagents default to Opus 5.5 at medium effort.
 
 ## Example: M2, see every browser
+
+The plan as it was cut; what was built differs in places (`internal/adapters/procscan` instead of `gopsutil`, a pure `internal/core/browsersig` table instead of a TOML registry, `WatchSessions` in M3), and [the M2 plan](plans/m2-see-every-browser.md) has the final items.
 
 | Item | Wave | Owns | Acceptance tests it carries |
 |---|---|---|---|
