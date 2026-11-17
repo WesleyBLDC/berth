@@ -78,7 +78,7 @@ Observe, then reconcile, as `ARCHITECTURE.md` planned for sessions: the scan loo
 
 `internal/core/ownerchain`, pure: given a session root's ancestors (parent first, up to launchd), each with its executable and, for the owner's processes, its arguments, it returns the chain and the owner.
 
-- The owner is the nearest ancestor recognised as an **agent** (`claude`, `codex`, `cursor-agent`, `gemini`, `aider`, `opencode`, `amp`, `goose`, including those run through `node`, `bun` or `deno`); else the nearest **terminal** (Terminal, iTerm2, Ghostty, WezTerm, kitty, Alacritty, Warp, or `tmux` and `screen` servers); else the nearest **app** (any other `.app` bundle executable, for example Cursor or VS Code); else the **person**, when a browser app's main executable was started by launchd (from the Dock, Finder or `open`); else **none**, when an automated or headless browser already hangs from launchd, which means its owner has exited; else **process**, the browser's parent, when no rule recognises any ancestor (a launchd job, say).
+- The owner is the nearest ancestor recognised as an **agent** (`claude`, `codex`, `cursor-agent`, `gemini`, `aider`, `opencode`, `amp`, `goose`, including those run through `node`, `bun` or `deno`); else the nearest **terminal** (Terminal, iTerm2, Ghostty, WezTerm, kitty, Alacritty, Warp, or `tmux` and `screen` servers); else the nearest **app** (any other `.app` bundle executable, for example Cursor or VS Code); else the **person**, when a browser app's main executable was started by launchd (from the Dock, Finder or `open`); else **none**, when a browser with real driver evidence (a Playwright or Puppeteer install or profile, headless, or a CDP pipe) already hangs from launchd, which means its owner has exited; a CDP port alone is not evidence, since a person can open their own browser with one; else **process**, the browser's parent, when no rule recognises any ancestor (a launchd job, say).
 - The chain stops at the first ancestor the kernel will not describe, as the peer adapter's does.
 - The owner is a process instance (`ProcessRef`), so its exit is detectable later by its start time.
 
@@ -165,6 +165,7 @@ message Session {
   string id; SessionState state; BrowserKind kind; Driver driver; bool headless;
   CdpMode cdp; uint32 cdp_port; string user_data_dir; SessionOwner owner;
   SessionProcess browser; uint32 process_count; bool other_user; uint32 uid; Timestamp state_since;
+  bool args_unreadable;
 }
 message ListSessionsRequest { repeated SessionState states; bool include_stopped; }
 message ListSessionsResponse { repeated Session sessions; }
@@ -226,7 +227,9 @@ On this Mac all four exist: Chrome, Arc, Playwright's Chromium 1223, 1243 and 12
 - **Recognition is by path and flags,** which a process controls: a renamed or copied Chrome is missed, and any executable placed at a matching path is listed as a browser. M2 only lists and stops, so a false match costs a wrong line, never a grant.
 - **The owner is a guess from the process tree.** A browser started through `launchd`, `open`, or a daemon that reparents its children shows the person or none as the owner, and a tool that double forks makes its browser look like a leftover at once.
 - **Active and Idle come from CPU time,** not from page activity; a page playing a video is Active with no agent driving it, and an agent waiting on a slow site looks Idle.
-- **Stopped sessions stay in the database** as machine rows; a test suite that launches thousands of browsers adds thousands of entities until a later pruning pass.
+- **Stopped sessions stay in the database** as machine rows; a test suite (or a hostile process) that launches thousands of browsers adds thousands of `machine_state` and `machine_event` rows until a later pruning pass. Memory stays bounded: a stopped session's actor is stopped at once, berthd keeps at most the 200 newest stopped sessions and none older than an hour (older ones drop out of `ps --all`; a stop of one still answers `STOPPED` from its row), and every string kept about a session is cut to 1,024 bytes with the mark `...(truncated)`.
+- **Arguments berthd cannot parse safely are not guessed.** A `procargs2` buffer whose layout does not match the kernel's (argv at the pointer aligned offset after the exec path), or with more than 4,096 arguments, makes the session show `arguments unreadable` with driver, headless, CDP and profile unknown; so a process can hide its CDP port this way, but it cannot make berthd read its environment as arguments.
+- **Names come from the process.** Executable paths, profile folders and owner names are whatever the process chose; `berth ps` and `inspect` print any with control or format characters quoted with escapes, so they cannot drive the terminal, but they can still lie.
 - **A person's browser is protected by a flag, not Touch ID.** Anything that can reach the socket can pass `force`; until session tokens (M4) the daemon cannot tell an agent from the person.
 
 ## Decisions for the maintainer
@@ -237,7 +240,7 @@ Defaults taken while he was away; each is cheap to reverse before M2 closes.
 2. **No M2 method is on the agent surface.** Agents get scoped methods in M4 with session tokens.
 3. **Raw arguments never leave `berthd`** and are never stored; the API returns only the parsed facts.
 4. **The registry covers Chrome, Chrome for Testing, Chromium, Edge, Brave and headless shells.** Arc (installed on this Mac), Vivaldi, Opera and Electron apps are left out; Arc is one table row if wanted. Firefox and Safari wait for M7.
-5. **Leftover means the owner exited after discovery, or an automated or headless browser already hangs from launchd.** A non automated browser app started by launchd is the person's, not a leftover.
+5. **Leftover means the owner exited after discovery, or a browser with real driver evidence already hangs from launchd.** Evidence is a Playwright or Puppeteer install path or profile, headless, or a CDP pipe. A CDP port alone is not: a non headless browser launchd started (for example `open -a ... --args --remote-debugging-port=9222`) belongs to the person and is never a leftover, and `stop` (and `leftovers --stop`) need `--force` for it. Decided in review on 2026-11-17.
 6. **Activity is CPU time:** `Busy` at 20 ms or more of CPU growth between scans, `Quiet` after 60 seconds without it.
 7. **Scan every 2 seconds** plus kqueue `NOTE_EXIT` on each session root.
 8. **No new table:** facts are rebuilt by every scan, and only machine rows persist; stopped sessions are pruned in a later milestone.
@@ -263,7 +266,7 @@ Built on branch `m2a` from `main` at 6de1d7b: items 1 to 10, each with its own c
 2. No secret value is touched. A browser's arguments can hold credentials (`--proxy-server` with a password), so raw arguments stay inside `discovery`, are never stored, logged or returned, and the `procargs2` buffer, which also holds the environment, is cleared after parsing.
 3. Canary: `discovery` plants one in a browser argument and checks no observed field holds it; the end to end test plants one and checks `ps`, `inspect`, the log and the database.
 4. Stopping a browser is not a power action (decision 1); a person's or an app's browser needs `force`, another user's is refused.
-5. No agent controlled text is stored: event notes are fixed strings, and paths shown are the kernel's.
+5. Event notes are fixed strings. Executable paths, profile folders and owner names are what the kernel reports, but the process chose them, so berthd cuts each to 1,024 bytes and the CLI prints any with control or format characters (ESC, CR, LF, other C0 and C1, DEL, bidi overrides) quoted with escapes; JSON output is escaped by the encoder.
 6. `StopSession` takes a `request_id` and replays through the request log.
 7. A failed signal is logged and the next scan reconciles; refusals are typed (`SESSION_NOT_FOUND`, `SESSION_NOT_STOPPABLE`).
 8. OWASP agentic risks: unchanged; the new limits are listed above.
@@ -272,3 +275,13 @@ Built on branch `m2a` from `main` at 6de1d7b: items 1 to 10, each with its own c
 
 - The maintainer runs `berth ps` on his Mac with his own Chrome and a Playwright MCP browser open, and confirms the owners read as planned.
 - `ARCHITECTURE.md` marks M2 done after that check.
+
+### Review fixes (2026-11-17)
+
+- **Bounded memory:** `actors.evict` stops a session's actor when it reaches `Stopped`; `ended` keeps at most 200 sessions and none older than an hour; kept strings are clipped (`discovery.Clip`). `TestChurnStaysBounded` churns 600 fake browsers and fails without either bound.
+- **Terminal safety:** every process chosen string in `ps`, `inspect` and `stop` output goes through `shown`, which quotes it with `strconv.QuoteToGraphic` when it holds anything not graphic; `TestSessionTextIsEscaped` plants ESC, CR, LF, BEL, DEL, U+202E and U+0085.
+- **Stop branches:** tests fail if `App` leaves the force rule, or if the SIGKILL fan out drops the uid filter; `StopTimedOut` is driven through to `SignalKill` with a 20 ms grace.
+- **Leftover evidence:** a CDP port alone no longer counts (decision 5).
+- **procargs2:** argv is read at `4 + roundup(len(exec path) + 1, 8)`, measured on macOS 26.5 for exec paths of every length modulo 8; a buffer that does not fit that layout, or that has more than 4,096 arguments, is refused, and the session carries `args_unreadable`. An empty `argv[0]` from the real kernel reads back as `["", "30"]`; the old parser read the environment as the second argument.
+- **kqueue:** `WatchPID` blocks on an `EVFILT_USER` wake instead of a one second poll, so ending its context closes the kqueue at once; `WatchExit` ends a refused watch right away. `TestRefusedWatchesCloseTheirKqueue` fails without it (204 descriptors open after 200 refused watches).
+- The agent socket test names the three sessions methods.
