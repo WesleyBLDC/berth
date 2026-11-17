@@ -42,9 +42,21 @@ func runCommand(ctx context.Context, args []string, env Env) int {
 	fs := newFlags("run", env)
 	var bindings envFlags
 	fs.Var(&bindings, "env", "KEY=<secret name>; repeat for more secrets")
-	if err := fs.Parse(args); err != nil || fs.NArg() == 0 || len(bindings) == 0 {
+	var proxies proxyNames
+	fs.Var(&proxies, "proxy", "a secret berth-proxy writes into requests to its granted host; repeat for more")
+	// --env and --proxy together would put a value in a child that also holds the proxy's
+	// credential; E2b keeps the two modes apart.
+	if err := fs.Parse(args); err != nil || fs.NArg() == 0 || (len(bindings) == 0) == (len(proxies) == 0) {
 		fmt.Fprint(env.Stderr, usage)
 		return ExitUsage
+	}
+	if len(proxies) > 0 {
+		exe, err := resolveExecutable(fs.Arg(0))
+		if err != nil {
+			fmt.Fprintln(env.Stderr, err)
+			return ExitError
+		}
+		return runProxied(ctx, proxies, exe, fs.Args()[1:], env)
 	}
 	if env.Read == nil {
 		fmt.Fprintln(env.Stderr, errNoReader)
@@ -114,15 +126,17 @@ func runCommand(ctx context.Context, args []string, env Env) int {
 	return startChild(ctx, exe, argv, envpolicy.Child(os.Environ(), passEnv), bindings, values, env)
 }
 
-// startChild runs exe with childEnv plus the secrets; childEnv comes from envpolicy, never the
-// whole environment berth was started with.
+// startChild runs exe with childEnv plus the secrets. With secrets, childEnv comes from
+// envpolicy, never the whole environment berth was started with; a proxied child holds none.
 func startChild(ctx context.Context, exe string, argv, childEnv []string, bindings envFlags, values [][]byte, env Env) int {
-	stdout := newMasker(env.Stdout, values)
-	stderr := newMasker(env.Stderr, values)
-	defer func() { _ = stdout.Close(); _ = stderr.Close() }()
-
 	cmd := exec.CommandContext(ctx, exe, argv...) //nolint:gosec // running the person's chosen command is what berth run is for
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = env.Stdin, stdout, stderr
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = env.Stdin, env.Stdout, env.Stderr
+	// Without values there is nothing to mask, and the child keeps berth's terminal as its own.
+	if len(values) > 0 {
+		stdout, stderr := newMasker(env.Stdout, values), newMasker(env.Stderr, values)
+		defer func() { _ = stdout.Close(); _ = stderr.Close() }()
+		cmd.Stdout, cmd.Stderr = stdout, stderr
+	}
 	cmd.Env = slices.Clone(childEnv)
 	for i, b := range bindings {
 		cmd.Env = append(cmd.Env, envEntry(b.key, values[i]))

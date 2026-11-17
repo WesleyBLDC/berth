@@ -21,6 +21,14 @@ func nativeHelper() (string, error) {
 	return paths.Beside("berth-native")
 }
 
+// proxyBinary honours BERTH_PROXY only in berth_e2e builds, like BERTH_NATIVE.
+func proxyBinary() (string, error) {
+	if p := os.Getenv("BERTH_PROXY"); p != "" {
+		return p, nil
+	}
+	return paths.Beside("berth-proxy")
+}
+
 // filePinner accepts the ad hoc signed test berthd by its identifier,
 // without Apple's chain; the live check of berthd still demands a valid signature and the
 // hardened runtime.
