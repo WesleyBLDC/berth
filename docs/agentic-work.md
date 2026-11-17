@@ -33,10 +33,11 @@ Only the item that owns them may edit these; everything else names them as a fol
 
 ## Landing
 
-- Every item ends with `make check` printing `check: PASS` and a local commit on its branch.
+- Every item ends with `make check` printing `check: PASS` and a commit on its branch.
+- A change to behaviour or structure updates `ARCHITECTURE.md` in the same commit.
 - A reviewer reads the diff against its brief; a tester proves anything user or agent facing.
-- The leash is `held`: branches stay local and Wesley merges, or tells the lead to merge, contract first, then build items smallest diff first, then integration.
-- Nothing is pushed before M8.
+- The leash is `held`: work branches stay local and Wesley merges, or tells the lead to merge, contract first, then build items smallest diff first, then integration.
+- The lead pushes `main` to the public repository after `make check` passes and review; there are no releases or tags before M8 (ADR 0017).
 
 ## Example: M2, see every browser
 

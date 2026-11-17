@@ -27,7 +27,7 @@ Berth has no implicit state: no flags whose combinations mean something, no time
 
 - Add states and events; do not rename or delete ones that may be stored (they are data in `machine_state` and `machine_event`). Retire one by making it illegal everywhere and leaving the name.
 - Update `AllEvents`, `States` and the pinned legal pair count in the same change; a changed count is a deliberate table change, so say why in the commit.
-- Update the wiki diagram for the machine on the architecture page, or name it in your report.
+- Update the machine's `stateDiagram-v2` in `ARCHITECTURE.md` (and its legal pair count) in the same commit.
 
 ## Rules the reviewer checks
 

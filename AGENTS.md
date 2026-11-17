@@ -1,7 +1,7 @@
 # Berth: agent instructions
 
 Berth is a local macOS app that lists every browser agents, tests and scrapers have open, lets a person watch and take over any of them, and brokers Keychain secrets to browsers and terminals without agents ever reading them.
-The full design is in the wiki (start at the reading order on https://wiki.wesleybldc.com/wiki-artifacts/berth); the decisions that bind code are in `docs/adr/`, and the current milestone's plan is in `docs/plans/`.
+The architecture, with what is built and what is planned, is in `ARCHITECTURE.md`; the decisions that bind code are in `docs/adr/`, the current milestone's plan is in `docs/plans/`, and the agent safety checklist is in `docs/agent-safety.md`.
 A lead session reads `lead.toml`; workers can ignore it.
 
 ## Done means
@@ -27,14 +27,18 @@ Paste its last lines in your report; a failure is investigated to its root cause
 | `gen/` | Generated code, committed; never edit by hand | |
 | `internal/core/ports/` | Interfaces the core needs (Store, Clock, RequestLog) | stdlib only |
 | `internal/core/machine/` | The state machine kit: `Transition`, `Actor`, `machinetest.Walk` | ports |
-| `internal/core/<machine>/` | One package per state machine (today `daemon`) | machine, ports |
-| `internal/adapters/<name>/` | Implementations of ports and the API (`sqlite`, `socket`, `api`, `clock`) | core, gen |
+| `internal/core/<machine>/` | One package per state machine (today `daemon`, `secret`, `grant`) | machine, ports |
+| `internal/adapters/<name>/` | Implementations of ports and the API (`sqlite`, `socket`, `api`, `clock`, `native`, `execid`, `peer`, `ticket`) | core, gen |
 | `internal/berthd/` | The daemon shell: wires adapters, runs machines, performs effects | everything |
 | `internal/client/` | The Go client every Go tool uses to reach the daemon | gen, api |
+| `internal/cli/` | The `berth` command logic, testable against an in process server | client, gen, api |
 | `internal/testutil/` | Fakes for ports (in memory store, fake clock) | ports |
 | `cmd/` | `berthd` and `berth` entry points, thin | internal |
+| `native/` | `berth-native`, the Swift helper that alone touches secret values | |
 | `test/e2e/` | End to end tests that build and run the binaries | internal, gen |
+| `ARCHITECTURE.md` | The canonical architecture: processes, layers, state machines, storage, security model, milestone status | |
 | `docs/adr/` | One decision record per decision | |
+| `docs/plans/` | One plan per milestone, with acceptance tests | |
 
 ## Invariants (reviewers block on these)
 
@@ -49,7 +53,7 @@ Paste its last lines in your report; a failure is investigated to its root cause
 9. **Agent methods are opt in.** Only methods with `(berth.agent) = true` are reachable by agents, and `TestAgentSurface` pins the list.
 10. **Mutating calls are idempotent** through a `request_id` and the request log.
 11. **No third party code runs inside `berthd`.**
-12. **Nothing is pushed** until the open source milestone (M8). Commit locally.
+12. **Public repository, no releases yet.** `WesleyBLDC/berth` takes direct pushes to `main` after `make check` passes and the change is reviewed; no releases or tags until M8. Never push secrets, personal paths or private notes.
 
 ## Making a change
 
@@ -57,7 +61,8 @@ Paste its last lines in your report; a failure is investigated to its root cause
 2. Load the skill for the kind of change: `berth-add-rpc`, `berth-state-machine`, `berth-port-adapter`, `berth-milestone`; reviewers load `berth-review`.
 3. Change the contract, write the failing test, then the code. A new branch of logic gets a test that fails without it.
 4. `make check`, then commit with a plain message (no `type:` prefix, no co-author trailer).
-5. If the change alters a decision, add or supersede an ADR and say which wiki page needs the same change.
+5. A change to behaviour or structure updates `ARCHITECTURE.md` in the same commit (state diagrams, layers, storage, security model, milestone status).
+6. If the change alters a decision, add or supersede an ADR in `docs/adr/`.
 
 ## Testing
 

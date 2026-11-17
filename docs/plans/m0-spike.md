@@ -25,4 +25,4 @@ See `docs/setup.md`: Go 1.27, Swift 6.3, Xcode selected through `DEVELOPER_DIR`,
 
 ## Exit gate
 
-All five proofs pass or have a recorded fallback, and the wiki implementation plan is updated with the results.
+All five proofs pass or have a recorded fallback, and the milestone status (now in `ARCHITECTURE.md`) is updated with the results.
