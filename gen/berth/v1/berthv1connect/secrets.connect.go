@@ -159,7 +159,8 @@ type SecretsServiceClient interface {
 	// RequestSecret asks the person to store a value under name through the native dialog.
 	// The caller learns only the outcome.
 	RequestSecret(context.Context, *v1.RequestSecretRequest) (*v1.RequestSecretResponse, error)
-	// ListSecrets lists names, consumers and use counts, never values.
+	// ListSecrets lists names, consumers and use counts, never values. On the agent socket it
+	// lists only names and states.
 	ListSecrets(context.Context, *v1.ListSecretsRequest) (*v1.ListSecretsResponse, error)
 	// GrantSecret pins an executable as a consumer of a secret after Touch ID.
 	GrantSecret(context.Context, *v1.GrantSecretRequest) (*v1.GrantSecretResponse, error)
@@ -251,7 +252,8 @@ type SecretsServiceHandler interface {
 	// RequestSecret asks the person to store a value under name through the native dialog.
 	// The caller learns only the outcome.
 	RequestSecret(context.Context, *v1.RequestSecretRequest) (*v1.RequestSecretResponse, error)
-	// ListSecrets lists names, consumers and use counts, never values.
+	// ListSecrets lists names, consumers and use counts, never values. On the agent socket it
+	// lists only names and states.
 	ListSecrets(context.Context, *v1.ListSecretsRequest) (*v1.ListSecretsResponse, error)
 	// GrantSecret pins an executable as a consumer of a secret after Touch ID.
 	GrantSecret(context.Context, *v1.GrantSecretRequest) (*v1.GrantSecretResponse, error)

@@ -18,10 +18,12 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
+	"google.golang.org/protobuf/proto"
 
 	berthv1 "berth/gen/berth/v1"
 	"berth/gen/berth/v1/berthv1connect"
 	"berth/internal/adapters/api"
+	"berth/internal/client"
 )
 
 // agentProxyRun is berth run --proxy in agent mode, in the background, so the test knows berth's
@@ -151,6 +153,28 @@ func TestAgentProxyRunsUnderBerthd(t *testing.T) {
 		}
 		if rows := sessions(t, h); len(rows) != 0 {
 			t.Fatalf("a refused call made proxy sessions %+v", rows)
+		}
+	})
+
+	t.Run("the agent socket lists names and states, the owner socket the consumers too", func(t *testing.T) {
+		agent, err := client.ConnectAgent(t.Context(), sock, "e2e-agent", token)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := agent.Secrets.ListSecrets(t.Context(), &berthv1.ListSecretsRequest{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		want := &berthv1.ListSecretsResponse{Secrets: []*berthv1.SecretSummary{{Name: "e2e-key", State: berthv1.SecretState_SECRET_STATE_STORED}}}
+		if !proto.Equal(got, want) {
+			t.Fatalf("agent socket list %v", got)
+		}
+		mine, err := owner.Secrets.ListSecrets(t.Context(), &berthv1.ListSecretsRequest{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if s := mine.GetSecrets(); len(s) != 1 || len(s[0].GetConsumers()) != 1 || s[0].GetConsumers()[0].GetProxy().GetPort() != uint32(a.port) { //nolint:gosec // a test port
+			t.Fatalf("owner socket list %v", mine)
 		}
 	})
 

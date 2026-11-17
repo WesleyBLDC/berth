@@ -9,6 +9,8 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	berthv1 "berth/gen/berth/v1"
 	"berth/internal/adapters/api"
 	"berth/internal/core/ports"
@@ -144,6 +146,14 @@ func TestGrantProxyTargets(t *testing.T) {
 	}
 	if !slices.Equal(kinds, []berthv1.ConsumerKind{berthv1.ConsumerKind_CONSUMER_KIND_EXECUTABLE, berthv1.ConsumerKind_CONSUMER_KIND_PROXY}) {
 		t.Fatalf("consumer kinds %v", kinds)
+	}
+	agentList, err := f.s.ListSecrets(api.WithAgentSession(t.Context(), "agent-session"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := &berthv1.ListSecretsResponse{Secrets: []*berthv1.SecretSummary{{Name: "gh-token", State: berthv1.SecretState_SECRET_STATE_STORED}}}
+	if !proto.Equal(agentList, want) {
+		t.Fatalf("an agent session's list %v, want names and states only", agentList)
 	}
 
 	local := newFixture(t, &testutil.Approver{})

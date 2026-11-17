@@ -387,16 +387,24 @@ func (s *secrets) runSecret(entity string) machine.Runner[secret.Event, secret.E
 	}
 }
 
+// ListSecrets answers an agent session with each secret's name and state alone: the consumers
+// describe the owner's executables, hosts, headers and habits, which no agent needs to use a
+// secret.
 func (s *secrets) ListSecrets(ctx context.Context) (*berthv1.ListSecretsResponse, error) {
 	rows, err := s.Records.Secrets(ctx)
 	if err != nil {
 		return nil, err
 	}
+	agent := api.AgentSession(ctx) != ""
 	resp := &berthv1.ListSecretsResponse{}
 	for _, r := range rows {
 		state, err := s.state(ctx, secret.Entity(r.Name), string(secret.Initial))
 		if err != nil {
 			return nil, err
+		}
+		if agent {
+			resp.Secrets = append(resp.Secrets, &berthv1.SecretSummary{Name: r.Name, State: secretState(secret.State(state))})
+			continue
 		}
 		summary := &berthv1.SecretSummary{Name: r.Name, State: secretState(secret.State(state)), CreatedAt: timestamppb.New(r.CreatedAt)}
 		grants, err := s.Records.Grants(ctx, r.Name)
