@@ -53,6 +53,15 @@ enum Keychain {
         return SecItemAdd(item as CFDictionary, nil)
     }
 
+    /// Replaces the value of an existing item; errSecItemNotFound when there is none.
+    static func update(_ name: String, value: SecretBuffer) -> OSStatus {
+        SecItemUpdate(query(name) as CFDictionary, [kSecValueData as String: value.cfData] as CFDictionary)
+    }
+
+    static func delete(_ name: String) -> OSStatus {
+        SecItemDelete(query(name) as CFDictionary)
+    }
+
     /// Reads the item and hands its bytes to body; the bytes are wiped when body returns.
     static func withValue(_ name: String, _ body: (UnsafeRawBufferPointer) -> Bool) -> Result<Bool, OSStatusError> {
         var match = query(name)
@@ -74,14 +83,5 @@ enum Keychain {
         // from lingering in freed memory.
         memset_s(UnsafeMutableRawPointer(mutating: bytes), length, 0, length)
         return .success(ok)
-    }
-}
-
-struct OSStatusError: Error, CustomStringConvertible {
-    var status: OSStatus
-
-    var description: String {
-        let message = SecCopyErrorMessageString(status, nil) as String? ?? "unknown"
-        return "keychain status \(status) (\(message))"
     }
 }

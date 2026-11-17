@@ -14,10 +14,11 @@ func runStore(_ line: Data) async -> Never {
     if Keychain.exists(request.name) {
         reply(StoreOutcome.failed, "\(keychainService(for: request.name)) already exists")
     }
-    let answer = askForValue(storeDialogText(request))
-    guard case .entered(let value) = answer else {
-        if answer == .empty { reply(StoreOutcome.failed, "empty value") }
-        reply(StoreOutcome.denied)
+    let value: SecretBuffer
+    switch askForValue(storeDialogText(request)) {
+    case .entered(let entered): value = entered
+    case .empty: reply(StoreOutcome.failed, "empty value")
+    case .cancelled: reply(StoreOutcome.denied)
     }
     switch await askTouchID(reason: storeTouchIDReason(request)) {
     case .approved: break
@@ -37,22 +38,8 @@ func runStore(_ line: Data) async -> Never {
     }
 }
 
-enum DialogAnswer: Equatable {
-    case entered(SecretBuffer)
-    case empty
-    case cancelled
-
-    static func == (lhs: DialogAnswer, rhs: DialogAnswer) -> Bool {
-        switch (lhs, rhs) {
-        case (.empty, .empty), (.cancelled, .cancelled): true
-        case (.entered(let a), .entered(let b)): a === b
-        default: false
-        }
-    }
-}
-
 @MainActor
-func askForValue(_ text: DialogText) -> DialogAnswer {
+func askForValue(_ text: DialogText) -> ValueAnswer<SecretBuffer> {
     let app = NSApplication.shared
     // A command line process needs a window server connection and a policy that may show
     // windows without a Dock icon.

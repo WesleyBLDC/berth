@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"slices"
 	"syscall"
 	"time"
 
@@ -36,7 +37,8 @@ const (
 	readRefused = 3
 )
 
-// Approver implements ports.Approver by running the helper's store and confirm commands.
+// Approver implements ports.Approver by running the helper's store, confirm, rotate and remove
+// commands.
 type Approver struct {
 	helper string
 }
@@ -81,6 +83,24 @@ type confirmRequest struct {
 	Requester   requester `json:"requester"`
 }
 
+type proxyTarget struct {
+	Host           string   `json:"host"`
+	Port           int      `json:"port"`
+	HeaderName     string   `json:"header_name"`
+	ValuePrefix    string   `json:"value_prefix"`
+	ValueSuffix    string   `json:"value_suffix"`
+	PathGlob       string   `json:"path_glob"`
+	Methods        []string `json:"methods"`
+	PlaceholderEnv string   `json:"placeholder_env"`
+}
+
+type proxyConfirmRequest struct {
+	Action    string      `json:"action"`
+	Secret    string      `json:"secret"`
+	Target    proxyTarget `json:"target"`
+	Requester requester   `json:"requester"`
+}
+
 type outcome struct {
 	Outcome string `json:"outcome"`
 	Error   string `json:"error,omitempty"`
@@ -97,20 +117,36 @@ func toRequester(r ports.Requester) requester {
 func (a *Approver) StoreSecret(ctx context.Context, p ports.StorePrompt) (ports.StoreOutcome, error) {
 	req := storeRequest{Name: p.Name, Reason: p.Reason, Requester: toRequester(p.Requester)}
 	out, err := a.ask(ctx, "store", req)
-	if err != nil {
-		return ports.StoreFailed, err
-	}
-	switch o := ports.StoreOutcome(out.Outcome); o {
-	case ports.StoreStored, ports.StoreDenied:
-		return o, nil
-	case ports.StoreFailed:
-		return o, out.failure("store")
-	}
-	return ports.StoreFailed, fmt.Errorf("native store: unknown outcome %q", out.Outcome)
+	return result("store", out, err, ports.StoreFailed, ports.StoreStored, ports.StoreDenied)
 }
 
 func (a *Approver) ConfirmPower(ctx context.Context, p ports.PowerPrompt) (ports.PowerOutcome, error) {
-	req := confirmRequest{
+	out, err := a.ask(ctx, "confirm", confirmLine(p))
+	return result("confirm", out, err, ports.PowerFailed, ports.PowerApproved, ports.PowerDenied)
+}
+
+// confirmLine is the confirm request for the prompt's action; a proxy grant names its target
+// instead of a consumer executable.
+func confirmLine(p ports.PowerPrompt) any {
+	if p.Action == ports.PowerProxyGrant {
+		t := p.Proxy
+		return proxyConfirmRequest{
+			Action: string(p.Action),
+			Secret: p.Secret,
+			Target: proxyTarget{
+				Host:           t.Host,
+				Port:           t.Port,
+				HeaderName:     t.HeaderName,
+				ValuePrefix:    t.ValuePrefix,
+				ValueSuffix:    t.ValueSuffix,
+				PathGlob:       t.PathGlob,
+				Methods:        append([]string{}, t.Methods...),
+				PlaceholderEnv: t.PlaceholderEnv,
+			},
+			Requester: toRequester(p.Requester),
+		}
+	}
+	return confirmRequest{
 		Action: string(p.Action),
 		Secret: p.Secret,
 		Consumer: consumer{
@@ -124,17 +160,6 @@ func (a *Approver) ConfirmPower(ctx context.Context, p ports.PowerPrompt) (ports
 		PassEnv:     append([]string{}, p.PassEnv...),
 		Requester:   toRequester(p.Requester),
 	}
-	out, err := a.ask(ctx, "confirm", req)
-	if err != nil {
-		return ports.PowerFailed, err
-	}
-	switch o := ports.PowerOutcome(out.Outcome); o {
-	case ports.PowerApproved, ports.PowerDenied:
-		return o, nil
-	case ports.PowerFailed:
-		return o, out.failure("confirm")
-	}
-	return ports.PowerFailed, fmt.Errorf("native confirm: unknown outcome %q", out.Outcome)
 }
 
 // ask runs one command and returns its parsed reply; an error means the helper crashed, exited
@@ -157,6 +182,21 @@ func (a *Approver) ask(ctx context.Context, command string, req any) (outcome, e
 		return outcome{}, fmt.Errorf("native %s: %w", command, err)
 	}
 	return out, nil
+}
+
+// result turns one command's reply into its outcome: failed always comes with an error, and an
+// outcome the command does not define counts as failed.
+func result[O ~string](command string, out outcome, err error, failed O, fine ...O) (O, error) {
+	if err != nil {
+		return failed, err
+	}
+	switch o := O(out.Outcome); {
+	case o == failed:
+		return o, out.failure(command)
+	case slices.Contains(fine, o):
+		return o, nil
+	}
+	return failed, fmt.Errorf("native %s: unknown outcome %q", command, out.Outcome)
 }
 
 // failure is the error that goes with a failed outcome, so the caller always has log detail.

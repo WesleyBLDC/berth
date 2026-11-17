@@ -28,9 +28,9 @@ signal(SIGPIPE, SIG_IGN)
 
 let arguments = CommandLine.arguments.dropFirst()
 guard arguments.count == 1, let command = arguments.first else {
-    misuse("usage: berth-native store | confirm | read (one request on stdin)")
+    misuse("usage: berth-native store | confirm | read | rotate | remove (one request on stdin)")
 }
-guard ["store", "confirm", "read"].contains(command) else { misuse("unknown command \(command)") }
+guard ["store", "confirm", "read", "rotate", "remove"].contains(command) else { misuse("unknown command \(command)") }
 // One line, not end of file: the caller may keep stdin open while it waits for the reply.
 let line = readLine(strippingNewline: false).map { Data($0.utf8) } ?? Data()
 
@@ -38,5 +38,7 @@ switch command {
 case "store": await runStore(line)
 case "confirm": await runConfirm(line)
 case "read": runRead(line)
+case "rotate": await runRotate(line)
+case "remove": await runRemove(line)
 default: misuse("unknown command \(command)")
 }

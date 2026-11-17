@@ -43,40 +43,40 @@ func response(_ status: String, headers: [String] = [], body: String) -> Data {
             "200 OK", headers: ["Content-Type: application/json", "Content-Length: \(body.utf8.count)"], body: body))
     #expect(parsed.status == 200)
     #expect(parsed.headers["content-type"] == "application/json")
-    #expect(try redeemedName(from: parsed) == "github-token")
+    #expect(try redeemedTicket(from: parsed).name == "github-token")
 }
 
 @Test func parsesChunkedResponse() throws {
     let raw = response(
         "200 OK", headers: ["Transfer-Encoding: chunked"],
         body: "5\r\n{\"nam\r\n12\r\ne\":\"github-token\"}\r\n0\r\n\r\n")
-    #expect(try redeemedName(from: parseHTTPResponse(raw)) == "github-token")
+    #expect(try redeemedTicket(from: parseHTTPResponse(raw)).name == "github-token")
 }
 
 @Test func parsesResponseReadToEndWithoutLength() throws {
-    #expect(try redeemedName(from: parseHTTPResponse(response("200 OK", body: #"{"name":"a"}"#))) == "a")
+    #expect(try redeemedTicket(from: parseHTTPResponse(response("200 OK", body: #"{"name":"a"}"#))).name == "a")
 }
 
 @Test func connectErrorBodyIsAFailure() throws {
     let body = #"{"code":"permission_denied","message":"peer not trusted"}"#
     let parsed = try parseHTTPResponse(
         response("403 Forbidden", headers: ["Content-Length: \(body.utf8.count)"], body: body))
-    #expect(throws: RedeemError.connectError("permission_denied")) { try redeemedName(from: parsed) }
+    #expect(throws: RedeemError.connectError("permission_denied")) { try redeemedTicket(from: parsed) }
     let sneaky = try parseHTTPResponse(response("200 OK", body: #"{"code":"internal","name":"a"}"#))
-    #expect(throws: RedeemError.connectError("internal")) { try redeemedName(from: sneaky) }
+    #expect(throws: RedeemError.connectError("internal")) { try redeemedTicket(from: sneaky) }
 }
 
 @Test func non200IsAFailure() throws {
     let parsed = try parseHTTPResponse(response("404 Not Found", body: "404 page not found\n"))
-    #expect(throws: RedeemError.status(404)) { try redeemedName(from: parsed) }
+    #expect(throws: RedeemError.status(404)) { try redeemedTicket(from: parsed) }
     let withName = try parseHTTPResponse(response("500 Internal Server Error", body: #"{"name":"a"}"#))
-    #expect(throws: RedeemError.status(500)) { try redeemedName(from: withName) }
+    #expect(throws: RedeemError.status(500)) { try redeemedTicket(from: withName) }
 }
 
 @Test(arguments: [#"{}"#, #"{"name":7}"#, "not json", #"{"name":"../escape"}"#, #"{"name":""}"#])
 func badResponseBodiesFail(_ body: String) throws {
     let parsed = try parseHTTPResponse(response("200 OK", body: body))
-    #expect(throws: (any Error).self) { try redeemedName(from: parsed) }
+    #expect(throws: (any Error).self) { try redeemedTicket(from: parsed) }
 }
 
 @Test(arguments: [

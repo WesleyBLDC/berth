@@ -202,7 +202,9 @@ func TestStoreGrantUseAndRedeem(t *testing.T) {
 		t.Fatalf("helper not trusted: %v", err)
 	}
 	redeemed, err := f.s.RedeemUseTicket(t.Context(), ticket, peerOf(helperPID))
-	if err != nil || redeemed.GetName() != "gh-token" {
+	if err != nil || redeemed.GetName() != "gh-token" ||
+		redeemed.GetConsumerKind() != berthv1.ConsumerKind_CONSUMER_KIND_EXECUTABLE ||
+		redeemed.GetAction() != berthv1.TicketAction_TICKET_ACTION_USE {
 		t.Fatalf("redeem %v, %v", redeemed, err)
 	}
 	if _, err := f.s.RedeemUseTicket(t.Context(), ticket, peerOf(helperPID)); !errors.Is(err, api.ErrTicketInvalid) {
