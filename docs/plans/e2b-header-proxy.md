@@ -1,5 +1,8 @@
 # E2b: Header proxy and secret lifecycle
 
+Status: built and merged (items 1 to 7); the exit gate waits only for the maintainer's manual check with real signing, Touch ID and a real API with a test key.
+Since it merged, E3 item 6 added `StartProxy`, through which `berthd` starts the proxy for agent sessions ([the E3 plan](e3-isolated-agents.md#item-6-berthd-starts-berth-proxy-for-agent-sessions)); the agent surface is now eight methods, not the seven pinned below.
+
 Goal: API keys reach HTTP APIs without ever entering the calling process, the agent, `berth` or `berthd`, plus `revoke`, `rm` and `rotate`.
 Comes right after E2a; E3 (isolated agents) follows.
 Every check rests on kernel facts (audit tokens, live cdhash), never on paths or the caller's environment, which is the lesson of E2a's four review rounds.

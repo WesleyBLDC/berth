@@ -231,7 +231,7 @@ On this Mac all four exist: Chrome, Arc, Playwright's Chromium 1223, 1243 and 12
 - **Stopped sessions stay in the database** as machine rows; a test suite (or a hostile process) that launches thousands of browsers adds thousands of `machine_state` and `machine_event` rows until a later pruning pass. Memory stays bounded: a stopped session's actor is stopped at once, berthd keeps at most the 200 newest stopped sessions and none older than an hour (older ones drop out of `ps --all`; a stop of one still answers `STOPPED` from its row), and every string kept about a session is cut to 1,024 bytes with the mark `...(truncated)`.
 - **Arguments berthd cannot parse safely are not guessed.** A `procargs2` buffer whose layout does not match the kernel's (argv at the pointer aligned offset after the exec path), or with more than 4,096 arguments, makes the session show `arguments unreadable` with driver, headless, CDP and profile unknown; so a process can hide its CDP port this way, but it cannot make berthd read its environment as arguments.
 - **Names come from the process.** Executable paths, profile folders and owner names are whatever the process chose; `berth ps` and `inspect` print any with control or format characters quoted with escapes, so they cannot drive the terminal, but they can still lie.
-- **A person's browser is protected by a flag, not Touch ID.** Anything that can reach the socket can pass `force`; until session tokens (M4) the daemon cannot tell an agent from the person.
+- **A person's browser is protected by a flag, not Touch ID.** Anything that can reach the owner socket can pass `force`: the daemon cannot tell an agent running as the person from the person. Session tokens (E3 item 4) guard only the agent socket, where no sessions method is served, so only running agents as the separate agent user (E3) closes this.
 
 ## Decisions for the maintainer
 
@@ -271,6 +271,12 @@ Built on branch `m2a` from `main` at 6de1d7b: items 1 to 10, each with its own c
 6. `StopSession` takes a `request_id` and replays through the request log.
 7. A failed signal is logged and the next scan reconciles; refusals are typed (`SESSION_NOT_FOUND`, `SESSION_NOT_STOPPABLE`).
 8. OWASP agentic risks: unchanged; the new limits are listed above.
+
+### Since these notes were written
+
+- M3 added the `Seen` event, so the session machine has 18 legal pairs, not the 17 in the design above, and every session has a row from first sight (the scan loop note above, that a steady session has no row, no longer holds).
+- M4 did not add `Launching`, `Ready` and `Failed` to this machine: it built a separate browser machine linked to the observed session ([the M4 plan](m4-managed-chromium.md#the-managed-browser-machine)).
+- `WatchSessions` (M3) joined the three methods here; none is on the agent surface.
 
 ### What remains for the exit gate
 

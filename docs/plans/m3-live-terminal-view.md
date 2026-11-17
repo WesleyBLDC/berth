@@ -168,7 +168,7 @@ Each part ends with `make check` passing and its own commit.
 - **`state_since` in a snapshot comes from memory,** which can trail the database by one transition for a few microseconds; the next change corrects it.
 - **Widths are counted in runes,** so a line holding East Asian wide characters can overflow the terminal by a few cells.
 - **No colour.** The selected row is marked with `>`, not highlighted; the brand palette can come with the Mac app's pass.
-- **Anything that can reach the socket can watch,** as with `ListSessions`; until session tokens (M4) the daemon cannot tell an agent running as the person from the person.
+- **Anything that can reach the owner socket can watch,** as with `ListSessions`: the daemon cannot tell an agent running as the person from the person, and session tokens (E3 item 4) guard only the agent socket, where `WatchSessions` is not served.
 - **Any client on the owner socket can hold all 16 streams,** and then `berth top` gets `RESOURCE_EXHAUSTED` until one closes; the limit is per daemon, not per caller.
 - **A snapshot reads one row per live session,** never the whole history, so `START` and `BEHIND` cost the same however many browsers came and went.
 
@@ -194,6 +194,8 @@ Built on branch `m3`, rebased onto `main` at 3bf6db5: the plan, `WatchSessions` 
 - **Streams** live in `internal/berthd/sessions.go`; the actors kit gained a `saved` hook that the session actors use to wake the watchers. M2's review moved the stop of a session's actor into the kit (`final`), and the hook runs before it.
 - **`berth top`** lives in `internal/cli/top.go`; the stream loop is `watchLoop`, and `NewTop` is exported for the end to end test, which drives the model the way Bubble Tea does, without a terminal.
 - **Verified by hand** in a pseudo terminal against a temporary `berthd`: `berth top` opens on the alternate screen, shows the empty list, and `q` exits 0. A populated list in a real terminal is covered only by the end to end test, which reads the model's view.
+
+What remains for the exit gate: the maintainer runs `berth top` on his Mac with a Playwright browser open, watches it appear and stops it from the TUI; `ARCHITECTURE.md` marks M3 done after that.
 
 ### Agent safety checklist (M3)
 
