@@ -56,6 +56,8 @@ const (
 	// SecretsServiceEndProxySessionProcedure is the procedure name of the SecretsService's
 	// EndProxySession RPC.
 	SecretsServiceEndProxySessionProcedure = "/berth.v1.SecretsService/EndProxySession"
+	// SecretsServiceStartProxyProcedure is the procedure name of the SecretsService's StartProxy RPC.
+	SecretsServiceStartProxyProcedure = "/berth.v1.SecretsService/StartProxy"
 )
 
 var (
@@ -143,6 +145,13 @@ var (
 			Procedure:  SecretsServiceEndProxySessionProcedure,
 		}
 	})
+	secretsServiceStartProxySpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeServer,
+			Schema:     v1.File_berth_v1_secrets_proto.Services().ByName("SecretsService").Methods().ByName("StartProxy"),
+			Procedure:  SecretsServiceStartProxyProcedure,
+		}
+	})
 )
 
 // SecretsServiceClient is a client for the berth.v1.SecretsService service.
@@ -180,6 +189,13 @@ type SecretsServiceClient interface {
 	// EndProxySession is accepted only from the process that authorized the session; it records
 	// counts, never paths, hosts beyond the grants, or values.
 	EndProxySession(context.Context, *v1.EndProxySessionRequest) (*v1.EndProxySessionResponse, error)
+	// StartProxy is berth run --proxy for agent sessions: berthd checks the proxy grants as
+	// AuthorizeProxy does, then starts the signed berth-proxy beside it as its own user, so the
+	// caller never holds the process that holds the values. The first message says whether it
+	// started and carries the facts the child needs; the proxy runs until this stream ends (the
+	// caller exits or cancels), its grant is revoked, the agent session ends, or the proxy exits,
+	// and berthd ends the stream when the proxy is gone.
+	StartProxy(context.Context, *v1.StartProxyRequest) (SecretsServiceStartProxyClientStream, error)
 }
 
 // NewSecretsServiceClient constructs a client for the berth.v1.SecretsService service. Multiple
@@ -206,6 +222,27 @@ func (s SecretsServiceWatchProxySessionClientStream) Receive() (*v1.WatchProxySe
 // Close releases the stream's resources. It is idempotent and is typically deferred to clean up a
 // stream abandoned before io.EOF.
 func (s SecretsServiceWatchProxySessionClientStream) Close() error {
+	return s.stream.Close()
+}
+
+// SecretsServiceStartProxyClientStream is the client stream for the SecretsService's StartProxy
+// RPC.
+type SecretsServiceStartProxyClientStream struct {
+	stream connect.ClientStream
+}
+
+// Receive returns the next response message from the server.
+func (s SecretsServiceStartProxyClientStream) Receive() (*v1.StartProxyResponse, error) {
+	var res v1.StartProxyResponse
+	if err := s.stream.Receive(&res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+// Close releases the stream's resources. It is idempotent and is typically deferred to clean up a
+// stream abandoned before io.EOF.
+func (s SecretsServiceStartProxyClientStream) Close() error {
 	return s.stream.Close()
 }
 
@@ -244,6 +281,13 @@ type SecretsServiceHandler interface {
 	// EndProxySession is accepted only from the process that authorized the session; it records
 	// counts, never paths, hosts beyond the grants, or values.
 	EndProxySession(context.Context, *v1.EndProxySessionRequest) (*v1.EndProxySessionResponse, error)
+	// StartProxy is berth run --proxy for agent sessions: berthd checks the proxy grants as
+	// AuthorizeProxy does, then starts the signed berth-proxy beside it as its own user, so the
+	// caller never holds the process that holds the values. The first message says whether it
+	// started and carries the facts the child needs; the proxy runs until this stream ends (the
+	// caller exits or cancels), its grant is revoked, the agent session ends, or the proxy exits,
+	// and berthd ends the stream when the proxy is gone.
+	StartProxy(context.Context, *v1.StartProxyRequest, SecretsServiceStartProxyServerStream) error
 }
 
 // RegisterSecretsServiceHandler registers svc as the berth.v1.SecretsService implementation on
@@ -263,6 +307,7 @@ func RegisterSecretsServiceHandler(server *connect.Server, svc SecretsServiceHan
 		connect.Method{Spec: secretsServiceAuthorizeProxySpec(), Handler: adapter.authorizeProxy},
 		connect.Method{Spec: secretsServiceWatchProxySessionSpec(), Handler: adapter.watchProxySession},
 		connect.Method{Spec: secretsServiceEndProxySessionSpec(), Handler: adapter.endProxySession},
+		connect.Method{Spec: secretsServiceStartProxySpec(), Handler: adapter.startProxy},
 	)
 }
 
@@ -279,6 +324,22 @@ func (s SecretsServiceWatchProxySessionServerStream) SendHeaders() error {
 
 // Send sends a response message to the client.
 func (s SecretsServiceWatchProxySessionServerStream) Send(res *v1.WatchProxySessionResponse) error {
+	return s.stream.Send(res)
+}
+
+// SecretsServiceStartProxyServerStream is the server stream for the SecretsService's StartProxy
+// RPC.
+type SecretsServiceStartProxyServerStream struct {
+	stream connect.ServerStream
+}
+
+// SendHeaders flushes the response headers without a message. The first Send does this implicitly.
+func (s SecretsServiceStartProxyServerStream) SendHeaders() error {
+	return s.stream.SendHeaders()
+}
+
+// Send sends a response message to the client.
+func (s SecretsServiceStartProxyServerStream) Send(res *v1.StartProxyResponse) error {
 	return s.stream.Send(res)
 }
 
@@ -331,6 +392,10 @@ func (UnimplementedSecretsServiceHandler) WatchProxySession(context.Context, *v1
 
 func (UnimplementedSecretsServiceHandler) EndProxySession(context.Context, *v1.EndProxySessionRequest) (*v1.EndProxySessionResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "berth.v1.SecretsService.EndProxySession is not implemented")
+}
+
+func (UnimplementedSecretsServiceHandler) StartProxy(context.Context, *v1.StartProxyRequest, SecretsServiceStartProxyServerStream) error {
+	return connect.NewError(connect.CodeUnimplemented, "berth.v1.SecretsService.StartProxy is not implemented")
 }
 
 type secretsServiceClient struct {
@@ -431,6 +496,14 @@ func (c *secretsServiceClient) EndProxySession(ctx context.Context, req *v1.EndP
 		return nil, err
 	}
 	return &res, nil
+}
+
+func (c *secretsServiceClient) StartProxy(ctx context.Context, req *v1.StartProxyRequest) (SecretsServiceStartProxyClientStream, error) {
+	stream, err := c.client.CallServerStream(ctx, secretsServiceStartProxySpec(), req)
+	if err != nil {
+		return SecretsServiceStartProxyClientStream{}, err
+	}
+	return SecretsServiceStartProxyClientStream{stream: stream}, nil
 }
 
 type secretsServiceHandler struct{ svc SecretsServiceHandler }
@@ -573,4 +646,12 @@ func (h secretsServiceHandler) endProxySession(ctx context.Context, _ connect.Sp
 		return err
 	}
 	return stream.Send(res)
+}
+
+func (h secretsServiceHandler) startProxy(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.StartProxyRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	return h.svc.StartProxy(ctx, &req, SecretsServiceStartProxyServerStream{stream: stream})
 }

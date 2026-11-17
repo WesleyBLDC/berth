@@ -102,6 +102,7 @@ func TestAgentSurface(t *testing.T) {
 		"berth.v1.SecretsService.EndProxySession",
 		"berth.v1.SecretsService.ListSecrets",
 		"berth.v1.SecretsService.RequestSecret",
+		"berth.v1.SecretsService.StartProxy",
 		"berth.v1.SecretsService.WatchProxySession",
 	}
 	if !slices.Equal(agent, want) {
@@ -144,7 +145,8 @@ func eachMethod(f func(m protoreflect.MethodDescriptor)) {
 
 // TestNoFieldCarriesAValue pins the only places that could hold secret material: bytes fields
 // (tickets and a pinned cdhash, which are not values), fields named for a value (the proxy
-// header's fixed text) and fields named for a token (the agent session token, returned once).
+// header's fixed text, and a placeholder's stand in through its map entry) and fields named for
+// a token (the agent session token, returned once).
 func TestNoFieldCarriesAValue(t *testing.T) {
 	allowed := []string{
 		"berth.v1.AuthorizeUseResponse.cdhash",
@@ -154,6 +156,7 @@ func TestNoFieldCarriesAValue(t *testing.T) {
 		"berth.v1.ProxyTarget.value_suffix",
 		"berth.v1.ProxyTicket.ticket",
 		"berth.v1.RedeemUseTicketRequest.ticket",
+		"berth.v1.StartProxyResponse.PlaceholdersEntry.value",
 	}
 	var found []string
 	var walk func(md protoreflect.MessageDescriptor)

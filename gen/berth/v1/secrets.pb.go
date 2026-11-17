@@ -2425,6 +2425,154 @@ func (*EndProxySessionResponse) Descriptor() ([]byte, []int) {
 	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{28}
 }
 
+type StartProxyRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// request_id holds back a retry while the stream it repeats still runs; a retry after that
+	// stream ended starts a new proxy, since the first one ended with its stream.
+	RequestId     string   `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Names         []string `protobuf:"bytes,2,rep,name=names,proto3" json:"names,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StartProxyRequest) Reset() {
+	*x = StartProxyRequest{}
+	mi := &file_berth_v1_secrets_proto_msgTypes[29]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartProxyRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartProxyRequest) ProtoMessage() {}
+
+func (x *StartProxyRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_secrets_proto_msgTypes[29]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartProxyRequest.ProtoReflect.Descriptor instead.
+func (*StartProxyRequest) Descriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{29}
+}
+
+func (x *StartProxyRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *StartProxyRequest) GetNames() []string {
+	if x != nil {
+		return x.Names
+	}
+	return nil
+}
+
+// StartProxyResponse carries no value: the credential only lets the child use the proxy, the
+// CA certificate is public, and its private key stays in berth-proxy's memory.
+type StartProxyResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// outcome is AUTHORIZED only when every name has an Active proxy grant and the proxy serves;
+	// otherwise nothing else is set and no proxy runs.
+	Outcome UseOutcome `protobuf:"varint,1,opt,name=outcome,proto3,enum=berth.v1.UseOutcome" json:"outcome,omitempty"`
+	// session_id is the proxy session, entity proxy/<session_id>.
+	SessionId string `protobuf:"bytes,2,opt,name=session_id,json=sessionId,proto3" json:"session_id,omitempty"`
+	// port is the proxy's port on 127.0.0.1.
+	Port uint32 `protobuf:"varint,3,opt,name=port,proto3" json:"port,omitempty"`
+	// credential is the run's 32 hex character proxy password, for the user name berth.
+	Credential string `protobuf:"bytes,4,opt,name=credential,proto3" json:"credential,omitempty"`
+	// ca_pem is the run's CA certificate in PEM form, which the caller writes where its child
+	// can read it.
+	CaPem string `protobuf:"bytes,5,opt,name=ca_pem,json=caPem,proto3" json:"ca_pem,omitempty"`
+	// placeholders maps a granted placeholder variable to the stand in value the child gets.
+	Placeholders  map[string]string `protobuf:"bytes,6,rep,name=placeholders,proto3" json:"placeholders,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *StartProxyResponse) Reset() {
+	*x = StartProxyResponse{}
+	mi := &file_berth_v1_secrets_proto_msgTypes[30]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *StartProxyResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*StartProxyResponse) ProtoMessage() {}
+
+func (x *StartProxyResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_secrets_proto_msgTypes[30]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use StartProxyResponse.ProtoReflect.Descriptor instead.
+func (*StartProxyResponse) Descriptor() ([]byte, []int) {
+	return file_berth_v1_secrets_proto_rawDescGZIP(), []int{30}
+}
+
+func (x *StartProxyResponse) GetOutcome() UseOutcome {
+	if x != nil {
+		return x.Outcome
+	}
+	return UseOutcome_USE_OUTCOME_UNSPECIFIED
+}
+
+func (x *StartProxyResponse) GetSessionId() string {
+	if x != nil {
+		return x.SessionId
+	}
+	return ""
+}
+
+func (x *StartProxyResponse) GetPort() uint32 {
+	if x != nil {
+		return x.Port
+	}
+	return 0
+}
+
+func (x *StartProxyResponse) GetCredential() string {
+	if x != nil {
+		return x.Credential
+	}
+	return ""
+}
+
+func (x *StartProxyResponse) GetCaPem() string {
+	if x != nil {
+		return x.CaPem
+	}
+	return ""
+}
+
+func (x *StartProxyResponse) GetPlaceholders() map[string]string {
+	if x != nil {
+		return x.Placeholders
+	}
+	return nil
+}
+
 var File_berth_v1_secrets_proto protoreflect.FileDescriptor
 
 const file_berth_v1_secrets_proto_rawDesc = "" +
@@ -2579,7 +2727,25 @@ const file_berth_v1_secrets_proto_rawDesc = "" +
 	"session_id\x18\x02 \x01(\tB\x15\xbaH\x12r\x102\x0e^[0-9a-f]{32}$R\tsessionId\x12\x1a\n" +
 	"\binjected\x18\x03 \x01(\x04R\binjected\x12\x18\n" +
 	"\arefused\x18\x04 \x01(\x04R\arefused\"\x19\n" +
-	"\x17EndProxySessionResponse*{\n" +
+	"\x17EndProxySessionResponse\"\x84\x01\n" +
+	"\x11StartProxyRequest\x12)\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\b\x18\x80\x01R\trequestId\x12D\n" +
+	"\x05names\x18\x02 \x03(\tB.\xbaH+\x92\x01(\b\x01\x10\x10\x18\x01\" r\x1e2\x1c^[a-z0-9][a-z0-9._-]{0,127}$R\x05names\"\xc3\x02\n" +
+	"\x12StartProxyResponse\x12.\n" +
+	"\aoutcome\x18\x01 \x01(\x0e2\x14.berth.v1.UseOutcomeR\aoutcome\x12\x1d\n" +
+	"\n" +
+	"session_id\x18\x02 \x01(\tR\tsessionId\x12\x12\n" +
+	"\x04port\x18\x03 \x01(\rR\x04port\x12\x1e\n" +
+	"\n" +
+	"credential\x18\x04 \x01(\tR\n" +
+	"credential\x12\x15\n" +
+	"\x06ca_pem\x18\x05 \x01(\tR\x05caPem\x12R\n" +
+	"\fplaceholders\x18\x06 \x03(\v2..berth.v1.StartProxyResponse.PlaceholdersEntryR\fplaceholders\x1a?\n" +
+	"\x11PlaceholdersEntry\x12\x10\n" +
+	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
+	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01*{\n" +
 	"\fStoreOutcome\x12\x1d\n" +
 	"\x19STORE_OUTCOME_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14STORE_OUTCOME_STORED\x10\x01\x12\x18\n" +
@@ -2643,7 +2809,7 @@ const file_berth_v1_secrets_proto_rawDesc = "" +
 	"\x12GRANT_STATE_ACTIVE\x10\x02\x12\x16\n" +
 	"\x12GRANT_STATE_DENIED\x10\x03\x12\x15\n" +
 	"\x11GRANT_STATE_STALE\x10\x04\x12\x17\n" +
-	"\x13GRANT_STATE_REVOKED\x10\x052\x85\b\n" +
+	"\x13GRANT_STATE_REVOKED\x10\x052\xd6\b\n" +
 	"\x0eSecretsService\x12V\n" +
 	"\rRequestSecret\x12\x1e.berth.v1.RequestSecretRequest\x1a\x1f.berth.v1.RequestSecretResponse\"\x04\x88\xb5\x18\x01\x12P\n" +
 	"\vListSecrets\x12\x1c.berth.v1.ListSecretsRequest\x1a\x1d.berth.v1.ListSecretsResponse\"\x04\x88\xb5\x18\x01\x12J\n" +
@@ -2657,7 +2823,9 @@ const file_berth_v1_secrets_proto_rawDesc = "" +
 	"\fRotateSecret\x12\x1d.berth.v1.RotateSecretRequest\x1a\x1e.berth.v1.RotateSecretResponse\x12Y\n" +
 	"\x0eAuthorizeProxy\x12\x1f.berth.v1.AuthorizeProxyRequest\x1a .berth.v1.AuthorizeProxyResponse\"\x04\x88\xb5\x18\x01\x12d\n" +
 	"\x11WatchProxySession\x12\".berth.v1.WatchProxySessionRequest\x1a#.berth.v1.WatchProxySessionResponse\"\x04\x88\xb5\x18\x010\x01\x12\\\n" +
-	"\x0fEndProxySession\x12 .berth.v1.EndProxySessionRequest\x1a!.berth.v1.EndProxySessionResponse\"\x04\x88\xb5\x18\x01By\n" +
+	"\x0fEndProxySession\x12 .berth.v1.EndProxySessionRequest\x1a!.berth.v1.EndProxySessionResponse\"\x04\x88\xb5\x18\x01\x12O\n" +
+	"\n" +
+	"StartProxy\x12\x1b.berth.v1.StartProxyRequest\x1a\x1c.berth.v1.StartProxyResponse\"\x04\x88\xb5\x18\x010\x01By\n" +
 	"\fcom.berth.v1B\fSecretsProtoP\x01Z\x1aberth/gen/berth/v1;berthv1\xa2\x02\x03BXX\xaa\x02\bBerth.V1\xca\x02\bBerth\\V1\xe2\x02\x14Berth\\V1\\GPBMetadata\xea\x02\tBerth::V1b\x06proto3"
 
 var (
@@ -2673,7 +2841,7 @@ func file_berth_v1_secrets_proto_rawDescGZIP() []byte {
 }
 
 var file_berth_v1_secrets_proto_enumTypes = make([]protoimpl.EnumInfo, 11)
-var file_berth_v1_secrets_proto_msgTypes = make([]protoimpl.MessageInfo, 29)
+var file_berth_v1_secrets_proto_msgTypes = make([]protoimpl.MessageInfo, 32)
 var file_berth_v1_secrets_proto_goTypes = []any{
 	(StoreOutcome)(0),                 // 0: berth.v1.StoreOutcome
 	(GrantOutcome)(0),                 // 1: berth.v1.GrantOutcome
@@ -2715,24 +2883,27 @@ var file_berth_v1_secrets_proto_goTypes = []any{
 	(*ProxySessionEvent)(nil),         // 37: berth.v1.ProxySessionEvent
 	(*EndProxySessionRequest)(nil),    // 38: berth.v1.EndProxySessionRequest
 	(*EndProxySessionResponse)(nil),   // 39: berth.v1.EndProxySessionResponse
-	(*timestamppb.Timestamp)(nil),     // 40: google.protobuf.Timestamp
+	(*StartProxyRequest)(nil),         // 40: berth.v1.StartProxyRequest
+	(*StartProxyResponse)(nil),        // 41: berth.v1.StartProxyResponse
+	nil,                               // 42: berth.v1.StartProxyResponse.PlaceholdersEntry
+	(*timestamppb.Timestamp)(nil),     // 43: google.protobuf.Timestamp
 }
 var file_berth_v1_secrets_proto_depIdxs = []int32{
 	0,  // 0: berth.v1.RequestSecretResponse.outcome:type_name -> berth.v1.StoreOutcome
 	15, // 1: berth.v1.ListSecretsResponse.secrets:type_name -> berth.v1.SecretSummary
 	3,  // 2: berth.v1.SecretSummary.state:type_name -> berth.v1.SecretState
-	40, // 3: berth.v1.SecretSummary.created_at:type_name -> google.protobuf.Timestamp
+	43, // 3: berth.v1.SecretSummary.created_at:type_name -> google.protobuf.Timestamp
 	16, // 4: berth.v1.SecretSummary.consumers:type_name -> berth.v1.Consumer
 	10, // 5: berth.v1.Consumer.state:type_name -> berth.v1.GrantState
-	40, // 6: berth.v1.Consumer.created_at:type_name -> google.protobuf.Timestamp
-	40, // 7: berth.v1.Consumer.last_used_at:type_name -> google.protobuf.Timestamp
+	43, // 6: berth.v1.Consumer.created_at:type_name -> google.protobuf.Timestamp
+	43, // 7: berth.v1.Consumer.last_used_at:type_name -> google.protobuf.Timestamp
 	4,  // 8: berth.v1.Consumer.kind:type_name -> berth.v1.ConsumerKind
 	17, // 9: berth.v1.Consumer.proxy:type_name -> berth.v1.ProxyTarget
 	5,  // 10: berth.v1.Consumer.signature:type_name -> berth.v1.SignatureKind
 	1,  // 11: berth.v1.GrantSecretResponse.outcome:type_name -> berth.v1.GrantOutcome
 	16, // 12: berth.v1.GrantSecretResponse.consumer:type_name -> berth.v1.Consumer
 	2,  // 13: berth.v1.AuthorizeUseResponse.outcome:type_name -> berth.v1.UseOutcome
-	40, // 14: berth.v1.AuthorizeUseResponse.expires_at:type_name -> google.protobuf.Timestamp
+	43, // 14: berth.v1.AuthorizeUseResponse.expires_at:type_name -> google.protobuf.Timestamp
 	4,  // 15: berth.v1.RedeemUseTicketResponse.consumer_kind:type_name -> berth.v1.ConsumerKind
 	7,  // 16: berth.v1.RedeemUseTicketResponse.action:type_name -> berth.v1.TicketAction
 	17, // 17: berth.v1.GrantProxyRequest.target:type_name -> berth.v1.ProxyTarget
@@ -2743,40 +2914,44 @@ var file_berth_v1_secrets_proto_depIdxs = []int32{
 	0,  // 22: berth.v1.RotateSecretResponse.outcome:type_name -> berth.v1.StoreOutcome
 	2,  // 23: berth.v1.AuthorizeProxyResponse.outcome:type_name -> berth.v1.UseOutcome
 	34, // 24: berth.v1.AuthorizeProxyResponse.tickets:type_name -> berth.v1.ProxyTicket
-	40, // 25: berth.v1.AuthorizeProxyResponse.expires_at:type_name -> google.protobuf.Timestamp
+	43, // 25: berth.v1.AuthorizeProxyResponse.expires_at:type_name -> google.protobuf.Timestamp
 	17, // 26: berth.v1.ProxyTicket.target:type_name -> berth.v1.ProxyTarget
 	37, // 27: berth.v1.WatchProxySessionResponse.event:type_name -> berth.v1.ProxySessionEvent
 	9,  // 28: berth.v1.ProxySessionEvent.kind:type_name -> berth.v1.ProxySessionEventKind
 	8,  // 29: berth.v1.ProxySessionEvent.stop_reason:type_name -> berth.v1.ProxyStopReason
-	11, // 30: berth.v1.SecretsService.RequestSecret:input_type -> berth.v1.RequestSecretRequest
-	13, // 31: berth.v1.SecretsService.ListSecrets:input_type -> berth.v1.ListSecretsRequest
-	18, // 32: berth.v1.SecretsService.GrantSecret:input_type -> berth.v1.GrantSecretRequest
-	20, // 33: berth.v1.SecretsService.AuthorizeUse:input_type -> berth.v1.AuthorizeUseRequest
-	22, // 34: berth.v1.SecretsService.RedeemUseTicket:input_type -> berth.v1.RedeemUseTicketRequest
-	24, // 35: berth.v1.SecretsService.GrantProxy:input_type -> berth.v1.GrantProxyRequest
-	26, // 36: berth.v1.SecretsService.RevokeGrant:input_type -> berth.v1.RevokeGrantRequest
-	28, // 37: berth.v1.SecretsService.RemoveSecret:input_type -> berth.v1.RemoveSecretRequest
-	30, // 38: berth.v1.SecretsService.RotateSecret:input_type -> berth.v1.RotateSecretRequest
-	32, // 39: berth.v1.SecretsService.AuthorizeProxy:input_type -> berth.v1.AuthorizeProxyRequest
-	35, // 40: berth.v1.SecretsService.WatchProxySession:input_type -> berth.v1.WatchProxySessionRequest
-	38, // 41: berth.v1.SecretsService.EndProxySession:input_type -> berth.v1.EndProxySessionRequest
-	12, // 42: berth.v1.SecretsService.RequestSecret:output_type -> berth.v1.RequestSecretResponse
-	14, // 43: berth.v1.SecretsService.ListSecrets:output_type -> berth.v1.ListSecretsResponse
-	19, // 44: berth.v1.SecretsService.GrantSecret:output_type -> berth.v1.GrantSecretResponse
-	21, // 45: berth.v1.SecretsService.AuthorizeUse:output_type -> berth.v1.AuthorizeUseResponse
-	23, // 46: berth.v1.SecretsService.RedeemUseTicket:output_type -> berth.v1.RedeemUseTicketResponse
-	25, // 47: berth.v1.SecretsService.GrantProxy:output_type -> berth.v1.GrantProxyResponse
-	27, // 48: berth.v1.SecretsService.RevokeGrant:output_type -> berth.v1.RevokeGrantResponse
-	29, // 49: berth.v1.SecretsService.RemoveSecret:output_type -> berth.v1.RemoveSecretResponse
-	31, // 50: berth.v1.SecretsService.RotateSecret:output_type -> berth.v1.RotateSecretResponse
-	33, // 51: berth.v1.SecretsService.AuthorizeProxy:output_type -> berth.v1.AuthorizeProxyResponse
-	36, // 52: berth.v1.SecretsService.WatchProxySession:output_type -> berth.v1.WatchProxySessionResponse
-	39, // 53: berth.v1.SecretsService.EndProxySession:output_type -> berth.v1.EndProxySessionResponse
-	42, // [42:54] is the sub-list for method output_type
-	30, // [30:42] is the sub-list for method input_type
-	30, // [30:30] is the sub-list for extension type_name
-	30, // [30:30] is the sub-list for extension extendee
-	0,  // [0:30] is the sub-list for field type_name
+	2,  // 30: berth.v1.StartProxyResponse.outcome:type_name -> berth.v1.UseOutcome
+	42, // 31: berth.v1.StartProxyResponse.placeholders:type_name -> berth.v1.StartProxyResponse.PlaceholdersEntry
+	11, // 32: berth.v1.SecretsService.RequestSecret:input_type -> berth.v1.RequestSecretRequest
+	13, // 33: berth.v1.SecretsService.ListSecrets:input_type -> berth.v1.ListSecretsRequest
+	18, // 34: berth.v1.SecretsService.GrantSecret:input_type -> berth.v1.GrantSecretRequest
+	20, // 35: berth.v1.SecretsService.AuthorizeUse:input_type -> berth.v1.AuthorizeUseRequest
+	22, // 36: berth.v1.SecretsService.RedeemUseTicket:input_type -> berth.v1.RedeemUseTicketRequest
+	24, // 37: berth.v1.SecretsService.GrantProxy:input_type -> berth.v1.GrantProxyRequest
+	26, // 38: berth.v1.SecretsService.RevokeGrant:input_type -> berth.v1.RevokeGrantRequest
+	28, // 39: berth.v1.SecretsService.RemoveSecret:input_type -> berth.v1.RemoveSecretRequest
+	30, // 40: berth.v1.SecretsService.RotateSecret:input_type -> berth.v1.RotateSecretRequest
+	32, // 41: berth.v1.SecretsService.AuthorizeProxy:input_type -> berth.v1.AuthorizeProxyRequest
+	35, // 42: berth.v1.SecretsService.WatchProxySession:input_type -> berth.v1.WatchProxySessionRequest
+	38, // 43: berth.v1.SecretsService.EndProxySession:input_type -> berth.v1.EndProxySessionRequest
+	40, // 44: berth.v1.SecretsService.StartProxy:input_type -> berth.v1.StartProxyRequest
+	12, // 45: berth.v1.SecretsService.RequestSecret:output_type -> berth.v1.RequestSecretResponse
+	14, // 46: berth.v1.SecretsService.ListSecrets:output_type -> berth.v1.ListSecretsResponse
+	19, // 47: berth.v1.SecretsService.GrantSecret:output_type -> berth.v1.GrantSecretResponse
+	21, // 48: berth.v1.SecretsService.AuthorizeUse:output_type -> berth.v1.AuthorizeUseResponse
+	23, // 49: berth.v1.SecretsService.RedeemUseTicket:output_type -> berth.v1.RedeemUseTicketResponse
+	25, // 50: berth.v1.SecretsService.GrantProxy:output_type -> berth.v1.GrantProxyResponse
+	27, // 51: berth.v1.SecretsService.RevokeGrant:output_type -> berth.v1.RevokeGrantResponse
+	29, // 52: berth.v1.SecretsService.RemoveSecret:output_type -> berth.v1.RemoveSecretResponse
+	31, // 53: berth.v1.SecretsService.RotateSecret:output_type -> berth.v1.RotateSecretResponse
+	33, // 54: berth.v1.SecretsService.AuthorizeProxy:output_type -> berth.v1.AuthorizeProxyResponse
+	36, // 55: berth.v1.SecretsService.WatchProxySession:output_type -> berth.v1.WatchProxySessionResponse
+	39, // 56: berth.v1.SecretsService.EndProxySession:output_type -> berth.v1.EndProxySessionResponse
+	41, // 57: berth.v1.SecretsService.StartProxy:output_type -> berth.v1.StartProxyResponse
+	45, // [45:58] is the sub-list for method output_type
+	32, // [32:45] is the sub-list for method input_type
+	32, // [32:32] is the sub-list for extension type_name
+	32, // [32:32] is the sub-list for extension extendee
+	0,  // [0:32] is the sub-list for field type_name
 }
 
 func init() { file_berth_v1_secrets_proto_init() }
@@ -2791,7 +2966,7 @@ func file_berth_v1_secrets_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_berth_v1_secrets_proto_rawDesc), len(file_berth_v1_secrets_proto_rawDesc)),
 			NumEnums:      11,
-			NumMessages:   29,
+			NumMessages:   32,
 			NumExtensions: 0,
 			NumServices:   1,
 		},
