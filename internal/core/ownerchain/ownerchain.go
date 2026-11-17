@@ -91,12 +91,15 @@ func Find(chain []Ancestor, automated bool) Owner {
 	return Owner{Kind: Process, Name: path.Base(chain[0].Executable), Process: chain[0].ProcessInfo}
 }
 
+// ReadsArgs reports whether Find looks at an ancestor's arguments, so a scan reads only those.
+func ReadsArgs(exe string) bool { return runtimes[path.Base(exe)] }
+
 func agentName(a Ancestor) (string, bool) {
 	base := path.Base(a.Executable)
 	if agents[base] {
 		return base, true
 	}
-	if !runtimes[base] {
+	if !ReadsArgs(a.Executable) {
 		return "", false
 	}
 	for _, arg := range a.Args[min(1, len(a.Args)):] {

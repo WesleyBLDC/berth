@@ -14,6 +14,7 @@ import (
 
 	"golang.org/x/sys/unix"
 
+	"berth/internal/core/discovery"
 	"berth/internal/core/ports"
 )
 
@@ -210,4 +211,31 @@ func BenchmarkList(b *testing.B) {
 			b.Fatal(err)
 		}
 	}
+}
+
+// BenchmarkScan measures one discovery scan of this Mac's real table: fresh reads every
+// process's arguments as if seen for the first time; cached reuses what the last scan read.
+func BenchmarkScan(b *testing.B) {
+	s, err := New()
+	if err != nil {
+		b.Fatal(err)
+	}
+	uid := uint32(os.Getuid()) //nolint:gosec // a uid fits
+	b.Run("fresh", func(b *testing.B) {
+		b.ReportAllocs()
+		for b.Loop() {
+			if _, err := discovery.NewScanner(s, uid).Scan(b.Context()); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
+	b.Run("cached", func(b *testing.B) {
+		b.ReportAllocs()
+		sc := discovery.NewScanner(s, uid)
+		for b.Loop() {
+			if _, err := sc.Scan(b.Context()); err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }

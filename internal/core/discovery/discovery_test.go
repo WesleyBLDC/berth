@@ -1,6 +1,7 @@
 package discovery_test
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"strings"
@@ -60,7 +61,7 @@ func scan(t *testing.T, rows []testutil.FakeProcess) map[int]discovery.Observed 
 	t.Helper()
 	src := &testutil.Processes{}
 	src.Set(rows...)
-	got, err := discovery.Scan(t.Context(), src, me)
+	got, err := discovery.NewScanner(src, me).Scan(t.Context())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,5 +220,53 @@ func TestKeptTextIsClipped(t *testing.T) {
 	}
 	if discovery.Clip("/short") != "/short" {
 		t.Fatal("a short string changed")
+	}
+}
+
+type countingSource struct {
+	*testutil.Processes
+	reads int
+}
+
+func (c *countingSource) Args(ctx context.Context, p ports.ProcessRef) ([]string, error) {
+	c.reads++
+	return c.Processes.Args(ctx, p)
+}
+
+// Arguments are read once per process instance, not on every scan, and again when the pid names
+// a later process or the process exec'd another executable.
+func TestScannerReadsArgumentsOncePerProcess(t *testing.T) {
+	rows := table()
+	src := &countingSource{Processes: &testutil.Processes{}}
+	src.Set(rows...)
+	s := discovery.NewScanner(src, me)
+	scanOnce := func() map[int]discovery.Observed {
+		t.Helper()
+		got, err := s.Scan(t.Context())
+		if err != nil {
+			t.Fatal(err)
+		}
+		byRoot := map[int]discovery.Observed{}
+		for _, o := range got {
+			byRoot[o.Root.PID] = o
+		}
+		return byRoot
+	}
+	scanOnce()
+	src.reads = 0
+	if got := scanOnce(); src.reads != 0 || got[100].Signature.Driver != browsersig.Playwright || got[100].Owner.Kind != ownerchain.Terminal {
+		t.Fatalf("second scan read arguments %d times, Playwright session %+v", src.reads, got[100])
+	}
+	rows[3].Start = rows[3].Start.Add(time.Hour)
+	rows[3].Args = []string{"node", "/repo/node_modules/@anthropic-ai/claude-code/cli.js"}
+	src.Set(rows...)
+	if got := scanOnce(); src.reads != 1 || got[100].Owner.Kind != ownerchain.Agent {
+		t.Fatalf("a reused pid read arguments %d times, owner %+v", src.reads, got[100].Owner)
+	}
+	src.reads = 0
+	rows[7].Executable, rows[7].Args = shell, []string{shell, "--headless"}
+	src.Set(rows...)
+	if got := scanOnce(); src.reads != 1 || !got[200].Signature.Headless {
+		t.Fatalf("an exec read arguments %d times, signature %+v", src.reads, got[200].Signature)
 	}
 }

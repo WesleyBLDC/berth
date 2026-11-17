@@ -1,7 +1,8 @@
 // Package discovery turns the process table into browser sessions, and each session's
-// observation into the events its machine should see. Scan reads through the ProcessSource
-// port; Events is pure. Arguments are read only for browser processes and their ancestors, and
-// only for the owner's own processes, since the kernel refuses everyone else's.
+// observation into the events its machine should see. A Scanner reads through the ProcessSource
+// port; Events is pure. Arguments are read only for browser processes and the ancestors whose
+// arguments name an agent (node, bun, deno), once per process instance, and only for the owner's
+// own processes, since the kernel refuses everyone else's.
 package discovery
 
 import (
@@ -57,10 +58,39 @@ type candidate struct {
 	sig browsersig.Signature
 }
 
-// Scan lists every browser session running now. uid is berthd's own user: its processes are
-// read in full, everyone else's by path only.
-func Scan(ctx context.Context, src ports.ProcessSource, uid uint32) ([]Observed, error) {
-	procs, err := src.List(ctx)
+// Scanner lists browser sessions scan after scan. It remembers what it read about each process
+// instance, so a scan reads arguments only for processes it has not seen; a long lived Chrome
+// would otherwise cost a kern.procargs2 read per helper on every scan. It is not safe for
+// concurrent use.
+type Scanner struct {
+	src ports.ProcessSource
+	// uid is berthd's own user: its processes are read in full, everyone else's by path only.
+	uid uint32
+	// sigs and args hold the last scan's classifications and ancestor arguments; each scan
+	// keeps only the processes it listed, so a process that is gone is forgotten.
+	sigs map[instance]classified
+	args map[instance][]string
+}
+
+// instance keys a process by its executable too, since exec keeps the pid and start time.
+type instance struct {
+	pid   int
+	start int64
+	exe   string
+}
+
+type classified struct {
+	sig browsersig.Signature
+	ok  bool
+}
+
+func NewScanner(src ports.ProcessSource, uid uint32) *Scanner {
+	return &Scanner{src: src, uid: uid}
+}
+
+// Scan lists every browser session running now.
+func (s *Scanner) Scan(ctx context.Context) ([]Observed, error) {
+	procs, err := s.src.List(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -70,22 +100,41 @@ func Scan(ctx context.Context, src ports.ProcessSource, uid uint32) ([]Observed,
 		byPID[p.PID] = p
 		children[p.PPID] = append(children[p.PPID], p.PID)
 	}
-	args := func(p ports.ProcessInfo) ([]string, bool) {
-		if p.UID != uid {
+	read := func(p ports.ProcessInfo) ([]string, bool) {
+		if p.UID != s.uid {
 			return nil, false
 		}
-		a, err := src.Args(ctx, p.ProcessRef)
+		a, err := s.src.Args(ctx, p.ProcessRef)
 		return a, err == nil
 	}
+	sigs, args := make(map[instance]classified, len(s.sigs)), make(map[instance][]string, len(s.args))
 	browsers := make(map[int]candidate)
 	for _, p := range procs {
 		if _, ok := browsersig.Classify(p.Executable, nil, false); !ok {
 			continue
 		}
-		a, known := args(p)
-		if sig, ok := browsersig.Classify(p.Executable, a, known); ok {
-			browsers[p.PID] = candidate{p, sig}
+		k := key(p)
+		c, hit := s.sigs[k]
+		if !hit {
+			a, known := read(p)
+			c.sig, c.ok = browsersig.Classify(p.Executable, a, known)
 		}
+		sigs[k] = c
+		if c.ok {
+			browsers[p.PID] = candidate{p, c.sig}
+		}
+	}
+	ancestorArgs := func(p ports.ProcessInfo) []string {
+		if !ownerchain.ReadsArgs(p.Executable) {
+			return nil
+		}
+		k := key(p)
+		a, hit := s.args[k]
+		if !hit {
+			a, _ = read(p)
+		}
+		args[k] = a
+		return a
 	}
 	var out []Observed
 	for _, p := range procs {
@@ -99,13 +148,18 @@ func Scan(ctx context.Context, src ports.ProcessSource, uid uint32) ([]Observed,
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		out = append(out, observe(ctx, src, c, byPID, children, args, uid))
+		out = append(out, observe(ctx, s.src, c, byPID, children, ancestorArgs, s.uid))
 	}
+	s.sigs, s.args = sigs, args
 	return out, nil
 }
 
+func key(p ports.ProcessInfo) instance {
+	return instance{pid: p.PID, start: p.Start.UnixNano(), exe: p.Executable}
+}
+
 func observe(ctx context.Context, src ports.ProcessSource, root candidate, byPID map[int]ports.ProcessInfo,
-	children map[int][]int, args func(ports.ProcessInfo) ([]string, bool), uid uint32,
+	children map[int][]int, args func(ports.ProcessInfo) []string, uid uint32,
 ) Observed {
 	o := Observed{ID: ID(root.ProcessRef), Root: root.ProcessInfo, Signature: root.sig, OtherUser: root.UID != uid}
 	o.Members = []Member{{ProcessInfo: root.ProcessInfo}}
@@ -130,8 +184,7 @@ func observe(ctx context.Context, src ports.ProcessSource, root candidate, byPID
 			break
 		}
 		seen[pid] = true
-		a, _ := args(p)
-		chain = append(chain, ownerchain.Ancestor{ProcessInfo: p, Args: a})
+		chain = append(chain, ownerchain.Ancestor{ProcessInfo: p, Args: args(p)})
 		o.Chain = append(o.Chain, p)
 		if pid == launchdPID {
 			break

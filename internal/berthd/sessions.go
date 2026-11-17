@@ -48,7 +48,9 @@ type browsers struct {
 	browsersDeps
 	ctx    context.Context
 	actors *actors[session.State, session.Event, session.Effect]
-	kick   chan struct{}
+	// scanner is used only under scanning.
+	scanner *discovery.Scanner
+	kick    chan struct{}
 
 	mu sync.Mutex
 	// live holds every session the last scan saw or that has not yet reached Stopped.
@@ -72,7 +74,7 @@ type tracked struct {
 func newBrowsers(ctx context.Context, d browsersDeps) *browsers {
 	b := &browsers{
 		browsersDeps: d, ctx: ctx, kick: make(chan struct{}, 1), grace: stopGrace,
-		live: map[string]*tracked{}, ended: map[string]*tracked{},
+		live: map[string]*tracked{}, ended: map[string]*tracked{}, scanner: discovery.NewScanner(d.Source, d.UID),
 	}
 	b.actors = &actors[session.State, session.Event, session.Effect]{
 		ctx: ctx, log: d.Log, store: d.Store, clock: d.Clock,
@@ -138,7 +140,7 @@ func (b *browsers) rescan() {
 func (b *browsers) scan(ctx context.Context) error {
 	b.scanning.Lock()
 	defer b.scanning.Unlock()
-	seen, err := discovery.Scan(ctx, b.Source, b.UID)
+	seen, err := b.scanner.Scan(ctx)
 	if err != nil {
 		return err
 	}
