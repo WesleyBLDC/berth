@@ -96,6 +96,7 @@ Built; it is tested as one user.
 - `berthd` listens on a second Unix socket when it is given an agent uid (`berthd -agent-uid <uid> -agent-gid <gid> [-agent-socket <path>]`). With no agent uid the agent socket is off; an agent uid without a gid, or uid 0, is refused at start.
 - **Path:** `/Users/Shared/Berth/<owner uid>/agent.sock` by default, since `BERTH_HOME` sits inside the owner's `~/Library`, which is `0700` and so unreachable for another user.
 - **Folders made by setup, never by `berthd`:** setup (item 2) creates `/Users/Shared/Berth` owned by root with mode `0755`, and the socket folder `<owner uid>/` owned by the owner with group `<agent gid>` (the `berth` group) and mode `0710`, so the agent can reach the socket but not list the folder. The socket is `0660` with the same group, and the owner must be a member of that group, which setup arranges. When a folder is missing, the agent socket does not start and `berthd` says to run `berth agent setup`.
+If `/Users/Shared/Berth` or the socket folder already exists and is not owned and moded exactly as above (for example an agent created it before setup ran), setup refuses and names it, and the maintainer removes it by hand; setup never adopts or changes a folder it did not create.
 - **No swapping:** `berthd` walks the path as written from `/`, one component at a time, opening each level with `O_NOFOLLOW` and checking the open descriptor. It follows a symlink only when root owns it (so `/tmp` and `/var` work), and refuses any level owned by someone other than root or the owner, or writable by others unless it is a root owned sticky folder like `/Users/Shared`. The socket folder itself must be the owner's, with the agent group and mode `0710`. Go cannot bind relative to the checked descriptor, so `berthd` walks the path again after the bind and serves only if it reaches the same folder; since every level belongs to root or the owner and no one else can write it, only root could change a level in that window.
 - **Peer check:** every connection's peer uid is read with `LOCAL_PEERCRED` before a byte is read, as on the owner socket, and must equal the configured agent uid; any other connection is closed. The owner socket keeps refusing every uid but the owner's, so the agent can reach `berthd` only here.
 - **Methods:** only methods marked `(berth.v1.agent) = true` are served; every other method answers `PermissionDenied` with the new reason `ERROR_REASON_NOT_AGENT_METHOD`. The check reads the method's schema option, so a newly marked method is served without further wiring, and `TestAgentSurface` pins both the list and the refusal.
@@ -144,10 +145,13 @@ These go into `ARCHITECTURE.md` when the items that create them land.
 - Until the spike answers it, the agent may share the owner's audit session and launchd domain (pasteboard, GUI services) when started with plain `sudo -u`.
 - The owner's home may be readable by the agent through the `staff` group until setup tightens it.
 - `berthd` cannot see another user's process arguments (`kern.procargs2`), so it can broker only browsers it launched.
-- Nothing can squat the agent socket's folders: setup creates them root owned (the parent) and owner owned (the socket folder), and before setup the agent socket does not start.
+- Before setup, the agent user can create `/Users/Shared/Berth` itself; that blocks setup (setup refuses a folder it did not create) but grants nothing, because `berthd` refuses a folder it does not trust and the agent socket does not start. After setup, nothing can squat the folders: the parent is root owned and the socket folder owner owned.
 - Free signing (D7): no Endpoint Security and no notarization until M8.
 
 ## Follow ups from the review
+
+- Refresh the stat after a root owned symlink jumps to `/` as the last component, so the final check reads the right folder (only root can set this up).
+- Rate limit the warning logged for each refused connection, so an agent cannot flood the log.
 
 - The folder check reads only the owner and mode bits and ignores ACLs, so an ACL that grants another user write on a folder in the agent socket's path passes the check. Setup creates the folders without ACLs; the check should also refuse an ACL entry that grants write or delete to anyone but the owner.
 - Until session tokens (item 4) exist, an agent can call `RequestSecret` as often as it likes, and each call opens a store dialog on the owner's screen. Item 4 should rate limit store requests per session.
