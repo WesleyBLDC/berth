@@ -94,3 +94,16 @@ It cannot read the value, send it to another host, send it over cleartext, keep 
 ## Exit gate
 
 `make check` passes with both e2e suites, the compatibility matrix is recorded here, the agent safety checklist is walked for E2b, `ARCHITECTURE.md` and the wiki are updated, and Wesley's manual check (real signing, Touch ID, a real API with a test key) passes.
+
+## Contract decisions (merged at 19cc6dd)
+
+- Proto validation turns port 0 into 443 and refuses ungrantable header names (plain `InvalidArgument`); `BAD_PROXY_TARGET` is only for `berthd`'s own checks (IP literals and `localhost` outside `berth_e2e`). `berth-proxy` repeats the header check.
+- `ports.ProxyTarget.Port` is always 1 to 65535. Proxy grants store empty `exe_path` and `sha256`; `GrantRecord.Kind` empty means `exe`.
+- `WatchProxySession` streams `WatchProxySessionResponse{event}`; the first event is SERVING after the session moves to Serving; STOP carries a `ProxyStopReason`.
+- `AuthorizeProxy` answers AUTHORIZED only when every name has an Active proxy grant, else NO_GRANT with no session and no tickets. `session_id` is 32 lowercase hex; the entity is `proxy/<session_id>`.
+- `TrustProxy` runs before the request log for all three proxy methods; an unknown session or one authorized by another audit token answers `PEER_NOT_TRUSTED`, so ids cannot be probed.
+- Rotate reuses `StoreOutcome`; rotate and remove share `ports.LifecyclePrompt{Name, Requester}` and take an action ticket; `TicketAction` is use, remove or rotate.
+- `RemoveSecretResponse` returns `revoked_grant_ids`.
+- `proxy_sessions` stores the proxy pid and counts only.
+- Stubs to replace: `internal/adapters/native/lifecycle_stub.go` (item 4), `internal/berthd/proxy_stub.go` (item 6). Item 6 sets `Consumer.kind` for exe grants too.
+- `berth-proxy` reads each value through the existing `native.Read` adapter (socketpair on fd 3); `berth-native` must accept a proxy parent for tickets whose `consumer_kind` is PROXY.
