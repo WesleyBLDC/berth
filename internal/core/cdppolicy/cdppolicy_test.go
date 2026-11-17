@@ -46,6 +46,8 @@ func TestParseRefusesWhatGoAndChromeReadDifferently(t *testing.T) {
 		`{"id":1,"method":"Page.navigate","params":{"URL":"file:///etc/passwd"}}`,
 		`{"id":1,"method":"Target.attachToTarget","params":{"targetId":"T","Flatten":true}}`,
 		`{"id":1,"method":"Input.dispatchDragEvent","params":{"type":"drop","data":{"Files":["/etc/passwd"]}}}`,
+		// Go would read entry 2, Chrome entry 1.
+		`{"id":1,"method":"Page.navigateToHistoryEntry","params":{"entryId":1,"EntryId":2}}`,
 		// Go would read modifiers 0, Chrome Shift.
 		`{"id":1,"method":"Input.dispatchKeyEvent","params":{"type":"rawKeyDown","key":"Insert","modifiers":8,"Modifiers":0}}`,
 		// Unicode case folding: the long s folds to s.
@@ -167,6 +169,9 @@ func TestCheck(t *testing.T) {
 		{method: "Fetch.continueRequest", params: `{"requestId":"r"}`, allowed: true},
 		{method: "IO.read", params: `{"handle":"h"}`, allowed: true},
 
+		{method: "Security.setIgnoreCertificateErrors", params: `{"ignore":true}`},
+		{method: "Security.setOverrideCertificateErrors", params: `{"override":true}`},
+		{method: "Security.enable", allowed: true},
 		{method: "Browser.close"},
 		{method: "Browser.crash"},
 		{method: "Browser.crashGpuProcess"},

@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"net"
@@ -304,13 +305,14 @@ func TestAnEndedConnectionLeavesNothingToTheNext(t *testing.T) {
 		`{"id":1,"result":{}}`, `{"id":2,"result":{}}`,
 		`{"method":"Target.attachedToTarget","params":{"sessionId":"S1","targetInfo":{"type":"page"},"waitingForDebugger":true}}`,
 		`{"method":"Target.attachedToTarget","sessionId":"S1","params":{"sessionId":"S1-child","targetInfo":{"type":"iframe"},"waitingForDebugger":false}}`,
+		`{"method":"Target.attachedToTarget","params":{"sessionId":"S2","targetInfo":{"targetId":"T2","type":"page"},"waitingForDebugger":false}}`,
 		`{"id":3,"result":{"sessionId":"S2"}}`,
 	} {
 		if err := fb.Emit([]byte(raw)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	for range 5 {
+	for range 6 {
 		read(t, ws)
 	}
 	_ = ws.CloseNow()
@@ -486,4 +488,220 @@ func TestOnlyWebContentCanBeAttachedTo(t *testing.T) {
 	if !slices.Equal(got, []string{`UI Runtime.runIfWaitingForDebugger `, ` Target.detachFromTarget {"sessionId":"UI"}`}) {
 		t.Fatalf("calls about the hidden session = %q, want it resumed and detached", got)
 	}
+}
+
+func waitSent(t *testing.T, fb *testutil.FakeBrowser, n int) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); len(fb.Sent()) < n; time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatalf("the browser got %d messages, want %d", len(fb.Sent()), n)
+		}
+	}
+}
+
+func refusedWith(t *testing.T, m map[string]any, id float64, why string) {
+	t.Helper()
+	e, _ := m["error"].(map[string]any)
+	if m["id"] != id || e == nil || !strings.Contains(e["message"].(string), why) {
+		t.Fatalf("reply = %v, want a refusal of %v naming %q", m, id, why)
+	}
+}
+
+// A late reply that comes while no agent is connected clears its id, so the next connection
+// may use it again.
+func TestAReplyWhileNobodyIsConnectedFreesItsID(t *testing.T) {
+	fb, endpoint, _ := serveWith(t, &cdpproxy.Proxy{Log: slog.New(slog.DiscardHandler), ResetWait: 20 * time.Millisecond})
+	ws, _, err := dial(t, endpoint, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, ws, `{"id":5,"method":"Target.getTargets"}`)
+	waitSent(t, fb, 1)
+	_ = ws.CloseNow()
+	time.Sleep(300 * time.Millisecond)
+	_ = fb.Emit([]byte(`{"id":5,"result":{"targetInfos":[]}}`))
+	next := redial(t, endpoint)
+	defer func() { _ = next.CloseNow() }()
+	write(t, next, `{"id":5,"method":"Target.getTargets"}`)
+	waitSent(t, fb, 2)
+}
+
+// An id already in flight is refused, so a second reply to it can never reach the next
+// connection.
+func TestAnIDAlreadyInFlightIsRefused(t *testing.T) {
+	fb, endpoint, _ := serve(t)
+	ws, _, err := dial(t, endpoint, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ws.CloseNow() }()
+	write(t, ws, `{"id":3,"method":"Target.getTargets"}`)
+	write(t, ws, `{"id":3,"method":"Target.getTargets"}`)
+	refusedWith(t, read(t, ws), 3, "already in flight")
+	if len(fb.Sent()) != 1 {
+		t.Fatalf("browser got %q; the repeated id must not reach it", fb.Sent())
+	}
+}
+
+// Auto attach goes off before the sessions are counted, so a target attached while the reset
+// runs is resumed and detached too, and never reaches the next connection.
+func TestATargetAttachedDuringTheResetIsUndone(t *testing.T) {
+	fb, endpoint, _ := serve(t)
+	ws, _, err := dial(t, endpoint, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, ws, `{"id":1,"method":"Target.setAutoAttach","params":{"autoAttach":true,"waitForDebuggerOnStart":true,"flatten":true}}`)
+	waitSent(t, fb, 1)
+	if err := fb.Emit([]byte(`{"id":1,"result":{}}`)); err != nil {
+		t.Fatal(err)
+	}
+	read(t, ws)
+	fb.OnCall("Target.setAutoAttach", func() {
+		_ = fb.Emit([]byte(`{"method":"Target.attachedToTarget","params":{"sessionId":"S9","targetInfo":{"targetId":"T9","type":"page","url":"about:blank"},"waitingForDebugger":true}}`))
+	})
+	_ = ws.CloseNow()
+	next := redial(t, endpoint)
+	defer func() { _ = next.CloseNow() }()
+	var got []string
+	for _, c := range fb.Calls() {
+		got = append(got, c.Session+" "+c.Method+" "+c.Params)
+	}
+	off := slices.Index(got, ` Target.setAutoAttach {"autoAttach":false,"waitForDebuggerOnStart":false,"flatten":true}`)
+	resumed := slices.Index(got, `S9 Runtime.runIfWaitingForDebugger `)
+	detached := slices.Index(got, ` Target.detachFromTarget {"sessionId":"S9"}`)
+	if off < 0 || resumed < off || detached < resumed {
+		t.Fatalf("calls %q; auto attach must go off first, then the new target be resumed and detached", got)
+	}
+	if err := fb.Emit([]byte(`{"method":"Target.targetCreated","params":{}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if m := read(t, next); m["method"] != "Target.targetCreated" {
+		t.Fatalf("the next connection got %v", m)
+	}
+}
+
+// Chrome answers a call on a session it does not know without the session id; the call still
+// resolves, so the reset does not wait for it.
+func TestACallOnAnUnknownSessionResolves(t *testing.T) {
+	fb, endpoint, _ := serve(t)
+	ws, _, err := dial(t, endpoint, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	write(t, ws, `{"id":4,"sessionId":"NOPE","method":"Runtime.evaluate","params":{"expression":"1"}}`)
+	waitSent(t, fb, 1)
+	if err := fb.Emit([]byte(`{"id":4,"error":{"code":-32001,"message":"Session with given id not found."}}`)); err != nil {
+		t.Fatal(err)
+	}
+	if m := read(t, ws); m["id"] != float64(4) {
+		t.Fatalf("reply = %v", m)
+	}
+	_ = ws.CloseNow()
+	start := time.Now()
+	next := redial(t, endpoint)
+	_ = next.CloseNow()
+	if took := time.Since(start); took > 2*time.Second {
+		t.Fatalf("the next connection waited %v for a call already answered", took)
+	}
+}
+
+// A target the agent holds that comes to show Chrome's own pages leaves the agent: it is told
+// the session detached, the proxy detaches it, and nothing more about it reaches the agent.
+func TestASessionWhoseTargetLeavesTheWebIsDetached(t *testing.T) {
+	fb, endpoint, _ := serve(t)
+	ws, _, err := dial(t, endpoint, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ws.CloseNow() }()
+	for _, raw := range []string{
+		`{"method":"Target.attachedToTarget","params":{"sessionId":"S1","targetInfo":{"targetId":"T1","type":"page","url":"about:blank"},"waitingForDebugger":false}}`,
+		`{"method":"Target.targetInfoChanged","params":{"targetInfo":{"targetId":"T1","type":"page","url":"chrome://settings/"}}}`,
+		`{"method":"Runtime.consoleAPICalled","sessionId":"S1","params":{}}`,
+		`{"method":"Target.targetCreated","params":{}}`,
+	} {
+		if err := fb.Emit([]byte(raw)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	read(t, ws)
+	if m := read(t, ws); m["method"] != "Target.detachedFromTarget" || m["params"].(map[string]any)["sessionId"] != "S1" {
+		t.Fatalf("got %v, want the session's detach", m)
+	}
+	if m := read(t, ws); m["method"] != "Target.targetInfoChanged" {
+		t.Fatalf("got %v", m)
+	}
+	if m := read(t, ws); m["method"] != "Target.targetCreated" {
+		t.Fatalf("got %v; nothing about the detached session may follow", m)
+	}
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		if slices.ContainsFunc(fb.Calls(), func(c testutil.FakeCall) bool {
+			return c.Method == "Target.detachFromTarget" && c.Params == `{"sessionId":"S1"}`
+		}) {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("the proxy never detached the session; calls %v", fb.Calls())
+		}
+	}
+}
+
+// A history entry is a URL to load like any other: one that is not web content is refused.
+func TestAHistoryEntryMustBeLoadable(t *testing.T) {
+	fb, endpoint, _ := serve(t)
+	ws, _, err := dial(t, endpoint, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ws.CloseNow() }()
+	fb.Answer("Page.getNavigationHistory", `{"currentIndex":1,"entries":[{"id":1,"url":"file:///etc/hosts"},{"id":2,"url":"https://a.example/"}]}`)
+	write(t, ws, `{"id":1,"sessionId":"S","method":"Page.navigateToHistoryEntry","params":{"entryId":1}}`)
+	refusedWith(t, read(t, ws), 1, "only http")
+	write(t, ws, `{"id":2,"sessionId":"S","method":"Page.navigateToHistoryEntry","params":{"entryId":3}}`)
+	refusedWith(t, read(t, ws), 2, "not known")
+	write(t, ws, `{"id":3,"sessionId":"S","method":"Page.navigateToHistoryEntry","params":{"entryId":2}}`)
+	waitSent(t, fb, 1)
+	if sent := fb.Sent(); len(sent) != 1 || !strings.Contains(string(sent[0]), `"entryId":2`) {
+		t.Fatalf("browser got %q", sent)
+	}
+}
+
+// A kept alive connection that sends nothing more is closed.
+func TestAnIdleConnectionIsClosed(t *testing.T) {
+	_, endpoint, _ := serveWith(t, &cdpproxy.Proxy{Log: slog.New(slog.DiscardHandler), IdleTimeout: 200 * time.Millisecond})
+	var d net.Dialer
+	raw, err := d.DialContext(t.Context(), "tcp", strings.TrimPrefix(endpoint, "http://"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = raw.Close() }()
+	if _, err := raw.Write([]byte("GET /json/version HTTP/1.1\r\nHost: x\r\n" + cdpproxy.TokenHeader + ": " + token + "\r\n\r\n")); err != nil {
+		t.Fatal(err)
+	}
+	_ = raw.SetReadDeadline(time.Now().Add(5 * time.Second))
+	got, err := io.ReadAll(raw)
+	if err != nil || !strings.Contains(string(got), "200 OK") {
+		t.Fatalf("an idle kept alive connection must be served and then closed: %q %v", got, err)
+	}
+}
+
+// Once the calls earlier connections left unanswered fill their tracking, new calls are refused
+// rather than letting a late reply through untracked.
+func TestCallsAreRefusedWhileStaleTrackingIsFull(t *testing.T) {
+	fb, endpoint, _ := serveWith(t, &cdpproxy.Proxy{Log: slog.New(slog.DiscardHandler), ResetWait: 20 * time.Millisecond})
+	ws, _, err := dial(t, endpoint, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const n = 10_000
+	for i := range n {
+		write(t, ws, fmt.Sprintf(`{"id":%d,"method":"Target.getTargets"}`, i+1))
+	}
+	waitSent(t, fb, n)
+	_ = ws.CloseNow()
+	next := redial(t, endpoint)
+	defer func() { _ = next.CloseNow() }()
+	write(t, next, `{"id":20000,"method":"Target.getTargets"}`)
+	refusedWith(t, read(t, next), 20000, "too many calls left unanswered")
 }

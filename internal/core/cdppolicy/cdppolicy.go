@@ -41,13 +41,13 @@ var readFields = map[string][]string{
 	"": {"id", "method", "sessionId", "params"},
 	"params": {
 		"url", "flatten", "sessionId", "targetId", "commands", "data", "proxyServer", "proxyBypassList",
-		"key", "code", "modifiers", "windowsVirtualKeyCode",
+		"key", "code", "modifiers", "windowsVirtualKeyCode", "entryId",
 	},
 	"params.data": {"files"},
 }
 
 // MaxKeys bounds the keys of one object and MaxDepth how deeply objects and arrays nest, so a
-// message costs time in proportion to its size; Chrome's own parser stops at a depth of 200.
+// message costs time in proportion to its size. Both are Berth's own limits.
 const (
 	MaxKeys  = 10_000
 	MaxDepth = 200
@@ -241,30 +241,32 @@ var Methods = map[string][]string{
 // with the reason the agent is told. Methods of the domains in Methods that are not listed there
 // are refused too; the ones named here are the reviewed refusals.
 var Denied = map[string]string{
-	"Browser.close":                 "the browser's life belongs to Berth",
-	"Browser.crash":                 "the browser's life belongs to Berth",
-	"Browser.crashGpuProcess":       "the browser's life belongs to Berth",
-	"Browser.getBrowserCommandLine": "it shows Berth's launch flags and profile path",
-	"Browser.executeBrowserCommand": "it runs browser commands outside any page",
-	"Browser.setDownloadBehavior":   "downloads go only to the profile's own folder",
-	"Page.setDownloadBehavior":      "downloads go only to the profile's own folder",
-	"Browser.grantPermissions":      "permissions such as the clipboard stay at their defaults",
-	"Browser.setPermission":         "permissions such as the clipboard stay at their defaults",
-	"Browser.resetPermissions":      "permissions such as the clipboard stay at their defaults",
-	"Target.exposeDevToolsProtocol": "it hands CDP to page JavaScript",
-	"Target.setRemoteLocations":     "it makes the browser connect out to other targets",
-	"Target.sendMessageToTarget":    "nested messages would pass unchecked; use flattened sessions",
-	"Target.attachToBrowserTarget":  "a browser session is Berth's",
-	"DOM.setFileInputFiles":         "it hands local files to a page",
-	"DOM.getFileInfo":               "it shows local file paths",
-	"Network.loadNetworkResource":   "it loads any URL, local files included",
-	"SystemInfo.*":                  "it reads facts about the machine",
-	"DeviceAccess.*":                "it picks nearby Bluetooth and USB devices with no person in the loop",
-	"Tethering.*":                   "it binds ports on the Mac",
-	"Extensions.*":                  "it loads code from disk into the browser",
-	"PWA.*":                         "it installs and launches apps outside the browser",
-	"Cast.*":                        "it talks to devices on the network",
-	"Autofill.*":                    "autofill belongs to Berth",
+	"Browser.close":                         "the browser's life belongs to Berth",
+	"Browser.crash":                         "the browser's life belongs to Berth",
+	"Browser.crashGpuProcess":               "the browser's life belongs to Berth",
+	"Browser.getBrowserCommandLine":         "it shows Berth's launch flags and profile path",
+	"Browser.executeBrowserCommand":         "it runs browser commands outside any page",
+	"Browser.setDownloadBehavior":           "downloads go only to the profile's own folder",
+	"Page.setDownloadBehavior":              "downloads go only to the profile's own folder",
+	"Browser.grantPermissions":              "permissions such as the clipboard stay at their defaults",
+	"Browser.setPermission":                 "permissions such as the clipboard stay at their defaults",
+	"Browser.resetPermissions":              "permissions such as the clipboard stay at their defaults",
+	"Target.exposeDevToolsProtocol":         "it hands CDP to page JavaScript",
+	"Target.setRemoteLocations":             "it makes the browser connect out to other targets",
+	"Target.sendMessageToTarget":            "nested messages would pass unchecked; use flattened sessions",
+	"Target.attachToBrowserTarget":          "a browser session is Berth's",
+	"DOM.setFileInputFiles":                 "it hands local files to a page",
+	"DOM.getFileInfo":                       "it shows local file paths",
+	"Network.loadNetworkResource":           "it loads any URL, local files included",
+	"SystemInfo.*":                          "it reads facts about the machine",
+	"DeviceAccess.*":                        "it picks nearby Bluetooth and USB devices with no person in the loop",
+	"Tethering.*":                           "it binds ports on the Mac",
+	"Extensions.*":                          "it loads code from disk into the browser",
+	"PWA.*":                                 "it installs and launches apps outside the browser",
+	"Cast.*":                                "it talks to devices on the network",
+	"Autofill.*":                            "autofill belongs to Berth",
+	"Security.setIgnoreCertificateErrors":   "it turns off certificate checks for the whole browser, past the connection",
+	"Security.setOverrideCertificateErrors": "it turns off certificate checks for the whole browser, past the connection",
 }
 
 // Answered names methods the proxy answers itself with an empty success and never forwards:

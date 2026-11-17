@@ -71,6 +71,7 @@ type FakeBrowser struct {
 
 	mu      sync.Mutex
 	answers map[string]string
+	hooks   map[string]func()
 	calls   []FakeCall
 	sent    [][]byte
 	sink    func([]byte)
@@ -95,7 +96,11 @@ func (b *FakeBrowser) Call(ctx context.Context, session, method string, params [
 	b.mu.Lock()
 	b.calls = append(b.calls, FakeCall{Session: session, Method: method, Params: string(params)})
 	answer, scripted := b.answers[method]
+	hook := b.hooks[method]
 	b.mu.Unlock()
+	if hook != nil {
+		hook()
+	}
 	select {
 	case <-b.done:
 		return nil, ports.ErrBrowserGone
@@ -131,6 +136,17 @@ func (b *FakeBrowser) Answer(method, result string) {
 		b.answers = map[string]string{}
 	}
 	b.answers[method] = result
+}
+
+// OnCall runs f each time Berth calls method, before the call is answered, as a browser that
+// sends events before its reply does.
+func (b *FakeBrowser) OnCall(method string, f func()) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.hooks == nil {
+		b.hooks = map[string]func(){}
+	}
+	b.hooks[method] = f
 }
 
 func (b *FakeBrowser) Send(raw []byte) error {
