@@ -376,3 +376,21 @@ func TestTopQuitsCleanlyWhenItsStreamPanics(t *testing.T) {
 		t.Fatalf("fault %v did not quit", m.fault)
 	}
 }
+
+// A selected session that leaves the list hands the selection to the one now on its row, not to
+// the first row.
+func TestTopSelectionStaysNearAVanishedSession(t *testing.T) {
+	list := topSessions()
+	m, _ := newTopTest(t, list)
+	press(m, "down", "down")
+	gone := m.selection()
+	m.Update(topUpdate{change(9, "Exited", &berthv1.Session{Id: gone.GetId(), State: berthv1.SessionState_SESSION_STATE_STOPPED, StateSince: timestamppb.New(topNow)})})
+	vis := m.visible()
+	if got := m.selection(); got.GetId() != vis[2].GetId() {
+		t.Fatalf("selection moved to %s, want %s on the vanished session's row", got.GetId(), vis[2].GetId())
+	}
+	m.Update(topUpdate{change(10, "Exited", &berthv1.Session{Id: vis[2].GetId(), State: berthv1.SessionState_SESSION_STATE_STOPPED, StateSince: timestamppb.New(topNow)})})
+	if got, last := m.selection(), m.visible()[1]; got.GetId() != last.GetId() {
+		t.Fatalf("selection moved to %s, want the last row %s", got.GetId(), last.GetId())
+	}
+}

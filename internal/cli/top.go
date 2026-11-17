@@ -228,7 +228,7 @@ func (m *topModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 	case topUpdate:
 		m.link = "watching"
-		m.apply(msg.resp)
+		m.reselect(func() { m.apply(msg.resp) })
 		return m, m.next()
 	case topDown:
 		m.link = "reconnecting: " + shown(msg.err.Error())
@@ -352,9 +352,21 @@ func (m *topModel) key(k tea.KeyPressMsg) tea.Cmd {
 	case "/":
 		m.filtering = true
 	case "a":
-		m.showStopped = !m.showStopped
+		m.reselect(func() { m.showStopped = !m.showStopped })
 	}
 	return nil
+}
+
+// reselect runs change, and when it hides the selected session, selects the one now on its row,
+// or the last, so the selection stays where the person was looking rather than jump to the top.
+func (m *topModel) reselect(change func()) {
+	at, _ := m.current(m.visible())
+	change()
+	list := m.visible()
+	if at < 0 || len(list) == 0 || slices.ContainsFunc(list, func(s *berthv1.Session) bool { return s.GetId() == m.selected }) {
+		return
+	}
+	m.selected, m.inspected = list[min(at, len(list)-1)].GetId(), nil
 }
 
 // visible is the sessions the list shows, oldest browser first.
