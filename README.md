@@ -44,3 +44,7 @@ The maintainer keeps extra design notes privately; everything needed to understa
 - Local environments only.
 - macOS first.
 - Developed in public; personal names, paths and profiles belong in local config, and the few still in the code move there over time ([ADR 0017](docs/adr/0017-public-development-repository.md)).
+
+## License
+
+MIT, see [LICENSE](LICENSE).
