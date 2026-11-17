@@ -20,7 +20,7 @@ test: ## Unit tests with the race detector
 test-native: ## Swift unit tests for berth-native's core
 	swift test --package-path native
 	@# The helper must stay alive through a modal session and an async wait, or Touch ID dies with no reply.
-	@echo | native/.build/debug/berth-native selftest-wait | grep -q '"waited"' || { echo 'berth-native exited before replying'; exit 1; }
+	@echo | perl -e 'alarm 20; exec @ARGV' native/.build/debug/berth-native selftest-wait | grep -q '"waited"' || { echo 'berth-native did not stay alive and reply through the main run loop'; exit 1; }
 
 e2e: ## End to end tests with the real binaries
 	go test -count=1 ./test/e2e/...

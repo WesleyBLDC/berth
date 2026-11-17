@@ -1,5 +1,6 @@
 // berth-native: the only Berth process that touches secret values. The protocol is in
 // docs/plans/e2-terminal-secrets.md, "Native helper protocol".
+import AppKit
 import BerthNativeCore
 import Foundation
 
@@ -38,14 +39,16 @@ guard commands.contains(command) else { misuse("unknown command \(command)") }
 // One line, not end of file: the caller may keep stdin open while it waits for the reply.
 let line = readLine(strippingNewline: false).map { Data($0.utf8) } ?? Data()
 
-// Every command ends in exit with its reply. Run it as a task and serve the main queue forever:
-// with top level await, the main run loop returns as soon as a dialog's modal session has ended
-// and the command waits on Touch ID, and the process exits with no reply.
+// read shows no UI and finishes synchronously.
+if command == "read" { runRead(line) }
+
+// The other commands end in exit with their reply. They need the real AppKit event loop on the
+// main thread: with top level await the main run loop returns once a dialog's modal session has
+// ended, and dispatchMain exits the main thread, which Touch ID needs to deliver its result.
 Task { @MainActor in
     switch command {
     case "store": await runStore(line)
     case "confirm": await runConfirm(line)
-    case "read": runRead(line)
     case "rotate": await runRotate(line)
     case "remove": await runRemove(line)
     #if DEBUG
@@ -54,4 +57,5 @@ Task { @MainActor in
     default: misuse("unknown command \(command)")
     }
 }
-dispatchMain()
+NSApplication.shared.setActivationPolicy(.accessory)
+NSApplication.shared.run()
