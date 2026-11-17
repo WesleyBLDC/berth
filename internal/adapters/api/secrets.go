@@ -290,7 +290,7 @@ func secretsError(err error) error {
 	case errors.Is(err, ErrAgentTokenInvalid):
 		return agentsError(err)
 	case errors.Is(err, ErrRateLimited):
-		return withReason(connect.NewError(connect.CodeResourceExhausted, "this agent session already has as many proxies running as berthd starts for one; let one end first"),
+		return withReason(connect.NewError(connect.CodeResourceExhausted, "this agent session has as many proxies running, or started as many in the last hour, as berthd allows; let one end or wait"),
 			berthv1.ErrorReason_ERROR_REASON_RATE_LIMITED)
 	case errors.Is(err, ErrProxyNotStarted):
 		return connect.NewError(connect.CodeUnavailable, "berthd could not start berth-proxy; berthd's log says why")

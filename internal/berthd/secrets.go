@@ -111,10 +111,14 @@ type secrets struct {
 	flights map[string]*flight
 	live    map[ports.Ticket]liveTicket
 	running map[string]*proxySession
-	// started maps the pid of each berth-proxy berthd started to the agent session it started
-	// it for ("" for the owner); starting counts each agent session's starts, for its limit.
-	started  map[int]string
-	starting map[string]int
+	// started maps the pid of each berth-proxy berthd started to the call that started it and
+	// its agent session ("" for the owner); starting and startTimes count each agent session's
+	// running starts and its starts in the last hour, for its limits. All are in memory.
+	started    map[int]*startRecord
+	starting   map[string]int
+	startTimes map[string][]time.Time
+	// stopWait is how long a started proxy has to exit after its stream closed.
+	stopWait time.Duration
 }
 
 type flight struct {
@@ -175,7 +179,8 @@ func newSecrets(ctx context.Context, d secretsDeps) *secrets {
 	s := &secrets{
 		secretsDeps: d, ctx: ctx, stopping: make(chan struct{}), readyTimeout: proxyReadyTimeout,
 		flights: map[string]*flight{}, live: map[ports.Ticket]liveTicket{}, running: map[string]*proxySession{},
-		started: map[int]string{}, starting: map[string]int{},
+		started: map[int]*startRecord{}, starting: map[string]int{}, startTimes: map[string][]time.Time{},
+		stopWait: startedStopWait,
 	}
 	s.secrets = &actors[secret.State, secret.Event, secret.Effect]{
 		ctx: ctx, log: d.Log, store: d.Store, clock: d.Clock,

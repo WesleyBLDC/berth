@@ -98,6 +98,9 @@ func (e *exits) watch(_ context.Context, pid int) (<-chan struct{}, error) {
 func (e *exits) exit(pid int) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if _, ok := e.byID[pid]; !ok {
+		e.byID[pid] = make(chan struct{})
+	}
 	close(e.byID[pid])
 }
 

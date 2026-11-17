@@ -15,6 +15,9 @@ const (
 	// maxStartedProxies bounds the berth-proxy processes one agent session can have berthd run
 	// at once, since each one is a process of the owner's that the agent asked for.
 	maxStartedProxies = 4
+	// maxStartsPerHour bounds how many proxies one agent session can have berthd start in any
+	// rolling hour, so a session cannot churn owner processes within the concurrent limit.
+	maxStartsPerHour = 30
 	// startedStopWait is how long a proxy has to end its session after its stream closed, before
 	// berthd kills it; berth gives its own proxy as long.
 	startedStopWait = 5 * time.Second
@@ -51,15 +54,22 @@ func (s *secrets) StartProxy(ctx context.Context, req *berthv1.StartProxyRequest
 		return api.ErrProxyNotStarted
 	}
 	// Recorded before the request goes out, so the AuthorizeProxy it leads to finds the agent
-	// session. The pid stays this child's until it is reaped below, so it names no other process.
+	// session. The child is reaped only after the record is gone, so while it exists the pid can
+	// name no other process; the removal takes only this call's own record.
+	rec := &startRecord{agent: agent}
 	s.mu.Lock()
-	s.started[p.PID] = agent
+	s.started[p.PID] = rec
 	s.mu.Unlock()
-	exited := make(chan struct{})
-	go func() {
-		_ = p.Wait()
-		close(exited)
-	}()
+	// The exit comes from kqueue NOTE_EXIT, which fires before the child is reaped; a child already
+	// gone fails the watch and counts as exited.
+	watchCtx, stopWatch := context.WithCancel(s.ctx) //nolint:contextcheck // the watch outlives the call by up to stopWait
+	defer stopWatch()
+	exited, err := s.Exits(watchCtx, p.PID) //nolint:contextcheck // see above
+	if err != nil {
+		closed := make(chan struct{})
+		close(closed)
+		exited = closed
+	}
 	// Closing stdin is how the proxy learns its run is over: it ends its session and exits.
 	closeOnDone := context.AfterFunc(ctx, func() { _ = p.Stdin.Close() })
 	defer func() {
@@ -67,14 +77,13 @@ func (s *secrets) StartProxy(ctx context.Context, req *berthv1.StartProxyRequest
 		_ = p.Stdin.Close()
 		select {
 		case <-exited:
-		case <-time.After(startedStopWait):
+		case <-time.After(s.stopWait):
 			s.Log.Warn("berth-proxy did not exit in time; killed it", "pid", p.PID)
 			_ = p.Kill()
 			<-exited
 		}
-		s.mu.Lock()
-		delete(s.started, p.PID)
-		s.mu.Unlock()
+		s.forget(p.PID, rec)
+		_ = p.Wait()
 	}()
 
 	ctl, err := proxyproc.Handshake(p, req.GetNames(), s.readyTimeout)
@@ -110,18 +119,40 @@ func (s *secrets) StartProxy(ctx context.Context, req *berthv1.StartProxyRequest
 	return nil
 }
 
-// reserveStart counts a proxy start against the agent session's limit; the owner has none.
+// startRecord is one StartProxy call's claim on its child's pid.
+type startRecord struct{ agent string }
+
+// reserveStart counts a proxy start against the agent session's limits, concurrent and hourly;
+// the owner has none.
 func (s *secrets) reserveStart(agent string) bool {
 	if agent == "" {
 		return true
 	}
+	now := s.Clock.Now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	if s.starting[agent] >= maxStartedProxies {
+	recent := s.startTimes[agent][:0]
+	for _, at := range s.startTimes[agent] {
+		if now.Sub(at) < time.Hour {
+			recent = append(recent, at)
+		}
+	}
+	s.startTimes[agent] = recent
+	if s.starting[agent] >= maxStartedProxies || len(recent) >= maxStartsPerHour {
 		return false
 	}
 	s.starting[agent]++
+	s.startTimes[agent] = append(recent, now)
 	return true
+}
+
+// forget removes the pid's record only if it is still rec, so it never drops a later call's.
+func (s *secrets) forget(pid int, rec *startRecord) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.started[pid] == rec {
+		delete(s.started, pid)
+	}
 }
 
 func (s *secrets) releaseStart(agent string) {
@@ -139,7 +170,10 @@ func (s *secrets) releaseStart(agent string) {
 func (s *secrets) startedFor(pid int) string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	return s.started[pid]
+	if rec := s.started[pid]; rec != nil {
+		return rec.agent
+	}
+	return ""
 }
 
 // sessionOf finds the running session the proxy with this pid authorized.

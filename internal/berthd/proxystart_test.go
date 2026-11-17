@@ -31,13 +31,18 @@ type fakeStarter struct {
 	f      *fixture
 	caFile string
 	// hang makes the proxy never answer; skipAuthorize makes it print a control line without
-	// ever holding a session.
-	hang, skipAuthorize bool
+	// ever holding a session; ignoreStdin makes it keep running after its stdin closes; failAtOnce
+	// makes it exit before it reads anything.
+	hang, skipAuthorize, ignoreStdin, failAtOnce bool
 
 	mu     sync.Mutex
 	pids   []int
 	next   int
 	killed map[int]bool
+	// recorded says, per pid, whether berthd still held its record when the process exited;
+	// reaped says whether berthd reaped it.
+	recorded map[int]bool
+	reaped   map[int]bool
 }
 
 func newFakeStarter(t *testing.T, f *fixture) *fakeStarter {
@@ -46,7 +51,7 @@ func newFakeStarter(t *testing.T, f *fixture) *fakeStarter {
 	if err := os.WriteFile(ca, []byte(testCA), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	fs := &fakeStarter{f: f, caFile: ca, next: proxyPID, killed: map[int]bool{}}
+	fs := &fakeStarter{f: f, caFile: ca, next: proxyPID, killed: map[int]bool{}, recorded: map[int]bool{}, reaped: map[int]bool{}}
 	f.s.StartProxyProcess = fs.start
 	return fs
 }
@@ -54,9 +59,7 @@ func newFakeStarter(t *testing.T, f *fixture) *fakeStarter {
 func (fs *fakeStarter) start(ctx context.Context) (*proxyproc.Process, error) {
 	fs.mu.Lock()
 	pid := fs.next
-	if fs.hang {
-		fs.next++
-	}
+	fs.next++
 	fs.pids = append(fs.pids, pid)
 	fs.mu.Unlock()
 	inR, inW := io.Pipe()
@@ -64,8 +67,20 @@ func (fs *fakeStarter) start(ctx context.Context) (*proxyproc.Process, error) {
 	exited, killed := make(chan struct{}), make(chan struct{})
 	var once sync.Once
 	go func() {
-		defer close(exited)
-		defer func() { _ = outW.Close() }()
+		defer func() {
+			// A process that exited breaks both its pipes.
+			_ = inR.CloseWithError(io.ErrClosedPipe)
+			_ = outW.Close()
+			fs.mu.Lock()
+			fs.recorded[pid] = fs.f.s.startedFor(pid) != ""
+			fs.mu.Unlock()
+			close(exited)
+			// kqueue reports the exit before the parent reaps.
+			fs.f.exits.exit(pid)
+		}()
+		if fs.failAtOnce {
+			return
+		}
 		in := bufio.NewReader(inR)
 		line, err := in.ReadBytes('\n')
 		if err != nil {
@@ -103,11 +118,18 @@ func (fs *fakeStarter) start(ctx context.Context) (*proxyproc.Process, error) {
 		})
 		_, _ = outW.Write(append(ctl, '\n'))
 		closed := make(chan struct{})
-		go func() { _, _ = io.Copy(io.Discard, in); close(closed) }()
+		go func() {
+			_, _ = io.Copy(io.Discard, in)
+			if !fs.ignoreStdin {
+				close(closed)
+			}
+		}()
 		select {
 		case <-closed:
 		case <-stop:
 		case <-killed:
+			// A killed process takes a moment to die, so a record dropped before the exit shows.
+			time.Sleep(20 * time.Millisecond)
 		}
 		if session != "" {
 			_, _ = fs.f.s.EndProxySession(ctx, &berthv1.EndProxySessionRequest{SessionId: session}, peerOf(pid))
@@ -115,7 +137,13 @@ func (fs *fakeStarter) start(ctx context.Context) (*proxyproc.Process, error) {
 	}()
 	return &proxyproc.Process{
 		PID: pid, Stdin: inW, Stdout: outR,
-		Wait: func() error { <-exited; return nil },
+		Wait: func() error {
+			<-exited
+			fs.mu.Lock()
+			fs.reaped[pid] = true
+			fs.mu.Unlock()
+			return nil
+		},
 		Kill: func() error {
 			once.Do(func() {
 				fs.mu.Lock()
@@ -123,7 +151,9 @@ func (fs *fakeStarter) start(ctx context.Context) (*proxyproc.Process, error) {
 				fs.mu.Unlock()
 				close(killed)
 			})
-			_ = inR.CloseWithError(errors.New("killed"))
+			if !fs.ignoreStdin {
+				_ = inR.CloseWithError(errors.New("killed"))
+			}
 			return nil
 		},
 	}, nil
@@ -295,5 +325,102 @@ func TestStartProxyLimitsEachAgentSession(t *testing.T) {
 	f.s.mu.Unlock()
 	if n != 0 {
 		t.Fatalf("%d agent sessions still hold starts", n)
+	}
+}
+
+// TestStartProxyKillsAProxyThatIgnoresItsStdin: a proxy that keeps running after its stream
+// closed is killed after stopWait, and berthd drops its record only after the exit and reaps it
+// only after that.
+func TestStartProxyKillsAProxyThatIgnoresItsStdin(t *testing.T) {
+	f := agentFixture(t)
+	f.s.stopWait = 50 * time.Millisecond
+	fs := newFakeStarter(t, f)
+	fs.ignoreStdin = true
+	ctx, cancel := context.WithCancel(api.WithAgentSession(t.Context(), agentSession))
+	resp, done := started(ctx, t, f, "gh-token")
+	cancel()
+	if err := ended(t, done); err != nil {
+		t.Fatal(err)
+	}
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	if !fs.killed[proxyPID] || !fs.reaped[proxyPID] || !fs.recorded[proxyPID] {
+		t.Fatalf("killed %v, reaped %v, record held until the exit %v", fs.killed[proxyPID], fs.reaped[proxyPID], fs.recorded[proxyPID])
+	}
+	if f.s.startedFor(proxyPID) != "" {
+		t.Fatal("the record outlived the call")
+	}
+	f.eventually(t, "proxy/"+resp.GetSessionId(), "Ended")
+}
+
+// TestStartProxyForgetsOnlyItsOwnRecord: a call ending never drops a record a later call made
+// for the same pid.
+func TestStartProxyForgetsOnlyItsOwnRecord(t *testing.T) {
+	f := agentFixture(t)
+	first, later := &startRecord{agent: "first"}, &startRecord{agent: "later"}
+	f.s.started[proxyPID] = later
+	f.s.forget(proxyPID, first)
+	if f.s.startedFor(proxyPID) != "later" {
+		t.Fatal("the first call dropped the later call's record")
+	}
+	f.s.forget(proxyPID, later)
+	if f.s.startedFor(proxyPID) != "" {
+		t.Fatal("the later call's record stayed")
+	}
+}
+
+// TestStartProxyLimitsStartsPerHour: one agent session can have berthd start maxStartsPerHour
+// proxies in any rolling hour, failed ones included.
+func TestStartProxyLimitsStartsPerHour(t *testing.T) {
+	f := agentFixture(t)
+	fs := newFakeStarter(t, f)
+	fs.failAtOnce = true
+	ctx := api.WithAgentSession(t.Context(), agentSession)
+	start := func() error {
+		return f.s.StartProxy(ctx, &berthv1.StartProxyRequest{Names: []string{"gh-token"}}, func(*berthv1.StartProxyResponse) error { return nil })
+	}
+	for i := range maxStartsPerHour {
+		if err := start(); !errors.Is(err, api.ErrProxyNotStarted) {
+			t.Fatalf("start %d: %v", i, err)
+		}
+	}
+	if err := start(); !errors.Is(err, api.ErrRateLimited) || fs.starts() != maxStartsPerHour {
+		t.Fatalf("one start too many in the hour: %v, %d starts", err, fs.starts())
+	}
+	f.clock.Advance(time.Hour)
+	if err := start(); !errors.Is(err, api.ErrProxyNotStarted) || fs.starts() != maxStartsPerHour+1 {
+		t.Fatalf("an hour later: %v, %d starts", err, fs.starts())
+	}
+}
+
+func TestStartProxyWithAnUnreadableCAStopsTheProxy(t *testing.T) {
+	f := agentFixture(t)
+	fs := newFakeStarter(t, f)
+	fs.caFile = filepath.Join(t.TempDir(), "missing.pem")
+	resp, done := started(api.WithAgentSession(t.Context(), agentSession), t, f, "gh-token")
+	if err := ended(t, done); resp != nil || !errors.Is(err, api.ErrProxyNotStarted) {
+		t.Fatalf("got %v, %v", resp, err)
+	}
+	fs.mu.Lock()
+	defer fs.mu.Unlock()
+	if !fs.killed[proxyPID] || !fs.reaped[proxyPID] {
+		t.Fatal("the proxy was not killed and reaped")
+	}
+}
+
+// TestStartProxyWhoseFirstSendFailsStopsTheProxy: a caller gone before the facts reach it gets
+// its proxy ended.
+func TestStartProxyWhoseFirstSendFailsStopsTheProxy(t *testing.T) {
+	f := agentFixture(t)
+	newFakeStarter(t, f)
+	gone := errors.New("caller gone")
+	err := f.s.StartProxy(api.WithAgentSession(t.Context(), agentSession), &berthv1.StartProxyRequest{Names: []string{"gh-token"}},
+		func(*berthv1.StartProxyResponse) error { return gone })
+	if !errors.Is(err, gone) {
+		t.Fatalf("got %v", err)
+	}
+	open, err := f.store.OpenProxySessions(t.Context())
+	if err != nil || len(open) != 0 {
+		t.Fatalf("open sessions %v %v", open, err)
 	}
 }
