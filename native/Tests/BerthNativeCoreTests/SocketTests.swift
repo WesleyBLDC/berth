@@ -31,7 +31,10 @@ import Testing
     #expect(refusal(pair[1], parent: me + 1)?.contains("is not the parent") == true)
     #expect(refusal(pipeFDs[1], parent: me) == "the value channel is not a socket")
     #expect(refusal(file, parent: me) == "the value channel is not a socket")
-    #expect(refusal(unconnected, parent: me)?.contains("has no peer") == true)
+    let unconnectedRefusal = refusal(unconnected, parent: me)
+    #expect(
+        unconnectedRefusal?.contains("has no peer") == true,
+        "fd \(unconnected) refused with \(String(describing: unconnectedRefusal))")
     #expect(refusal(999, parent: me) == "no value channel on fd 999")
 }
 

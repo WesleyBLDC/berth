@@ -39,8 +39,9 @@ public final class UnixSocket {
             }
         }
         guard connected == 0 else {
+            // No close here: self.fd is already set, so deinit runs and closes it. Closing twice
+            // would close whatever descriptor another thread opened on the same number in between.
             let reason = String(cString: strerror(errno))
-            close(fd)
             throw SocketError(description: "connect \(path): \(reason)")
         }
     }
