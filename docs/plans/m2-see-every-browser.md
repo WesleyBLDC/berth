@@ -78,7 +78,7 @@ Observe, then reconcile, as `ARCHITECTURE.md` planned for sessions: the scan loo
 
 `internal/core/ownerchain`, pure: given a session root's ancestors (parent first, up to launchd), each with its executable and, for the owner's processes, its arguments, it returns the chain and the owner.
 
-- The owner is the nearest ancestor recognised as an **agent** (`claude`, `codex`, `cursor-agent`, `gemini`, `aider`, `opencode`, `amp`, `goose`, including those run through `node`, `bun` or `deno`); else the nearest **terminal** (Terminal, iTerm2, Ghostty, WezTerm, kitty, Alacritty, Warp, or `tmux` and `screen` servers); else the nearest **app** (any other `.app` bundle executable, for example Cursor or VS Code); else the **person**, when a browser app's main executable was started by launchd (from the Dock, Finder or `open`); else **none**, when an automated or headless browser already hangs from launchd, which means its owner has exited.
+- The owner is the nearest ancestor recognised as an **agent** (`claude`, `codex`, `cursor-agent`, `gemini`, `aider`, `opencode`, `amp`, `goose`, including those run through `node`, `bun` or `deno`); else the nearest **terminal** (Terminal, iTerm2, Ghostty, WezTerm, kitty, Alacritty, Warp, or `tmux` and `screen` servers); else the nearest **app** (any other `.app` bundle executable, for example Cursor or VS Code); else the **person**, when a browser app's main executable was started by launchd (from the Dock, Finder or `open`); else **none**, when an automated or headless browser already hangs from launchd, which means its owner has exited; else **process**, the browser's parent, when no rule recognises any ancestor (a launchd job, say).
 - The chain stops at the first ancestor the kernel will not describe, as the peer adapter's does.
 - The owner is a process instance (`ProcessRef`), so its exit is detectable later by its start time.
 
@@ -157,7 +157,7 @@ enum SessionState { UNSPECIFIED, DISCOVERED, ACTIVE, IDLE, LEFTOVER, STOPPING, S
 enum BrowserKind { UNSPECIFIED, CHROME, CHROME_FOR_TESTING, CHROMIUM, EDGE, BRAVE, HEADLESS_SHELL }
 enum Driver { UNSPECIFIED, NONE, PLAYWRIGHT, PUPPETEER, AUTOMATION }
 enum CdpMode { UNSPECIFIED, NONE, PIPE, PORT }
-enum OwnerKind { UNSPECIFIED, AGENT, TERMINAL, APP, PERSON, NONE }
+enum OwnerKind { UNSPECIFIED, AGENT, TERMINAL, APP, PERSON, NONE, PROCESS }
 enum ProcessRole { UNSPECIFIED, BROWSER, HELPER }
 message SessionProcess { int32 pid; Timestamp started_at; string executable; ProcessRole role; }
 message SessionOwner { OwnerKind kind; string name; SessionProcess process; }
@@ -176,8 +176,8 @@ message InspectSessionResponse {
 message StopSessionRequest { string request_id; string id; bool force; }
 message StopSessionResponse { SessionState state; }
 // ErrorReason
-ERROR_REASON_SESSION_NOT_FOUND = 13;
-ERROR_REASON_SESSION_NOT_STOPPABLE = 14;
+ERROR_REASON_SESSION_NOT_FOUND = 14;
+ERROR_REASON_SESSION_NOT_STOPPABLE = 15;
 ```
 
 - Validation: `id` matches `^[0-9]{1,10}-[0-9]{1,20}$`; `request_id` 8 to 128 characters as everywhere; `history_limit` at most 500; `states` items defined only.
@@ -192,7 +192,7 @@ Each item ends with `make check` passing and its own commit.
 | # | Item | Depends on | Owns | Tests |
 |---|---|---|---|---|
 | 1 | Plan | | `docs/plans/m2-see-every-browser.md` | |
-| 2 | Contract | 1 | `proto/berth/v1/sessions.proto`, `options.proto` reasons, `gen/`, `internal/core/ports/process.go` | `buf breaking` clean; `TestAgentSurface` unchanged |
+| 2 | Contract | 1 | `proto/berth/v1/sessions.proto`, `options.proto` reasons, `gen/`, `internal/core/ports/process.go` (`ProcessSource`, and `EntityLister` for boot recovery) | `buf breaking` clean; `TestAgentSurface` unchanged |
 | 3 | ProcessSource darwin adapter | 2 | `internal/adapters/procscan/` | Parser fixtures for `procargs2`; against the real kernel: the test process appears with its parent and start time, its arguments read back, pid 1's arguments are `ErrOpaqueProcess`, a child started by the test reports `NOTE_EXIT`, `Signal` refuses a stale start time |
 | 4 | Signature registry | 2 | `internal/core/browsersig/` | A table of real executables and argument lists from this Mac, including Electron helpers that must not match |
 | 5 | Session machine | 2 | `internal/core/session/` | `machinetest.Walk` pinned at 17; Leftover sticky; stop then kill; names stable |
@@ -205,12 +205,13 @@ Each item ends with `make check` passing and its own commit.
 Items 3 to 6 can run in parallel after the contract; 7 joins them; 8 to 10 are the integration.
 
 **End to end tests** (`test/e2e/sessions_test.go`) start a real headless browser when one is installed and skip with the reason otherwise.
-The test looks for `BERTH_E2E_CHROME`, then the newest `chrome-headless-shell` under `~/Library/Caches/ms-playwright`, then Chrome for Testing under `~/.cache/puppeteer`, then `/Applications/Google Chrome.app`, and installs nothing.
+The test looks for `BERTH_E2E_CHROME`, then the newest `chrome-headless-shell` under `~/Library/Caches/ms-playwright`, then Puppeteer's headless shell and Chrome for Testing under `~/.cache/puppeteer`, then `/Applications/Google Chrome.app`, and installs nothing.
 On this Mac all four exist: Chrome, Arc, Playwright's Chromium 1223, 1243 and 1248 with their headless shells, and Puppeteer's Chrome for Testing 131 and 154 with their headless shells.
 
 - `ps` shows a headless shell the test started, with driver Playwright, CDP on a port, the test's profile folder, and the owner being the test's process chain; `inspect` lists its helpers.
-- A browser started by a short lived owner program that then exits becomes `Leftover`; `leftovers --stop` stops it, and the session is `Stopped` within 10 seconds.
-- `stop` on a session the test started ends it; killing a browser outside Berth makes its session `Stopped` through `NOTE_EXIT`.
+- A browser started by a short lived owner program that then exits becomes `Leftover` and is listed by `leftovers`; `stop` ends it, and the session is `Stopped` within 10 seconds. The test never runs `leftovers --stop`, which would end every leftover on the machine, not only its own.
+- Killing a browser outside Berth makes its session `Stopped` through `NOTE_EXIT` or the next scan.
+- A canary in the browser's arguments appears in no `ps` or `inspect` output, no `berthd` log line and no database byte.
 - Tests kill only the pids they started.
 
 ## Exit gate
@@ -240,5 +241,34 @@ Defaults taken while he was away; each is cheap to reverse before M2 closes.
 6. **Activity is CPU time:** `Busy` at 20 ms or more of CPU growth between scans, `Quiet` after 60 seconds without it.
 7. **Scan every 2 seconds** plus kqueue `NOTE_EXIT` on each session root.
 8. **No new table:** facts are rebuilt by every scan, and only machine rows persist; stopped sessions are pruned in a later milestone.
-9. **Two new error reasons, 13 and 14.** If another branch takes those numbers first, the later one to merge renumbers before it lands on `main`.
+9. **Two new error reasons, 14 and 15.** E3 took 13 (`NOT_AGENT_METHOD`) on `main` while M2 was built, so M2 renumbered when it rebased.
 10. **The table comes from `kern.proc.all`,** not `proc_listpids`: one consistent snapshot with parent, uid and start time in one call.
+
+## Exit notes (2026-11-17)
+
+Built on branch `m2a` from `main` at 6de1d7b: items 1 to 10, each with its own commit, and `make check` passing.
+
+- **Contract.** As planned, plus `OWNER_KIND_PROCESS` (a browser whose ancestors match no rule) and the `EntityLister` port, which `sqlite` and the in memory store implement so boot recovery can find live session rows without a table. The reasons are 14 and 15, after E3's 13.
+- **ProcessSource** (`internal/adapters/procscan`): `kern.proc.all` plus `proc_pidpath` lists about 1,000 processes in about 4 ms on this Mac (`BenchmarkList`), so a 2 second scan costs about 0.2% of one core. `procargs2` is parsed only up to `argv` and its buffer is cleared, since the environment after it can hold secrets. CPU time converts mach ticks with `hw.tbfrequency` (24 MHz on Apple silicon). The `NOTE_EXIT` watch moved here from `internal/berthd/procexit.go`, and the proxy sessions use it unchanged. `peer` exports `Executable` and `PIDInfo` so the raw `proc_info` call stays in one place.
+- **Signature registry** (`internal/core/browsersig`): also recognises the Chrome Beta, Dev and Canary bundles as Chrome, and `chrome-devtools-mcp` profiles as Puppeteer. A CDP port wins over a pipe when both flags are set, since any local process can reach a port.
+- **Session machine** (`internal/core/session`): 17 legal pairs, pinned.
+- **Owner chain** (`internal/core/ownerchain`): terminals are matched by their app bundle (Warp's executable is called `stable`) and multiplexers by executable.
+- **Discovery** (`internal/core/discovery`): a session also becomes `Leftover` when the browser's parent at first sight is gone (it was reparented), not only when the owner is; that is what a crashed test runner looks like.
+- **Scan loop** (`internal/berthd/sessions.go`): sessions that never saw an event have no database row, since `Discovered` is the initial state; `debug state session/<id>` shows a session only after its first transition.
+- **End to end** (`test/e2e/sessions_test.go`): passes with Playwright's `chrome-headless-shell` 1248 on this Mac, and skips cleanly with `BERTH_E2E_CHROME=/nonexistent`.
+
+### Agent safety checklist (M2)
+
+1. No agent method was added; the agent socket's `AgentOnly` interceptor refuses all three sessions methods, since none is marked.
+2. No secret value is touched. A browser's arguments can hold credentials (`--proxy-server` with a password), so raw arguments stay inside `discovery`, are never stored, logged or returned, and the `procargs2` buffer, which also holds the environment, is cleared after parsing.
+3. Canary: `discovery` plants one in a browser argument and checks no observed field holds it; the end to end test plants one and checks `ps`, `inspect`, the log and the database.
+4. Stopping a browser is not a power action (decision 1); a person's or an app's browser needs `force`, another user's is refused.
+5. No agent controlled text is stored: event notes are fixed strings, and paths shown are the kernel's.
+6. `StopSession` takes a `request_id` and replays through the request log.
+7. A failed signal is logged and the next scan reconciles; refusals are typed (`SESSION_NOT_FOUND`, `SESSION_NOT_STOPPABLE`).
+8. OWASP agentic risks: unchanged; the new limits are listed above.
+
+### What remains for the exit gate
+
+- The maintainer runs `berth ps` on his Mac with his own Chrome and a Playwright MCP browser open, and confirms the owners read as planned.
+- `ARCHITECTURE.md` marks M2 done after that check.
