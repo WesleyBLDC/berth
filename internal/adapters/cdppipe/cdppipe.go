@@ -16,6 +16,8 @@ import (
 	"sync"
 	"syscall"
 
+	"golang.org/x/sys/unix"
+
 	"berth/internal/adapters/procscan"
 	"berth/internal/core/ports"
 )
@@ -30,6 +32,9 @@ const (
 
 // killGroup sends SIGKILL to a process group; tests watch it.
 var killGroup = func(pgid int) error { return syscall.Kill(-pgid, syscall.SIGKILL) }
+
+// watchExit reports the leader's exit without reaping it; tests make it fail.
+var watchExit = procscan.WatchPID
 
 // Driver starts browsers. It holds no state of its own.
 type Driver struct{}
@@ -129,23 +134,40 @@ func newConn(ctx context.Context, cmd *exec.Cmd, ref ports.ProcessRef, w, r *os.
 		c.read(r)
 	}()
 	go func() {
-		// Wait for the exit without reaping, empty the group, then reap, all under reapMu: while
-		// the leader is an unreaped zombie its pid, and so the group id, cannot name anything
-		// else, so the SIGKILL reaches only helpers that outlived the leader. A watch that cannot
-		// register means the leader is already a zombie.
-		if exited, err := procscan.WatchPID(context.WithoutCancel(ctx), cmd.Process.Pid); err == nil {
-			<-exited
-		}
-		c.reapMu.Lock()
-		_ = killGroup(cmd.Process.Pid)
-		_ = cmd.Wait()
-		c.reaped = true
-		c.reapMu.Unlock()
+		c.reap(ctx)
 		<-readDone
 		_ = w.Close()
 		close(c.done)
 	}()
 	return c
+}
+
+// reap waits for the leader's exit and reaps it. Normally it waits without reaping, empties the
+// group, then reaps, all under reapMu: while the leader is an unreaped zombie its pid, and so the
+// group id, cannot name anything else, so the SIGKILL reaches only helpers that outlived the
+// leader. A watch refused with ESRCH means the leader is already a zombie. A watch refused for
+// any other reason (no kqueue) must not kill a live browser, so it falls back to a plain wait and
+// the group kill after it, which a reused pid could in principle meet.
+func (c *conn) reap(ctx context.Context) {
+	pid := c.cmd.Process.Pid
+	exited, err := watchExit(context.WithoutCancel(ctx), pid)
+	switch {
+	case err == nil:
+		<-exited
+	case errors.Is(err, unix.ESRCH):
+	default:
+		_ = c.cmd.Wait()
+		c.reapMu.Lock()
+		c.reaped = true
+		_ = killGroup(pid)
+		c.reapMu.Unlock()
+		return
+	}
+	c.reapMu.Lock()
+	_ = killGroup(pid)
+	_ = c.cmd.Wait()
+	c.reaped = true
+	c.reapMu.Unlock()
 }
 
 func (c *conn) Process() ports.ProcessRef { return c.ref }

@@ -1,5 +1,7 @@
 package cdppipe
 
+import "context"
+
 // WatchKills records every process group Kill signals until the returned function is called.
 func WatchKills() (kills func() []int, restore func()) {
 	orig := killGroup
@@ -9,4 +11,11 @@ func WatchKills() (kills func() []int, restore func()) {
 		return orig(pgid)
 	}
 	return func() []int { return got }, func() { killGroup = orig }
+}
+
+// FailExitWatch makes the exit watch fail with err until restore is called.
+func FailExitWatch(err error) (restore func()) {
+	orig := watchExit
+	watchExit = func(context.Context, int) (<-chan struct{}, error) { return nil, err }
+	return func() { watchExit = orig }
 }

@@ -402,3 +402,23 @@ func TestHelpersOutlivingTheLeaderAreKilled(t *testing.T) {
 		time.Sleep(20 * time.Millisecond)
 	}
 }
+
+// An exit watch that fails for another reason than a zombie leader must not kill a live browser:
+// berthd falls back to a plain wait.
+func TestAFailedExitWatchLeavesTheBrowserRunning(t *testing.T) {
+	restore := cdppipe.FailExitWatch(syscall.EMFILE)
+	defer restore()
+	c := launchFake(t)
+	time.Sleep(200 * time.Millisecond)
+	if _, err := c.Call(t.Context(), "", "Browser.getVersion", nil); err != nil {
+		t.Fatalf("the browser died when its exit watch failed: %v", err)
+	}
+	if err := c.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-c.Done():
+	case <-time.After(5 * time.Second):
+		t.Fatal("Kill did not end the browser")
+	}
+}
