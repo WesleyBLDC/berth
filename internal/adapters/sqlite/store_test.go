@@ -66,6 +66,46 @@ func TestEntitiesOfKind(t *testing.T) {
 	}
 }
 
+// Event ids only grow and skip other machines' rows, so a stream resumes from the last id it sent.
+func TestEventsAfter(t *testing.T) {
+	ctx := context.Background()
+	s := open(t, filepath.Join(t.TempDir(), "b.db"))
+	if last, err := s.LastEventID(ctx); err != nil || last != 0 {
+		t.Fatalf("empty database: last id %d %v", last, err)
+	}
+	for _, r := range []ports.TransitionRecord{
+		{Entity: "session/1-1", Kind: "session", Version: 1, Event: "Seen", From: "Discovered", To: "Discovered", At: time.Unix(1_800_000_000, 0)},
+		{Entity: "daemon", Kind: "daemon", Version: 1, Event: "Boot", To: "Recovering"},
+		{Entity: "session/1-1", Kind: "session", Version: 2, Event: "Busy", From: "Discovered", To: "Active", Detail: "d"},
+		{Entity: "session/2-1", Kind: "session", Version: 1, Event: "Seen", From: "Discovered", To: "Discovered"},
+	} {
+		if err := s.SaveTransition(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	last, err := s.LastEventID(ctx)
+	if err != nil || last != 4 {
+		t.Fatalf("last id %d %v", last, err)
+	}
+	all, err := s.EventsAfter(ctx, "session", 0, 10)
+	if err != nil || len(all) != 3 || all[0].ID != 1 || all[1].ID != 3 || all[2].ID != 4 {
+		t.Fatalf("all session events: %+v %v", all, err)
+	}
+	if got := all[1]; got.Entity != "session/1-1" || got.Event != "Busy" || got.To != "Active" || got.Detail != "d" || got.Version != 2 || got.Kind != "session" {
+		t.Fatalf("event row %+v", got)
+	}
+	if !all[0].At.Equal(time.Unix(1_800_000_000, 0)) {
+		t.Fatalf("at %v", all[0].At)
+	}
+	page, err := s.EventsAfter(ctx, "session", 1, 1)
+	if err != nil || len(page) != 1 || page[0].ID != 3 {
+		t.Fatalf("one after 1: %+v %v", page, err)
+	}
+	if none, err := s.EventsAfter(ctx, "session", 4, 10); err != nil || len(none) != 0 {
+		t.Fatalf("after the newest: %+v %v", none, err)
+	}
+}
+
 func TestStaleVersionIsRejectedAndWritesNothing(t *testing.T) {
 	ctx := context.Background()
 	s := open(t, filepath.Join(t.TempDir(), "b.db"))

@@ -48,3 +48,19 @@ type RequestLog interface {
 	Recall(ctx context.Context, principal, requestID string) (method string, response []byte, found bool, err error)
 	Remember(ctx context.Context, principal, requestID, method string, response []byte, at time.Time) error
 }
+
+// EventRecord is one saved transition with its row id, which only grows and is never reused.
+type EventRecord struct {
+	ID int64
+	TransitionRecord
+}
+
+// EventLog reads the transitions in the order they were saved, for streams a client resumes
+// from the last id it applied.
+type EventLog interface {
+	// LastEventID is the newest id of any machine, or 0 when there is none.
+	LastEventID(ctx context.Context) (int64, error)
+	// EventsAfter returns up to limit transitions of one machine kind with an id above after,
+	// oldest first.
+	EventsAfter(ctx context.Context, kind string, after int64, limit int) ([]EventRecord, error)
+}

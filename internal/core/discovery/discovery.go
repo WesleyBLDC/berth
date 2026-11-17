@@ -244,6 +244,9 @@ type Tracked struct {
 	State session.State
 	// Seen is false until the first observation fills the rest.
 	Seen bool
+	// Unsaved means the machine has no row for this session yet, so its first observation sends
+	// session.Seen before anything else.
+	Unsaved bool
 	// Parent and Owner are the processes above the browser when it was first seen; either
 	// changing means the process that started it exited.
 	Parent ports.ProcessRef
@@ -264,11 +267,22 @@ func Events(t Tracked, o *Observed, now time.Time) (Tracked, []session.Event) {
 		}
 		return t, nil
 	}
+	var first []session.Event
 	if !t.Seen {
 		t.Seen, t.CPU, t.CPUGrewAt = true, o.CPU, now
 		t.Parent = parentRef(o)
 		t.Owner = o.Owner.Process.ProcessRef
+		if t.Unsaved && t.State == session.Discovered {
+			first = []session.Event{{Kind: session.Seen}}
+		}
+		t.Unsaved = false
 	}
+	next, events := step(t, o, now)
+	return next, append(first, events...)
+}
+
+// step returns the one event, if any, that this observation of a live browser calls for.
+func step(t Tracked, o *Observed, now time.Time) (Tracked, []session.Event) {
 	busy := o.CPU-t.CPU >= BusyCPU
 	if busy {
 		t.CPUGrewAt = now

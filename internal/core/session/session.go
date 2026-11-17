@@ -34,6 +34,9 @@ const Initial = Discovered
 type EventKind string
 
 const (
+	// Seen comes on a session's first observation when it has no row yet, so every session has a
+	// row, and a stream built on the event table sees it appear.
+	Seen EventKind = "Seen"
 	// Busy comes when the session's CPU time grew since the last scan.
 	Busy EventKind = "Busy"
 	// Quiet comes when the session's CPU time has not grown for the quiet window.
@@ -60,7 +63,7 @@ func (e Event) Detail() string { return e.Note }
 
 // AllEvents has one sample of every kind, for exhaustive walks.
 var AllEvents = []Event{
-	{Kind: Busy}, {Kind: Quiet}, {Kind: OwnerExited}, {Kind: StopRequested}, {Kind: StopTimedOut}, {Kind: Exited},
+	{Kind: Seen}, {Kind: Busy}, {Kind: Quiet}, {Kind: OwnerExited}, {Kind: StopRequested}, {Kind: StopTimedOut}, {Kind: Exited},
 }
 
 type EffectKind string
@@ -80,6 +83,10 @@ type Effect struct {
 // is a new process, so a new session.
 func Transition(s State, e Event) (State, []Effect, error) {
 	switch e.Kind {
+	case Seen:
+		if s == Discovered {
+			return Discovered, nil, nil
+		}
 	case Busy:
 		switch s {
 		case Discovered, Idle:

@@ -33,6 +33,9 @@ const (
 	// SessionsServiceStopSessionProcedure is the procedure name of the SessionsService's StopSession
 	// RPC.
 	SessionsServiceStopSessionProcedure = "/berth.v1.SessionsService/StopSession"
+	// SessionsServiceWatchSessionsProcedure is the procedure name of the SessionsService's
+	// WatchSessions RPC.
+	SessionsServiceWatchSessionsProcedure = "/berth.v1.SessionsService/WatchSessions"
 )
 
 var (
@@ -57,6 +60,13 @@ var (
 			Procedure:  SessionsServiceStopSessionProcedure,
 		}
 	})
+	sessionsServiceWatchSessionsSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeServer,
+			Schema:     v1.File_berth_v1_sessions_proto.Services().ByName("SessionsService").Methods().ByName("WatchSessions"),
+			Procedure:  SessionsServiceWatchSessionsProcedure,
+		}
+	})
 )
 
 // SessionsServiceClient is a client for the berth.v1.SessionsService service.
@@ -68,12 +78,39 @@ type SessionsServiceClient interface {
 	// Touch ID, since it only ends a process the person could end; a session owned by the person
 	// or an app needs force, and another user's session is never stopped.
 	StopSession(context.Context, *v1.StopSessionRequest) (*v1.StopSessionResponse, error)
+	// WatchSessions streams every session change as it is saved. A client that stores the
+	// event_id of the last message it applied and reconnects with it gets every change after it,
+	// across a berthd restart too; one that fell more than 1,000 session events behind, or whose
+	// cursor berthd does not know, gets a snapshot instead. The stream ends without an error when
+	// berthd stops serving. At most 16 streams are open at once.
+	WatchSessions(context.Context, *v1.WatchSessionsRequest) (SessionsServiceWatchSessionsClientStream, error)
 }
 
 // NewSessionsServiceClient constructs a client for the berth.v1.SessionsService service. Multiple
 // service clients may share a single connect.Client.
 func NewSessionsServiceClient(client *connect.Client) SessionsServiceClient {
 	return &sessionsServiceClient{client: client}
+}
+
+// SessionsServiceWatchSessionsClientStream is the client stream for the SessionsService's
+// WatchSessions RPC.
+type SessionsServiceWatchSessionsClientStream struct {
+	stream connect.ClientStream
+}
+
+// Receive returns the next response message from the server.
+func (s SessionsServiceWatchSessionsClientStream) Receive() (*v1.WatchSessionsResponse, error) {
+	var res v1.WatchSessionsResponse
+	if err := s.stream.Receive(&res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+// Close releases the stream's resources. It is idempotent and is typically deferred to clean up a
+// stream abandoned before io.EOF.
+func (s SessionsServiceWatchSessionsClientStream) Close() error {
+	return s.stream.Close()
 }
 
 // SessionsServiceHandler is an implementation of the berth.v1.SessionsService service.
@@ -85,6 +122,12 @@ type SessionsServiceHandler interface {
 	// Touch ID, since it only ends a process the person could end; a session owned by the person
 	// or an app needs force, and another user's session is never stopped.
 	StopSession(context.Context, *v1.StopSessionRequest) (*v1.StopSessionResponse, error)
+	// WatchSessions streams every session change as it is saved. A client that stores the
+	// event_id of the last message it applied and reconnects with it gets every change after it,
+	// across a berthd restart too; one that fell more than 1,000 session events behind, or whose
+	// cursor berthd does not know, gets a snapshot instead. The stream ends without an error when
+	// berthd stops serving. At most 16 streams are open at once.
+	WatchSessions(context.Context, *v1.WatchSessionsRequest, SessionsServiceWatchSessionsServerStream) error
 }
 
 // RegisterSessionsServiceHandler registers svc as the berth.v1.SessionsService implementation on
@@ -95,7 +138,24 @@ func RegisterSessionsServiceHandler(server *connect.Server, svc SessionsServiceH
 		connect.Method{Spec: sessionsServiceListSessionsSpec(), Handler: adapter.listSessions},
 		connect.Method{Spec: sessionsServiceInspectSessionSpec(), Handler: adapter.inspectSession},
 		connect.Method{Spec: sessionsServiceStopSessionSpec(), Handler: adapter.stopSession},
+		connect.Method{Spec: sessionsServiceWatchSessionsSpec(), Handler: adapter.watchSessions},
 	)
+}
+
+// SessionsServiceWatchSessionsServerStream is the server stream for the SessionsService's
+// WatchSessions RPC.
+type SessionsServiceWatchSessionsServerStream struct {
+	stream connect.ServerStream
+}
+
+// SendHeaders flushes the response headers without a message. The first Send does this implicitly.
+func (s SessionsServiceWatchSessionsServerStream) SendHeaders() error {
+	return s.stream.SendHeaders()
+}
+
+// Send sends a response message to the client.
+func (s SessionsServiceWatchSessionsServerStream) Send(res *v1.WatchSessionsResponse) error {
+	return s.stream.Send(res)
 }
 
 // UnimplementedSessionsServiceHandler returns CodeUnimplemented from all methods.
@@ -111,6 +171,10 @@ func (UnimplementedSessionsServiceHandler) InspectSession(context.Context, *v1.I
 
 func (UnimplementedSessionsServiceHandler) StopSession(context.Context, *v1.StopSessionRequest) (*v1.StopSessionResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "berth.v1.SessionsService.StopSession is not implemented")
+}
+
+func (UnimplementedSessionsServiceHandler) WatchSessions(context.Context, *v1.WatchSessionsRequest, SessionsServiceWatchSessionsServerStream) error {
+	return connect.NewError(connect.CodeUnimplemented, "berth.v1.SessionsService.WatchSessions is not implemented")
 }
 
 type sessionsServiceClient struct {
@@ -139,6 +203,14 @@ func (c *sessionsServiceClient) StopSession(ctx context.Context, req *v1.StopSes
 		return nil, err
 	}
 	return &res, nil
+}
+
+func (c *sessionsServiceClient) WatchSessions(ctx context.Context, req *v1.WatchSessionsRequest) (SessionsServiceWatchSessionsClientStream, error) {
+	stream, err := c.client.CallServerStream(ctx, sessionsServiceWatchSessionsSpec(), req)
+	if err != nil {
+		return SessionsServiceWatchSessionsClientStream{}, err
+	}
+	return SessionsServiceWatchSessionsClientStream{stream: stream}, nil
 }
 
 type sessionsServiceHandler struct{ svc SessionsServiceHandler }
@@ -177,4 +249,12 @@ func (h sessionsServiceHandler) stopSession(ctx context.Context, _ connect.Spec,
 		return err
 	}
 	return stream.Send(res)
+}
+
+func (h sessionsServiceHandler) watchSessions(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.WatchSessionsRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	return h.svc.WatchSessions(ctx, &req, SessionsServiceWatchSessionsServerStream{stream: stream})
 }

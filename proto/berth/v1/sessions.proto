@@ -6,7 +6,7 @@ import "berth/v1/debug.proto";
 import "buf/validate/validate.proto";
 import "google/protobuf/timestamp.proto";
 
-// SessionsService lists and stops the browsers running on this Mac. A session is one browser
+// SessionsService lists, watches and stops the browsers running on this Mac. A session is one browser
 // process tree and whoever started it. Raw process arguments never cross this API; only the
 // facts berthd parsed from them do. No method is on the agent surface: listing shows every
 // browser, including the person's own and other agents', and agents get methods scoped to their
@@ -19,6 +19,12 @@ service SessionsService {
   // Touch ID, since it only ends a process the person could end; a session owned by the person
   // or an app needs force, and another user's session is never stopped.
   rpc StopSession(StopSessionRequest) returns (StopSessionResponse);
+  // WatchSessions streams every session change as it is saved. A client that stores the
+  // event_id of the last message it applied and reconnects with it gets every change after it,
+  // across a berthd restart too; one that fell more than 1,000 session events behind, or whose
+  // cursor berthd does not know, gets a snapshot instead. The stream ends without an error when
+  // berthd stops serving. At most 16 streams are open at once.
+  rpc WatchSessions(WatchSessionsRequest) returns (stream WatchSessionsResponse);
 }
 
 // SessionState mirrors the session machine's states.
@@ -172,4 +178,47 @@ message StopSessionRequest {
 
 message StopSessionResponse {
   SessionState state = 1;
+}
+
+message WatchSessionsRequest {
+  // after_event_id is the event_id of the last message the client applied; 0 starts with a
+  // snapshot.
+  int64 after_event_id = 1 [(buf.validate.field).int64.gte = 0];
+}
+
+// SnapshotReason says why a stream sent a snapshot.
+enum SnapshotReason {
+  SNAPSHOT_REASON_UNSPECIFIED = 0;
+  // START answers after_event_id 0.
+  SNAPSHOT_REASON_START = 1;
+  // BEHIND means more session events came after the cursor than berthd replays.
+  SNAPSHOT_REASON_BEHIND = 2;
+  // UNKNOWN_CURSOR means the cursor is newer than any event in this database.
+  SNAPSHOT_REASON_UNKNOWN_CURSOR = 3;
+}
+
+// SessionsSnapshot holds every live session; the client replaces everything it holds with it.
+message SessionsSnapshot {
+  // event_id is the cursor the snapshot is consistent with; changes after it follow.
+  int64 event_id = 1;
+  repeated Session sessions = 2;
+  SnapshotReason reason = 3;
+}
+
+// SessionChange is one saved session transition.
+message SessionChange {
+  // event_id only grows, with gaps, since other machines' events share the sequence.
+  int64 event_id = 1;
+  // event is the machine's event name, such as Seen, Busy or Exited.
+  string event = 2;
+  // session carries the state the event led to and when; the other facts are what berthd holds
+  // now, and only id, state and state_since for a session it no longer remembers.
+  Session session = 3;
+}
+
+message WatchSessionsResponse {
+  oneof update {
+    SessionsSnapshot snapshot = 1;
+    SessionChange change = 2;
+  }
 }

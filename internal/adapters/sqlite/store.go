@@ -26,6 +26,7 @@ type Store struct {
 var (
 	_ ports.Store      = (*Store)(nil)
 	_ ports.RequestLog = (*Store)(nil)
+	_ ports.EventLog   = (*Store)(nil)
 )
 
 // Open opens or creates the database and applies pending migrations.
@@ -163,6 +164,34 @@ func (s *Store) History(ctx context.Context, entity string, limit int) ([]ports.
 		rec := ports.TransitionRecord{Entity: entity}
 		var at int64
 		if err := rows.Scan(&rec.Kind, &rec.Version, &rec.Event, &rec.From, &rec.To, &rec.Detail, &at); err != nil {
+			return nil, err
+		}
+		rec.At = time.UnixMicro(at).UTC()
+		out = append(out, rec)
+	}
+	return out, rows.Err()
+}
+
+func (s *Store) LastEventID(ctx context.Context) (int64, error) {
+	var id sql.NullInt64
+	err := s.db.QueryRowContext(ctx, `SELECT max(id) FROM machine_event`).Scan(&id)
+	return id.Int64, err
+}
+
+// EventsAfter walks the primary key from after, so it needs no index of its own.
+func (s *Store) EventsAfter(ctx context.Context, kind string, after int64, limit int) ([]ports.EventRecord, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, entity, version, event, from_state, to_state, detail, at FROM machine_event
+		 WHERE id > ? AND kind = ? ORDER BY id LIMIT ?`, after, kind, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []ports.EventRecord
+	for rows.Next() {
+		rec := ports.EventRecord{TransitionRecord: ports.TransitionRecord{Kind: kind}}
+		var at int64
+		if err := rows.Scan(&rec.ID, &rec.Entity, &rec.Version, &rec.Event, &rec.From, &rec.To, &rec.Detail, &at); err != nil {
 			return nil, err
 		}
 		rec.At = time.UnixMicro(at).UTC()

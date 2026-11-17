@@ -25,6 +25,9 @@ type actors[S ~string, E machine.Event, F any] struct {
 	// final, when set, is a state no event leaves: an actor stops once it reaches it, and none
 	// is started for an entity already in it, so no path leaves a goroutine behind for it.
 	final S
+	// saved, when set, is told about every transition once it is saved and its effects have run.
+	// It must not block, since it runs on the actor's goroutine.
+	saved func(ports.TransitionRecord)
 
 	mu   sync.Mutex
 	live map[string]*slot[S, E, F]
@@ -77,6 +80,9 @@ func (a *actors[S, E, F]) get(ctx context.Context, entity string) (*slot[S, E, F
 		Rejected: func(err error) { sl.tell(applied{err: err}) },
 		Applied: func(rec ports.TransitionRecord) {
 			sl.tell(applied{rec: rec})
+			if a.saved != nil {
+				a.saved(rec)
+			}
 			if a.final != "" && S(rec.To) == a.final {
 				a.drop(entity, sl)
 			}

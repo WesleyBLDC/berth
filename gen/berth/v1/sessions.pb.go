@@ -378,6 +378,62 @@ func (ProcessRole) EnumDescriptor() ([]byte, []int) {
 	return file_berth_v1_sessions_proto_rawDescGZIP(), []int{5}
 }
 
+// SnapshotReason says why a stream sent a snapshot.
+type SnapshotReason int32
+
+const (
+	SnapshotReason_SNAPSHOT_REASON_UNSPECIFIED SnapshotReason = 0
+	// START answers after_event_id 0.
+	SnapshotReason_SNAPSHOT_REASON_START SnapshotReason = 1
+	// BEHIND means more session events came after the cursor than berthd replays.
+	SnapshotReason_SNAPSHOT_REASON_BEHIND SnapshotReason = 2
+	// UNKNOWN_CURSOR means the cursor is newer than any event in this database.
+	SnapshotReason_SNAPSHOT_REASON_UNKNOWN_CURSOR SnapshotReason = 3
+)
+
+// Enum value maps for SnapshotReason.
+var (
+	SnapshotReason_name = map[int32]string{
+		0: "SNAPSHOT_REASON_UNSPECIFIED",
+		1: "SNAPSHOT_REASON_START",
+		2: "SNAPSHOT_REASON_BEHIND",
+		3: "SNAPSHOT_REASON_UNKNOWN_CURSOR",
+	}
+	SnapshotReason_value = map[string]int32{
+		"SNAPSHOT_REASON_UNSPECIFIED":    0,
+		"SNAPSHOT_REASON_START":          1,
+		"SNAPSHOT_REASON_BEHIND":         2,
+		"SNAPSHOT_REASON_UNKNOWN_CURSOR": 3,
+	}
+)
+
+func (x SnapshotReason) Enum() *SnapshotReason {
+	p := new(SnapshotReason)
+	*p = x
+	return p
+}
+
+func (x SnapshotReason) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (SnapshotReason) Descriptor() protoreflect.EnumDescriptor {
+	return file_berth_v1_sessions_proto_enumTypes[6].Descriptor()
+}
+
+func (SnapshotReason) Type() protoreflect.EnumType {
+	return &file_berth_v1_sessions_proto_enumTypes[6]
+}
+
+func (x SnapshotReason) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use SnapshotReason.Descriptor instead.
+func (SnapshotReason) EnumDescriptor() ([]byte, []int) {
+	return file_berth_v1_sessions_proto_rawDescGZIP(), []int{6}
+}
+
 type SessionProcess struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Pid           int32                  `protobuf:"varint,1,opt,name=pid,proto3" json:"pid,omitempty"`
@@ -997,6 +1053,261 @@ func (x *StopSessionResponse) GetState() SessionState {
 	return SessionState_SESSION_STATE_UNSPECIFIED
 }
 
+type WatchSessionsRequest struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// after_event_id is the event_id of the last message the client applied; 0 starts with a
+	// snapshot.
+	AfterEventId  int64 `protobuf:"varint,1,opt,name=after_event_id,json=afterEventId,proto3" json:"after_event_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WatchSessionsRequest) Reset() {
+	*x = WatchSessionsRequest{}
+	mi := &file_berth_v1_sessions_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchSessionsRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchSessionsRequest) ProtoMessage() {}
+
+func (x *WatchSessionsRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_sessions_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchSessionsRequest.ProtoReflect.Descriptor instead.
+func (*WatchSessionsRequest) Descriptor() ([]byte, []int) {
+	return file_berth_v1_sessions_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *WatchSessionsRequest) GetAfterEventId() int64 {
+	if x != nil {
+		return x.AfterEventId
+	}
+	return 0
+}
+
+// SessionsSnapshot holds every live session; the client replaces everything it holds with it.
+type SessionsSnapshot struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// event_id is the cursor the snapshot is consistent with; changes after it follow.
+	EventId       int64          `protobuf:"varint,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	Sessions      []*Session     `protobuf:"bytes,2,rep,name=sessions,proto3" json:"sessions,omitempty"`
+	Reason        SnapshotReason `protobuf:"varint,3,opt,name=reason,proto3,enum=berth.v1.SnapshotReason" json:"reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionsSnapshot) Reset() {
+	*x = SessionsSnapshot{}
+	mi := &file_berth_v1_sessions_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionsSnapshot) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionsSnapshot) ProtoMessage() {}
+
+func (x *SessionsSnapshot) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_sessions_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionsSnapshot.ProtoReflect.Descriptor instead.
+func (*SessionsSnapshot) Descriptor() ([]byte, []int) {
+	return file_berth_v1_sessions_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *SessionsSnapshot) GetEventId() int64 {
+	if x != nil {
+		return x.EventId
+	}
+	return 0
+}
+
+func (x *SessionsSnapshot) GetSessions() []*Session {
+	if x != nil {
+		return x.Sessions
+	}
+	return nil
+}
+
+func (x *SessionsSnapshot) GetReason() SnapshotReason {
+	if x != nil {
+		return x.Reason
+	}
+	return SnapshotReason_SNAPSHOT_REASON_UNSPECIFIED
+}
+
+// SessionChange is one saved session transition.
+type SessionChange struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// event_id only grows, with gaps, since other machines' events share the sequence.
+	EventId int64 `protobuf:"varint,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	// event is the machine's event name, such as Seen, Busy or Exited.
+	Event string `protobuf:"bytes,2,opt,name=event,proto3" json:"event,omitempty"`
+	// session carries the state the event led to and when; the other facts are what berthd holds
+	// now, and only id, state and state_since for a session it no longer remembers.
+	Session       *Session `protobuf:"bytes,3,opt,name=session,proto3" json:"session,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *SessionChange) Reset() {
+	*x = SessionChange{}
+	mi := &file_berth_v1_sessions_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *SessionChange) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*SessionChange) ProtoMessage() {}
+
+func (x *SessionChange) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_sessions_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use SessionChange.ProtoReflect.Descriptor instead.
+func (*SessionChange) Descriptor() ([]byte, []int) {
+	return file_berth_v1_sessions_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *SessionChange) GetEventId() int64 {
+	if x != nil {
+		return x.EventId
+	}
+	return 0
+}
+
+func (x *SessionChange) GetEvent() string {
+	if x != nil {
+		return x.Event
+	}
+	return ""
+}
+
+func (x *SessionChange) GetSession() *Session {
+	if x != nil {
+		return x.Session
+	}
+	return nil
+}
+
+type WatchSessionsResponse struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// Types that are valid to be assigned to Update:
+	//
+	//	*WatchSessionsResponse_Snapshot
+	//	*WatchSessionsResponse_Change
+	Update        isWatchSessionsResponse_Update `protobuf_oneof:"update"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *WatchSessionsResponse) Reset() {
+	*x = WatchSessionsResponse{}
+	mi := &file_berth_v1_sessions_proto_msgTypes[12]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *WatchSessionsResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*WatchSessionsResponse) ProtoMessage() {}
+
+func (x *WatchSessionsResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_sessions_proto_msgTypes[12]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use WatchSessionsResponse.ProtoReflect.Descriptor instead.
+func (*WatchSessionsResponse) Descriptor() ([]byte, []int) {
+	return file_berth_v1_sessions_proto_rawDescGZIP(), []int{12}
+}
+
+func (x *WatchSessionsResponse) GetUpdate() isWatchSessionsResponse_Update {
+	if x != nil {
+		return x.Update
+	}
+	return nil
+}
+
+func (x *WatchSessionsResponse) GetSnapshot() *SessionsSnapshot {
+	if x != nil {
+		if x, ok := x.Update.(*WatchSessionsResponse_Snapshot); ok {
+			return x.Snapshot
+		}
+	}
+	return nil
+}
+
+func (x *WatchSessionsResponse) GetChange() *SessionChange {
+	if x != nil {
+		if x, ok := x.Update.(*WatchSessionsResponse_Change); ok {
+			return x.Change
+		}
+	}
+	return nil
+}
+
+type isWatchSessionsResponse_Update interface {
+	isWatchSessionsResponse_Update()
+}
+
+type WatchSessionsResponse_Snapshot struct {
+	Snapshot *SessionsSnapshot `protobuf:"bytes,1,opt,name=snapshot,proto3,oneof"`
+}
+
+type WatchSessionsResponse_Change struct {
+	Change *SessionChange `protobuf:"bytes,2,opt,name=change,proto3,oneof"`
+}
+
+func (*WatchSessionsResponse_Snapshot) isWatchSessionsResponse_Update() {}
+
+func (*WatchSessionsResponse_Change) isWatchSessionsResponse_Update() {}
+
 var File_berth_v1_sessions_proto protoreflect.FileDescriptor
 
 const file_berth_v1_sessions_proto_rawDesc = "" +
@@ -1054,7 +1365,21 @@ const file_berth_v1_sessions_proto_rawDesc = "" +
 	"\x02id\x18\x02 \x01(\tB \xbaH\x1dr\x1b2\x19^[0-9]{1,10}-[0-9]{1,20}$R\x02id\x12\x14\n" +
 	"\x05force\x18\x03 \x01(\bR\x05force\"C\n" +
 	"\x13StopSessionResponse\x12,\n" +
-	"\x05state\x18\x01 \x01(\x0e2\x16.berth.v1.SessionStateR\x05state*\xd0\x01\n" +
+	"\x05state\x18\x01 \x01(\x0e2\x16.berth.v1.SessionStateR\x05state\"E\n" +
+	"\x14WatchSessionsRequest\x12-\n" +
+	"\x0eafter_event_id\x18\x01 \x01(\x03B\a\xbaH\x04\"\x02(\x00R\fafterEventId\"\x8e\x01\n" +
+	"\x10SessionsSnapshot\x12\x19\n" +
+	"\bevent_id\x18\x01 \x01(\x03R\aeventId\x12-\n" +
+	"\bsessions\x18\x02 \x03(\v2\x11.berth.v1.SessionR\bsessions\x120\n" +
+	"\x06reason\x18\x03 \x01(\x0e2\x18.berth.v1.SnapshotReasonR\x06reason\"m\n" +
+	"\rSessionChange\x12\x19\n" +
+	"\bevent_id\x18\x01 \x01(\x03R\aeventId\x12\x14\n" +
+	"\x05event\x18\x02 \x01(\tR\x05event\x12+\n" +
+	"\asession\x18\x03 \x01(\v2\x11.berth.v1.SessionR\asession\"\x8e\x01\n" +
+	"\x15WatchSessionsResponse\x128\n" +
+	"\bsnapshot\x18\x01 \x01(\v2\x1a.berth.v1.SessionsSnapshotH\x00R\bsnapshot\x121\n" +
+	"\x06change\x18\x02 \x01(\v2\x17.berth.v1.SessionChangeH\x00R\x06changeB\b\n" +
+	"\x06update*\xd0\x01\n" +
 	"\fSessionState\x12\x1d\n" +
 	"\x19SESSION_STATE_UNSPECIFIED\x10\x00\x12\x1c\n" +
 	"\x18SESSION_STATE_DISCOVERED\x10\x01\x12\x18\n" +
@@ -1094,11 +1419,17 @@ const file_berth_v1_sessions_proto_rawDesc = "" +
 	"\x18PROCESS_ROLE_UNSPECIFIED\x10\x00\x12\x18\n" +
 	"\x14PROCESS_ROLE_BROWSER\x10\x01\x12\x17\n" +
 	"\x13PROCESS_ROLE_HELPER\x10\x02\x12\x19\n" +
-	"\x15PROCESS_ROLE_ANCESTOR\x10\x032\x81\x02\n" +
+	"\x15PROCESS_ROLE_ANCESTOR\x10\x03*\x8c\x01\n" +
+	"\x0eSnapshotReason\x12\x1f\n" +
+	"\x1bSNAPSHOT_REASON_UNSPECIFIED\x10\x00\x12\x19\n" +
+	"\x15SNAPSHOT_REASON_START\x10\x01\x12\x1a\n" +
+	"\x16SNAPSHOT_REASON_BEHIND\x10\x02\x12\"\n" +
+	"\x1eSNAPSHOT_REASON_UNKNOWN_CURSOR\x10\x032\xd5\x02\n" +
 	"\x0fSessionsService\x12M\n" +
 	"\fListSessions\x12\x1d.berth.v1.ListSessionsRequest\x1a\x1e.berth.v1.ListSessionsResponse\x12S\n" +
 	"\x0eInspectSession\x12\x1f.berth.v1.InspectSessionRequest\x1a .berth.v1.InspectSessionResponse\x12J\n" +
-	"\vStopSession\x12\x1c.berth.v1.StopSessionRequest\x1a\x1d.berth.v1.StopSessionResponseBz\n" +
+	"\vStopSession\x12\x1c.berth.v1.StopSessionRequest\x1a\x1d.berth.v1.StopSessionResponse\x12R\n" +
+	"\rWatchSessions\x12\x1e.berth.v1.WatchSessionsRequest\x1a\x1f.berth.v1.WatchSessionsResponse0\x01Bz\n" +
 	"\fcom.berth.v1B\rSessionsProtoP\x01Z\x1aberth/gen/berth/v1;berthv1\xa2\x02\x03BXX\xaa\x02\bBerth.V1\xca\x02\bBerth\\V1\xe2\x02\x14Berth\\V1\\GPBMetadata\xea\x02\tBerth::V1b\x06proto3"
 
 var (
@@ -1113,8 +1444,8 @@ func file_berth_v1_sessions_proto_rawDescGZIP() []byte {
 	return file_berth_v1_sessions_proto_rawDescData
 }
 
-var file_berth_v1_sessions_proto_enumTypes = make([]protoimpl.EnumInfo, 6)
-var file_berth_v1_sessions_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
+var file_berth_v1_sessions_proto_enumTypes = make([]protoimpl.EnumInfo, 7)
+var file_berth_v1_sessions_proto_msgTypes = make([]protoimpl.MessageInfo, 13)
 var file_berth_v1_sessions_proto_goTypes = []any{
 	(SessionState)(0),              // 0: berth.v1.SessionState
 	(BrowserKind)(0),               // 1: berth.v1.BrowserKind
@@ -1122,48 +1453,60 @@ var file_berth_v1_sessions_proto_goTypes = []any{
 	(CdpMode)(0),                   // 3: berth.v1.CdpMode
 	(OwnerKind)(0),                 // 4: berth.v1.OwnerKind
 	(ProcessRole)(0),               // 5: berth.v1.ProcessRole
-	(*SessionProcess)(nil),         // 6: berth.v1.SessionProcess
-	(*SessionOwner)(nil),           // 7: berth.v1.SessionOwner
-	(*Session)(nil),                // 8: berth.v1.Session
-	(*ListSessionsRequest)(nil),    // 9: berth.v1.ListSessionsRequest
-	(*ListSessionsResponse)(nil),   // 10: berth.v1.ListSessionsResponse
-	(*InspectSessionRequest)(nil),  // 11: berth.v1.InspectSessionRequest
-	(*InspectSessionResponse)(nil), // 12: berth.v1.InspectSessionResponse
-	(*StopSessionRequest)(nil),     // 13: berth.v1.StopSessionRequest
-	(*StopSessionResponse)(nil),    // 14: berth.v1.StopSessionResponse
-	(*timestamppb.Timestamp)(nil),  // 15: google.protobuf.Timestamp
-	(*Transition)(nil),             // 16: berth.v1.Transition
+	(SnapshotReason)(0),            // 6: berth.v1.SnapshotReason
+	(*SessionProcess)(nil),         // 7: berth.v1.SessionProcess
+	(*SessionOwner)(nil),           // 8: berth.v1.SessionOwner
+	(*Session)(nil),                // 9: berth.v1.Session
+	(*ListSessionsRequest)(nil),    // 10: berth.v1.ListSessionsRequest
+	(*ListSessionsResponse)(nil),   // 11: berth.v1.ListSessionsResponse
+	(*InspectSessionRequest)(nil),  // 12: berth.v1.InspectSessionRequest
+	(*InspectSessionResponse)(nil), // 13: berth.v1.InspectSessionResponse
+	(*StopSessionRequest)(nil),     // 14: berth.v1.StopSessionRequest
+	(*StopSessionResponse)(nil),    // 15: berth.v1.StopSessionResponse
+	(*WatchSessionsRequest)(nil),   // 16: berth.v1.WatchSessionsRequest
+	(*SessionsSnapshot)(nil),       // 17: berth.v1.SessionsSnapshot
+	(*SessionChange)(nil),          // 18: berth.v1.SessionChange
+	(*WatchSessionsResponse)(nil),  // 19: berth.v1.WatchSessionsResponse
+	(*timestamppb.Timestamp)(nil),  // 20: google.protobuf.Timestamp
+	(*Transition)(nil),             // 21: berth.v1.Transition
 }
 var file_berth_v1_sessions_proto_depIdxs = []int32{
-	15, // 0: berth.v1.SessionProcess.started_at:type_name -> google.protobuf.Timestamp
+	20, // 0: berth.v1.SessionProcess.started_at:type_name -> google.protobuf.Timestamp
 	5,  // 1: berth.v1.SessionProcess.role:type_name -> berth.v1.ProcessRole
 	4,  // 2: berth.v1.SessionOwner.kind:type_name -> berth.v1.OwnerKind
-	6,  // 3: berth.v1.SessionOwner.process:type_name -> berth.v1.SessionProcess
+	7,  // 3: berth.v1.SessionOwner.process:type_name -> berth.v1.SessionProcess
 	0,  // 4: berth.v1.Session.state:type_name -> berth.v1.SessionState
 	1,  // 5: berth.v1.Session.kind:type_name -> berth.v1.BrowserKind
 	2,  // 6: berth.v1.Session.driver:type_name -> berth.v1.Driver
 	3,  // 7: berth.v1.Session.cdp:type_name -> berth.v1.CdpMode
-	7,  // 8: berth.v1.Session.owner:type_name -> berth.v1.SessionOwner
-	6,  // 9: berth.v1.Session.browser:type_name -> berth.v1.SessionProcess
-	15, // 10: berth.v1.Session.state_since:type_name -> google.protobuf.Timestamp
+	8,  // 8: berth.v1.Session.owner:type_name -> berth.v1.SessionOwner
+	7,  // 9: berth.v1.Session.browser:type_name -> berth.v1.SessionProcess
+	20, // 10: berth.v1.Session.state_since:type_name -> google.protobuf.Timestamp
 	0,  // 11: berth.v1.ListSessionsRequest.states:type_name -> berth.v1.SessionState
-	8,  // 12: berth.v1.ListSessionsResponse.sessions:type_name -> berth.v1.Session
-	8,  // 13: berth.v1.InspectSessionResponse.session:type_name -> berth.v1.Session
-	6,  // 14: berth.v1.InspectSessionResponse.processes:type_name -> berth.v1.SessionProcess
-	6,  // 15: berth.v1.InspectSessionResponse.owner_chain:type_name -> berth.v1.SessionProcess
-	16, // 16: berth.v1.InspectSessionResponse.history:type_name -> berth.v1.Transition
+	9,  // 12: berth.v1.ListSessionsResponse.sessions:type_name -> berth.v1.Session
+	9,  // 13: berth.v1.InspectSessionResponse.session:type_name -> berth.v1.Session
+	7,  // 14: berth.v1.InspectSessionResponse.processes:type_name -> berth.v1.SessionProcess
+	7,  // 15: berth.v1.InspectSessionResponse.owner_chain:type_name -> berth.v1.SessionProcess
+	21, // 16: berth.v1.InspectSessionResponse.history:type_name -> berth.v1.Transition
 	0,  // 17: berth.v1.StopSessionResponse.state:type_name -> berth.v1.SessionState
-	9,  // 18: berth.v1.SessionsService.ListSessions:input_type -> berth.v1.ListSessionsRequest
-	11, // 19: berth.v1.SessionsService.InspectSession:input_type -> berth.v1.InspectSessionRequest
-	13, // 20: berth.v1.SessionsService.StopSession:input_type -> berth.v1.StopSessionRequest
-	10, // 21: berth.v1.SessionsService.ListSessions:output_type -> berth.v1.ListSessionsResponse
-	12, // 22: berth.v1.SessionsService.InspectSession:output_type -> berth.v1.InspectSessionResponse
-	14, // 23: berth.v1.SessionsService.StopSession:output_type -> berth.v1.StopSessionResponse
-	21, // [21:24] is the sub-list for method output_type
-	18, // [18:21] is the sub-list for method input_type
-	18, // [18:18] is the sub-list for extension type_name
-	18, // [18:18] is the sub-list for extension extendee
-	0,  // [0:18] is the sub-list for field type_name
+	9,  // 18: berth.v1.SessionsSnapshot.sessions:type_name -> berth.v1.Session
+	6,  // 19: berth.v1.SessionsSnapshot.reason:type_name -> berth.v1.SnapshotReason
+	9,  // 20: berth.v1.SessionChange.session:type_name -> berth.v1.Session
+	17, // 21: berth.v1.WatchSessionsResponse.snapshot:type_name -> berth.v1.SessionsSnapshot
+	18, // 22: berth.v1.WatchSessionsResponse.change:type_name -> berth.v1.SessionChange
+	10, // 23: berth.v1.SessionsService.ListSessions:input_type -> berth.v1.ListSessionsRequest
+	12, // 24: berth.v1.SessionsService.InspectSession:input_type -> berth.v1.InspectSessionRequest
+	14, // 25: berth.v1.SessionsService.StopSession:input_type -> berth.v1.StopSessionRequest
+	16, // 26: berth.v1.SessionsService.WatchSessions:input_type -> berth.v1.WatchSessionsRequest
+	11, // 27: berth.v1.SessionsService.ListSessions:output_type -> berth.v1.ListSessionsResponse
+	13, // 28: berth.v1.SessionsService.InspectSession:output_type -> berth.v1.InspectSessionResponse
+	15, // 29: berth.v1.SessionsService.StopSession:output_type -> berth.v1.StopSessionResponse
+	19, // 30: berth.v1.SessionsService.WatchSessions:output_type -> berth.v1.WatchSessionsResponse
+	27, // [27:31] is the sub-list for method output_type
+	23, // [23:27] is the sub-list for method input_type
+	23, // [23:23] is the sub-list for extension type_name
+	23, // [23:23] is the sub-list for extension extendee
+	0,  // [0:23] is the sub-list for field type_name
 }
 
 func init() { file_berth_v1_sessions_proto_init() }
@@ -1172,13 +1515,17 @@ func file_berth_v1_sessions_proto_init() {
 		return
 	}
 	file_berth_v1_debug_proto_init()
+	file_berth_v1_sessions_proto_msgTypes[12].OneofWrappers = []any{
+		(*WatchSessionsResponse_Snapshot)(nil),
+		(*WatchSessionsResponse_Change)(nil),
+	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_berth_v1_sessions_proto_rawDesc), len(file_berth_v1_sessions_proto_rawDesc)),
-			NumEnums:      6,
-			NumMessages:   9,
+			NumEnums:      7,
+			NumMessages:   13,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

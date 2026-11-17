@@ -67,6 +67,25 @@ func (s *Store) EntitiesOfKind(_ context.Context, kind string) ([]ports.EntitySt
 	return out, nil
 }
 
+// LastEventID numbers events by their position, from 1, as SQLite's ids would be.
+func (s *Store) LastEventID(context.Context) (int64, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return int64(len(s.events)), nil
+}
+
+func (s *Store) EventsAfter(_ context.Context, kind string, after int64, limit int) ([]ports.EventRecord, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []ports.EventRecord
+	for i := max(after, 0); i < int64(len(s.events)) && len(out) < limit; i++ {
+		if s.events[i].Kind == kind {
+			out = append(out, ports.EventRecord{ID: i + 1, TransitionRecord: s.events[i]})
+		}
+	}
+	return out, nil
+}
+
 // Events returns every saved transition in order.
 func (s *Store) Events() []ports.TransitionRecord {
 	s.mu.Lock()

@@ -1,6 +1,7 @@
 package berthd
 
 import (
+	"context"
 	"errors"
 	"log/slog"
 	"slices"
@@ -54,7 +55,7 @@ func newBrowsersFixture(t *testing.T) *browsersFixture {
 	}}
 	f.procs.Set(f.rows...)
 	f.b = newBrowsers(t.Context(), browsersDeps{
-		Log: slog.New(slog.DiscardHandler), Source: f.procs, Store: f.store, List: f.store, Clock: testutil.NewClock(), UID: testUID,
+		Log: slog.New(slog.DiscardHandler), Source: f.procs, Store: f.store, List: f.store, Events: f.store, Clock: testutil.NewClock(), UID: testUID,
 	})
 	if err := f.b.recover(t.Context()); err != nil {
 		t.Fatal(err)
@@ -281,5 +282,210 @@ func TestStopTimesOutIntoSIGKILLOfOwnProcessesOnly(t *testing.T) {
 	f.set(t, slices.DeleteFunc(slices.Clone(f.rows), func(r testutil.FakeProcess) bool { return r.PID >= 100 && r.PID <= 102 })...)
 	if resp := <-done; resp.GetState() != berthv1.SessionState_SESSION_STATE_STOPPED {
 		t.Fatalf("stop answered %v", resp)
+	}
+}
+
+// stream runs WatchSessions as a client would, collecting what berthd sends.
+type stream struct {
+	msgs   chan *berthv1.WatchSessionsResponse
+	done   chan error
+	cancel context.CancelFunc
+}
+
+func (f *browsersFixture) watch(t *testing.T, after int64) *stream {
+	t.Helper()
+	ctx, cancel := context.WithCancel(t.Context())
+	s := &stream{msgs: make(chan *berthv1.WatchSessionsResponse, 1024), done: make(chan error, 1), cancel: cancel}
+	go func() {
+		s.done <- f.b.WatchSessions(ctx, after, func(m *berthv1.WatchSessionsResponse) error {
+			s.msgs <- m
+			return nil
+		})
+	}()
+	t.Cleanup(cancel)
+	return s
+}
+
+func (s *stream) next(t *testing.T) *berthv1.WatchSessionsResponse {
+	t.Helper()
+	select {
+	case m := <-s.msgs:
+		return m
+	case err := <-s.done:
+		t.Fatalf("stream ended: %v", err)
+	case <-time.After(3 * time.Second):
+		t.Fatal("no stream message within 3 seconds")
+	}
+	return nil
+}
+
+// change reads the next message, which must be a change of session id to state want.
+func (s *stream) change(t *testing.T, id, event string, want berthv1.SessionState) *berthv1.SessionChange {
+	t.Helper()
+	c := s.next(t).GetChange()
+	if c.GetSession().GetId() != id || c.GetEvent() != event || c.GetSession().GetState() != want {
+		t.Fatalf("change %v, want %s %s to %s", c, id, event, want)
+	}
+	return c
+}
+
+func (s *stream) quiet(t *testing.T) {
+	t.Helper()
+	select {
+	case m := <-s.msgs:
+		t.Fatalf("unexpected message %v", m)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func extraBrowser(pid int) testutil.FakeProcess {
+	return row(pid, 80, testUID, shellPath, shellPath, "--headless")
+}
+
+func TestWatchStartsWithASnapshotThenStreamsChanges(t *testing.T) {
+	f := newBrowsersFixture(t)
+	s := f.watch(t, 0)
+	snap := s.next(t).GetSnapshot()
+	if snap.GetReason() != berthv1.SnapshotReason_SNAPSHOT_REASON_START || len(snap.GetSessions()) != 3 || snap.GetEventId() == 0 {
+		t.Fatalf("snapshot %v", snap)
+	}
+	if got := snap.GetSessions()[2]; got.GetId() != f.id(300) || got.GetState() != berthv1.SessionState_SESSION_STATE_LEFTOVER {
+		t.Fatalf("snapshot shows the other user's browser as %v", got)
+	}
+	base := slices.Clone(f.rows)
+	f.set(t, append(slices.Clone(base), extraBrowser(500))...)
+	id := f.id(500)
+	c := s.change(t, id, "Seen", berthv1.SessionState_SESSION_STATE_DISCOVERED)
+	if c.GetEventId() <= snap.GetEventId() || c.GetSession().GetKind() != berthv1.BrowserKind_BROWSER_KIND_HEADLESS_SHELL ||
+		c.GetSession().GetOwner().GetKind() != berthv1.OwnerKind_OWNER_KIND_TERMINAL {
+		t.Fatalf("Seen change %v after snapshot %d", c, snap.GetEventId())
+	}
+	f.set(t, base...)
+	s.change(t, id, "Exited", berthv1.SessionState_SESSION_STATE_STOPPED)
+	s.quiet(t)
+}
+
+// A client that drops its stream and reconnects with the last event id it applied gets exactly
+// what it missed, in order, and no snapshot.
+func TestWatchResumesAfterDisconnect(t *testing.T) {
+	f := newBrowsersFixture(t)
+	first := f.watch(t, 0)
+	cursor := first.next(t).GetSnapshot().GetEventId()
+	first.cancel()
+	if err := <-first.done; !errors.Is(err, context.Canceled) {
+		t.Fatalf("a cancelled stream returned %v", err)
+	}
+	base := slices.Clone(f.rows)
+	f.set(t, append(slices.Clone(base), extraBrowser(500), extraBrowser(501))...)
+	f.set(t, append(slices.Clone(base), extraBrowser(501))...)
+	resumed := f.watch(t, cursor)
+	resumed.change(t, discovery.ID(extraBrowser(500).ProcessRef), "Seen", berthv1.SessionState_SESSION_STATE_DISCOVERED)
+	last := resumed.change(t, f.id(501), "Seen", berthv1.SessionState_SESSION_STATE_DISCOVERED)
+	gone := resumed.change(t, discovery.ID(extraBrowser(500).ProcessRef), "Exited", berthv1.SessionState_SESSION_STATE_STOPPED)
+	if gone.GetEventId() <= last.GetEventId() {
+		t.Fatalf("event ids out of order: %d then %d", last.GetEventId(), gone.GetEventId())
+	}
+	resumed.quiet(t)
+	// Resuming from the newest id sends nothing until something changes.
+	f.watch(t, gone.GetEventId()).quiet(t)
+}
+
+func TestWatchSendsASnapshotWhenBehindOrLost(t *testing.T) {
+	f := newBrowsersFixture(t)
+	f.b.backlog = 2
+	last, _ := f.store.LastEventID(t.Context())
+	base := slices.Clone(f.rows)
+	f.set(t, append(slices.Clone(base), extraBrowser(500), extraBrowser(501), extraBrowser(502))...)
+	behind := f.watch(t, last).next(t).GetSnapshot()
+	if behind.GetReason() != berthv1.SnapshotReason_SNAPSHOT_REASON_BEHIND || len(behind.GetSessions()) != 6 {
+		t.Fatalf("a client 3 events behind with a backlog of 2 got %v", behind)
+	}
+	newest, _ := f.store.LastEventID(t.Context())
+	if behind.GetEventId() != newest {
+		t.Fatalf("snapshot cursor %d, newest event %d", behind.GetEventId(), newest)
+	}
+	lost := f.watch(t, newest+100).next(t).GetSnapshot()
+	if lost.GetReason() != berthv1.SnapshotReason_SNAPSHOT_REASON_UNKNOWN_CURSOR || lost.GetEventId() != newest {
+		t.Fatalf("a cursor beyond the newest event got %v", lost)
+	}
+}
+
+// A client that stops reading must not hold back the actors: they keep saving while its send is
+// blocked, and once it reads again it gets one snapshot instead of the backlog.
+func TestSlowWatcherDoesNotBlockTheActors(t *testing.T) {
+	f := newBrowsersFixture(t)
+	f.b.backlog = 10
+	release := make(chan struct{})
+	got := make(chan *berthv1.WatchSessionsResponse, 64)
+	go func() {
+		_ = f.b.WatchSessions(t.Context(), 0, func(m *berthv1.WatchSessionsResponse) error {
+			got <- m
+			if m.GetChange() != nil {
+				<-release
+			}
+			return nil
+		})
+	}()
+	if (<-got).GetSnapshot() == nil {
+		t.Fatal("first message is not a snapshot")
+	}
+	before := len(f.store.Events())
+	base := slices.Clone(f.rows)
+	churned := make(chan struct{})
+	go func() {
+		defer close(churned)
+		for i := range 50 {
+			f.set(t, append(slices.Clone(base), extraBrowser(1000+i))...)
+			f.set(t, base...)
+		}
+	}()
+	select {
+	case <-churned:
+	case <-time.After(10 * time.Second):
+		t.Fatal("the actors stalled behind a client that stopped reading")
+	}
+	if saved := len(f.store.Events()) - before; saved != 100 {
+		t.Fatalf("%d transitions saved while the client was stuck, want 100 (Seen and Exited for 50 browsers)", saved)
+	}
+	close(release)
+	deadline := time.After(3 * time.Second)
+	for {
+		select {
+		case m := <-got:
+			if snap := m.GetSnapshot(); snap != nil {
+				if snap.GetReason() != berthv1.SnapshotReason_SNAPSHOT_REASON_BEHIND || len(snap.GetSessions()) != 3 {
+					t.Fatalf("snapshot after the backlog %v", snap)
+				}
+				return
+			}
+		case <-deadline:
+			t.Fatal("no BEHIND snapshot after the client read again")
+		}
+	}
+}
+
+func TestWatchEndsWhenServingStops(t *testing.T) {
+	f := newBrowsersFixture(t)
+	s := f.watch(t, 0)
+	s.next(t)
+	f.b.closeWatches()
+	select {
+	case err := <-s.done:
+		if err != nil {
+			t.Fatalf("stream ended with %v, want a clean end", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("stream still open after berthd stopped serving")
+	}
+}
+
+func TestWatchStreamsAreBounded(t *testing.T) {
+	f := newBrowsersFixture(t)
+	for range maxWatchers {
+		f.watch(t, 0).next(t)
+	}
+	err := f.b.WatchSessions(t.Context(), 0, func(*berthv1.WatchSessionsResponse) error { return nil })
+	if !errors.Is(err, api.ErrTooManyWatchers) {
+		t.Fatalf("stream %d: %v, want ErrTooManyWatchers", maxWatchers+1, err)
 	}
 }

@@ -41,6 +41,13 @@ func (f *fakeSessions) StopSession(context.Context, *berthv1.StopSessionRequest)
 	return &berthv1.StopSessionResponse{State: berthv1.SessionState_SESSION_STATE_STOPPED}, nil
 }
 
+func (f *fakeSessions) WatchSessions(_ context.Context, after int64, send func(*berthv1.WatchSessionsResponse) error) error {
+	if f.err != nil {
+		return f.err
+	}
+	return send(&berthv1.WatchSessionsResponse{Update: &berthv1.WatchSessionsResponse_Snapshot{Snapshot: &berthv1.SessionsSnapshot{EventId: after + 1}}})
+}
+
 func setupSessions(t *testing.T, fake *fakeSessions) berthv1connect.SessionsServiceClient {
 	t.Helper()
 	store, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "b.db"))
@@ -102,5 +109,28 @@ func TestStopSessionRunsOncePerRequestID(t *testing.T) {
 	}
 	if fake.stops != 1 {
 		t.Fatalf("stop ran %d times, want 1", fake.stops)
+	}
+}
+
+func TestWatchSessionsValidatesAndStreams(t *testing.T) {
+	fake := &fakeSessions{}
+	c := setupSessions(t, fake)
+	recv := func(after int64) (*berthv1.WatchSessionsResponse, error) {
+		stream, err := c.WatchSessions(t.Context(), &berthv1.WatchSessionsRequest{AfterEventId: after})
+		if err != nil {
+			return nil, err
+		}
+		defer func() { _ = stream.Close() }()
+		return stream.Receive()
+	}
+	if got, err := recv(41); err != nil || got.GetSnapshot().GetEventId() != 42 {
+		t.Fatalf("stream: %v %v", got, err)
+	}
+	if _, err := recv(-1); connect.CodeOf(err) != connect.CodeInvalidArgument {
+		t.Fatalf("negative cursor: %v, want InvalidArgument", err)
+	}
+	fake.err = api.ErrTooManyWatchers
+	if _, err := recv(0); connect.CodeOf(err) != connect.CodeResourceExhausted {
+		t.Fatalf("too many streams: %v, want ResourceExhausted", err)
 	}
 }

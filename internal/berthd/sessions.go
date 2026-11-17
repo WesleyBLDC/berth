@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -30,6 +31,11 @@ const (
 	// smaller, since anything that can start processes can churn through browsers.
 	endedMax = 200
 	endedAge = time.Hour
+	// watchBacklog is how many session events a stream replays; a client further behind gets a
+	// snapshot instead.
+	watchBacklog = 1000
+	// maxWatchers bounds the open session streams, since each holds a goroutine.
+	maxWatchers = 16
 )
 
 type browsersDeps struct {
@@ -37,6 +43,7 @@ type browsersDeps struct {
 	Source ports.ProcessSource
 	Store  ports.Store
 	List   ports.EntityLister
+	Events ports.EventLog
 	Clock  ports.Clock
 	UID    uint32
 }
@@ -63,6 +70,21 @@ type browsers struct {
 	grace time.Duration
 	// scanning admits one scan at a time.
 	scanning sync.Mutex
+
+	// watchers are the open session streams; a saved session transition wakes each one, and
+	// closing ends them all when berthd stops serving.
+	watchMu   sync.Mutex
+	watchers  map[*sessionStream]struct{}
+	closing   chan struct{}
+	closeOnce sync.Once
+	// backlog is watchBacklog, smaller in tests.
+	backlog int
+}
+
+// sessionStream is one open WatchSessions stream. wake holds at most one pending wake, so an
+// actor never waits.
+type sessionStream struct {
+	wake chan struct{}
 }
 
 type tracked struct {
@@ -75,11 +97,13 @@ func newBrowsers(ctx context.Context, d browsersDeps) *browsers {
 	b := &browsers{
 		browsersDeps: d, ctx: ctx, kick: make(chan struct{}, 1), grace: stopGrace,
 		live: map[string]*tracked{}, ended: map[string]*tracked{}, scanner: discovery.NewScanner(d.Source, d.UID),
+		watchers: map[*sessionStream]struct{}{}, closing: make(chan struct{}), backlog: watchBacklog,
 	}
 	b.actors = &actors[session.State, session.Event, session.Effect]{
 		ctx: ctx, log: d.Log, store: d.Store, clock: d.Clock,
 		kind: session.Kind, initial: session.Initial, final: session.Stopped, transition: session.Transition, run: b.runSession,
-		live: map[string]*slot[session.State, session.Event, session.Effect]{},
+		live:  map[string]*slot[session.State, session.Event, session.Effect]{},
+		saved: func(ports.TransitionRecord) { b.wakeWatchers() },
 	}
 	return b
 }
@@ -181,11 +205,15 @@ func (b *browsers) track(ctx context.Context, o discovery.Observed) (*tracked, e
 		return t, nil
 	}
 	entity := session.Entity(o.ID)
-	st, err := b.state(ctx, entity)
+	saved, found, err := b.Store.LoadState(ctx, entity)
 	if err != nil {
 		return nil, err
 	}
-	t = &tracked{disc: discovery.Tracked{State: st}, since: b.Clock.Now()}
+	st := session.Initial
+	if found {
+		st = session.State(saved.State)
+	}
+	t = &tracked{disc: discovery.Tracked{State: st, Unsaved: !found}, since: b.Clock.Now()}
 	if hist, err := b.Store.History(ctx, entity, 1); err == nil && len(hist) == 1 {
 		t.since = hist[0].At
 	}
@@ -389,10 +417,167 @@ func (b *browsers) ListSessions(_ context.Context, req *berthv1.ListSessionsRequ
 			add(t)
 		}
 	}
-	slices.SortFunc(resp.Sessions, func(x, y *berthv1.Session) int {
+	sortSessions(resp.Sessions)
+	return resp, nil
+}
+
+func sortSessions(sessions []*berthv1.Session) {
+	slices.SortFunc(sessions, func(x, y *berthv1.Session) int {
 		return x.GetBrowser().GetStartedAt().AsTime().Compare(y.GetBrowser().GetStartedAt().AsTime())
 	})
-	return resp, nil
+}
+
+// WatchSessions streams session changes from the event table, which is the only queue: an
+// actor saving a transition only wakes the watchers, and each reads the rows after its own
+// cursor at its client's pace, so a slow client holds one goroutine and one page of rows, never
+// an actor.
+func (b *browsers) WatchSessions(ctx context.Context, after int64, send func(*berthv1.WatchSessionsResponse) error) error {
+	w, err := b.watch()
+	if err != nil {
+		return err
+	}
+	defer b.unwatch(w)
+	cursor, reason := after, berthv1.SnapshotReason_SNAPSHOT_REASON_UNSPECIFIED
+	if after == 0 {
+		reason = berthv1.SnapshotReason_SNAPSHOT_REASON_START
+	} else if last, err := b.Events.LastEventID(ctx); err != nil {
+		return err
+	} else if after > last {
+		reason = berthv1.SnapshotReason_SNAPSHOT_REASON_UNKNOWN_CURSOR
+	}
+	if reason != berthv1.SnapshotReason_SNAPSHOT_REASON_UNSPECIFIED {
+		if cursor, err = b.snapshot(ctx, reason, send); err != nil {
+			return err
+		}
+	}
+	for {
+		if cursor, err = b.catchUp(ctx, cursor, send); err != nil {
+			return err
+		}
+		select {
+		case <-w.wake:
+		case <-b.closing:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+}
+
+// catchUp sends every session event after cursor, or a snapshot when there are more than the
+// backlog, and returns the new cursor.
+func (b *browsers) catchUp(ctx context.Context, cursor int64, send func(*berthv1.WatchSessionsResponse) error) (int64, error) {
+	for {
+		select {
+		case <-b.closing:
+			return cursor, nil
+		default:
+		}
+		rows, err := b.Events.EventsAfter(ctx, session.Kind, cursor, b.backlog+1)
+		if err != nil {
+			return cursor, err
+		}
+		if len(rows) > b.backlog {
+			if cursor, err = b.snapshot(ctx, berthv1.SnapshotReason_SNAPSHOT_REASON_BEHIND, send); err != nil {
+				return cursor, err
+			}
+			continue
+		}
+		if len(rows) == 0 {
+			return cursor, nil
+		}
+		for _, r := range rows {
+			if err := send(b.change(r)); err != nil {
+				return cursor, err
+			}
+			cursor = r.ID
+		}
+	}
+}
+
+// snapshot sends every live session and returns the cursor it is consistent with. The cursor is
+// read before the states, so no state is older than it; a change after it that the snapshot
+// already shows is applied again, which is harmless since a change carries the whole state.
+func (b *browsers) snapshot(ctx context.Context, reason berthv1.SnapshotReason, send func(*berthv1.WatchSessionsResponse) error) (int64, error) {
+	last, err := b.Events.LastEventID(ctx)
+	if err != nil {
+		return 0, err
+	}
+	rows, err := b.List.EntitiesOfKind(ctx, session.Kind)
+	if err != nil {
+		return 0, err
+	}
+	states := make(map[string]session.State, len(rows))
+	for _, r := range rows {
+		states[r.Entity] = session.State(r.State)
+	}
+	snap := &berthv1.SessionsSnapshot{EventId: last, Reason: reason}
+	b.mu.Lock()
+	for id, t := range b.live {
+		s := sessionProto(t)
+		if st, ok := states[session.Entity(id)]; ok {
+			s.State = stateProto(st)
+		}
+		snap.Sessions = append(snap.Sessions, s)
+	}
+	b.mu.Unlock()
+	sortSessions(snap.Sessions)
+	return last, send(&berthv1.WatchSessionsResponse{Update: &berthv1.WatchSessionsResponse_Snapshot{Snapshot: snap}})
+}
+
+// change turns one event row into a stream message: the state and its time from the row, the
+// other facts from what berthd still holds about the session.
+func (b *browsers) change(r ports.EventRecord) *berthv1.WatchSessionsResponse {
+	id := strings.TrimPrefix(r.Entity, session.Entity(""))
+	b.mu.Lock()
+	t, ok := b.live[id]
+	if !ok {
+		t, ok = b.ended[id]
+	}
+	s := &berthv1.Session{Id: id}
+	if ok {
+		s = sessionProto(t)
+	}
+	b.mu.Unlock()
+	s.State, s.StateSince = stateProto(session.State(r.To)), timestamppb.New(r.At)
+	return &berthv1.WatchSessionsResponse{Update: &berthv1.WatchSessionsResponse_Change{Change: &berthv1.SessionChange{
+		EventId: r.ID, Event: r.Event, Session: s,
+	}}}
+}
+
+func (b *browsers) watch() (*sessionStream, error) {
+	b.watchMu.Lock()
+	defer b.watchMu.Unlock()
+	if len(b.watchers) >= maxWatchers {
+		return nil, api.ErrTooManyWatchers
+	}
+	w := &sessionStream{wake: make(chan struct{}, 1)}
+	b.watchers[w] = struct{}{}
+	return w, nil
+}
+
+func (b *browsers) unwatch(w *sessionStream) {
+	b.watchMu.Lock()
+	defer b.watchMu.Unlock()
+	delete(b.watchers, w)
+}
+
+// wakeWatchers runs on an actor's goroutine after each saved session transition, so it never
+// blocks: a watcher that has a wake pending already will read this row too.
+func (b *browsers) wakeWatchers() {
+	b.watchMu.Lock()
+	defer b.watchMu.Unlock()
+	for w := range b.watchers {
+		select {
+		case w.wake <- struct{}{}:
+		default:
+		}
+	}
+}
+
+// closeWatches ends every open stream, and any opened later, when berthd stops serving.
+func (b *browsers) closeWatches() {
+	b.closeOnce.Do(func() { close(b.closing) })
 }
 
 func (b *browsers) InspectSession(ctx context.Context, req *berthv1.InspectSessionRequest) (*berthv1.InspectSessionResponse, error) {

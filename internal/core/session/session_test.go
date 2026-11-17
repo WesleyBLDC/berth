@@ -11,9 +11,9 @@ import (
 )
 
 func TestEveryPairIsLegalOrRejected(t *testing.T) {
-	// 2 Busy + 2 Quiet + 3 OwnerExited + 4 StopRequested + 1 StopTimedOut + 5 Exited.
-	if got := machinetest.Walk(t, session.States, session.AllEvents, session.Transition); got != 17 {
-		t.Fatalf("legal pairs = %d, want 17; update this number only with a deliberate table change", got)
+	// 1 Seen + 2 Busy + 2 Quiet + 3 OwnerExited + 4 StopRequested + 1 StopTimedOut + 5 Exited.
+	if got := machinetest.Walk(t, session.States, session.AllEvents, session.Transition); got != 18 {
+		t.Fatalf("legal pairs = %d, want 18; update this number only with a deliberate table change", got)
 	}
 }
 
@@ -35,6 +35,17 @@ func TestObservedLife(t *testing.T) {
 	step(t, session.Idle, session.Busy, session.Active)
 	step(t, session.Active, session.OwnerExited, session.Leftover)
 	step(t, session.Leftover, session.Exited, session.Stopped)
+}
+
+// Seen only records a session's first sight: it changes nothing and is legal only before any
+// other event.
+func TestSeenOnlyInDiscovered(t *testing.T) {
+	step(t, session.Discovered, session.Seen, session.Discovered)
+	for _, from := range []session.State{session.Active, session.Idle, session.Leftover, session.Stopping, session.Stopped} {
+		if _, _, err := session.Transition(from, session.Event{Kind: session.Seen}); !errors.Is(err, machine.ErrIllegal) {
+			t.Fatalf("Seen in %s: want ErrIllegal, got %v", from, err)
+		}
+	}
 }
 
 func TestStopThenKill(t *testing.T) {
@@ -78,7 +89,7 @@ func TestNamesAreStable(t *testing.T) {
 	}
 	want := []string{
 		"Discovered", "Active", "Idle", "Leftover", "Stopping", "Stopped",
-		"Busy", "Quiet", "OwnerExited", "StopRequested", "StopTimedOut", "Exited",
+		"Seen", "Busy", "Quiet", "OwnerExited", "StopRequested", "StopTimedOut", "Exited",
 	}
 	if !slices.Equal(got, want) {
 		t.Fatalf("names = %v, want %v", got, want)

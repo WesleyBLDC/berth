@@ -133,7 +133,7 @@ func Run(ctx context.Context, cfg Config) (int, error) {
 		return 1, err
 	}
 	s.browsers = newBrowsers(machineCtx, browsersDeps{
-		Log: cfg.Log, Source: procs, Store: store, List: store, Clock: clock.System{},
+		Log: cfg.Log, Source: procs, Store: store, List: store, Events: store, Clock: clock.System{},
 		UID: uint32(os.Getuid()), //nolint:gosec // user IDs fit in 32 bits
 	})
 	s.actor, err = machine.NewActor(ctx, machine.Config[daemon.State, daemon.Event, daemon.Effect]{
@@ -194,6 +194,8 @@ func (s *shell) run(ctx context.Context, effect daemon.Effect) ([]daemon.Event, 
 		if s.stopScans != nil {
 			s.stopScans()
 		}
+		// Open session streams end first, or the server shutdown below would wait out its grace.
+		s.browsers.closeWatches()
 		// Proxy sessions are told to stop and open prompts end first, while the server still
 		// takes their EndProxySession calls and their callers still get an answer.
 		if !s.secrets.stop(stopPromptsTimeout) {

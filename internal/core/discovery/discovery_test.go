@@ -170,6 +170,19 @@ func TestReparentedToLaunchdIsLeftoverAtOnce(t *testing.T) {
 	step(t, discovery.Tracked{State: session.Discovered}, &o, 0, session.OwnerExited)
 }
 
+// A session with no row gets one at first sight, before anything else that scan saw; one that
+// already has rows gets none.
+func TestFirstSightOfAnUnsavedSessionIsSeen(t *testing.T) {
+	rows := table()
+	o := scan(t, rows)[100]
+	tr := step(t, discovery.Tracked{State: session.Discovered, Unsaved: true}, &o, 0, session.Seen)
+	step(t, tr, &o, 2*time.Second)
+	step(t, discovery.Tracked{State: session.Active, Unsaved: false}, &o, 0)
+	rows[4].PPID = 1
+	o = scan(t, rows)[100]
+	step(t, discovery.Tracked{State: session.Discovered, Unsaved: true}, &o, 0, session.Seen, session.OwnerExited)
+}
+
 func TestGoneIsExitedOnce(t *testing.T) {
 	step(t, discovery.Tracked{State: session.Stopping}, nil, 0, session.Exited)
 	step(t, discovery.Tracked{State: session.Stopped}, nil, 0)

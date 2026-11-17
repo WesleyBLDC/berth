@@ -1,6 +1,8 @@
 package e2e
 
 import (
+	"errors"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -213,5 +215,47 @@ func TestABrowserWhoseOwnerExitedIsALeftoverAndStops(t *testing.T) {
 		if !strings.Contains(out2, want) {
 			t.Fatalf("debug state missing %q:\n%s", want, out2)
 		}
+	}
+}
+
+// An open WatchSessions stream ends cleanly, and does not hold up berthd's shutdown, when berthd
+// stops.
+func TestWatchStreamEndsWhenBerthdStops(t *testing.T) {
+	h := home(t)
+	d := start(t, h)
+	c := waitServing(t, h)
+	stream, err := c.Sessions.WatchSessions(t.Context(), &berthv1.WatchSessionsRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = stream.Close() }()
+	first, err := stream.Receive()
+	if err != nil || first.GetSnapshot().GetReason() != berthv1.SnapshotReason_SNAPSHOT_REASON_START {
+		t.Fatalf("first message %v %v", first, err)
+	}
+	ended := make(chan error, 1)
+	go func() {
+		for {
+			if _, err := stream.Receive(); err != nil {
+				ended <- err
+				return
+			}
+		}
+	}()
+	stopped := time.Now()
+	_ = d.cmd.Process.Signal(syscall.SIGTERM)
+	select {
+	case err := <-ended:
+		if !errors.Is(err, io.EOF) {
+			t.Fatalf("stream ended with %v, want a clean end", err)
+		}
+	case <-time.After(3 * time.Second):
+		t.Fatal("stream still open 3 seconds after SIGTERM")
+	}
+	if err := d.cmd.Wait(); err != nil {
+		t.Fatalf("berthd exited with %v", err)
+	}
+	if took := time.Since(stopped); took > 4*time.Second {
+		t.Fatalf("berthd took %v to stop with a stream open", took)
 	}
 }

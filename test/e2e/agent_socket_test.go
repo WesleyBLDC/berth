@@ -80,6 +80,15 @@ func TestAgentSocketServesOnlyAgentMethods(t *testing.T) {
 			_, err := agent.Sessions.StopSession(ctx, &berthv1.StopSessionRequest{RequestId: "agent-stop-0002", Id: "1-1"})
 			return err
 		},
+		"WatchSessions": func() error {
+			stream, err := agent.Sessions.WatchSessions(ctx, &berthv1.WatchSessionsRequest{})
+			if err != nil {
+				return err
+			}
+			defer func() { _ = stream.Close() }()
+			_, err = stream.Receive()
+			return err
+		},
 	} {
 		if err := call(); connect.CodeOf(err) != connect.CodePermissionDenied || api.ReasonOf(err) != berthv1.ErrorReason_ERROR_REASON_NOT_AGENT_METHOD {
 			t.Errorf("%s on the agent socket: got %v (%v), want PermissionDenied and NOT_AGENT_METHOD", name, err, api.ReasonOf(err))
