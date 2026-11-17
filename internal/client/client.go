@@ -16,8 +16,9 @@ import (
 )
 
 type Client struct {
-	Daemon berthv1connect.DaemonServiceClient
-	Debug  berthv1connect.DebugServiceClient
+	Daemon  berthv1connect.DaemonServiceClient
+	Debug   berthv1connect.DebugServiceClient
+	Secrets berthv1connect.SecretsServiceClient
 }
 
 // Connect dials the socket and performs the protocol handshake before returning.
@@ -32,7 +33,11 @@ func Connect(ctx context.Context, socketPath, name string) (*Client, error) {
 		},
 	}
 	c := connect.NewClient(connecthttp.NewTransport(&http.Client{Transport: transport}, "http://berthd"))
-	cl := &Client{Daemon: berthv1connect.NewDaemonServiceClient(c), Debug: berthv1connect.NewDebugServiceClient(c)}
+	cl := &Client{
+		Daemon:  berthv1connect.NewDaemonServiceClient(c),
+		Debug:   berthv1connect.NewDebugServiceClient(c),
+		Secrets: berthv1connect.NewSecretsServiceClient(c),
+	}
 	if _, err := cl.Daemon.Handshake(ctx, &berthv1.HandshakeRequest{ProtocolVersion: api.ProtocolVersion, ClientName: name}); err != nil {
 		if api.ReasonOf(err) == berthv1.ErrorReason_ERROR_REASON_PROTOCOL_MISMATCH {
 			return nil, fmt.Errorf("version mismatch: %w", err)
