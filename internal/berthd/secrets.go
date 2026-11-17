@@ -406,6 +406,12 @@ func (s *secrets) GrantSecret(ctx context.Context, req *berthv1.GrantSecretReque
 	if interpreter && !req.GetAllowInterpreter() {
 		return nil, api.ErrInterpreter
 	}
+	// berth run starts only a child whose live cdhash is this one, so a grant without one could
+	// never be used.
+	if exe.CDHash == (ports.CDHash{}) {
+		s.Log.Info("executable has no code directory hash to pin", "path", exe.Path)
+		return nil, api.ErrExecutableNotFound
+	}
 	facts, err := s.facts(ctx, peer)
 	if err != nil {
 		return nil, err
@@ -533,8 +539,13 @@ func (s *secrets) AuthorizeUse(ctx context.Context, req *berthv1.AuthorizeUseReq
 		}
 		switch grant.State(st) {
 		case grant.Active:
-			if g.Exe.SHA256 != exe.SHA256 {
-				if _, _, err := step(ctx, s.grants, grant.Entity(g.ID), grant.Event{Kind: grant.HashChanged, Note: "sha256 now " + shortHex(exe.SHA256)}, nil, grant.HashChanged); err != nil {
+			// A grant from before cdhash pins, or a script whose interpreter changed, is stale too.
+			if g.Exe.SHA256 != exe.SHA256 || g.Exe.CDHash != exe.CDHash {
+				note := "sha256 now " + shortHex(exe.SHA256)
+				if g.Exe.SHA256 == exe.SHA256 {
+					note = "cdhash now " + hex.EncodeToString(exe.CDHash[:6])
+				}
+				if _, _, err := step(ctx, s.grants, grant.Entity(g.ID), grant.Event{Kind: grant.HashChanged, Note: note}, nil, grant.HashChanged); err != nil {
 					return nil, err
 				}
 				stale = true
@@ -589,7 +600,7 @@ func (s *secrets) authorize(ctx context.Context, g ports.GrantRecord, exe ports.
 	}
 	return &berthv1.AuthorizeUseResponse{
 		Outcome: berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED, Ticket: got.ticket[:], ExpiresAt: timestamppb.New(got.expires),
-		PassEnv: envpolicy.Filter(g.PassEnv),
+		PassEnv: envpolicy.Filter(g.PassEnv), Cdhash: g.Exe.CDHash[:],
 	}, nil
 }
 

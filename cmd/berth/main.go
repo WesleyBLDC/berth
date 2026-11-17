@@ -29,6 +29,7 @@ func main() {
 		ConnectTrusted: connectTrusted,
 		Read:           read,
 		StartProxy:     startProxy,
+		BeforeStart:    beforeStart,
 	}))
 }
 

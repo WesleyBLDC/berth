@@ -139,4 +139,11 @@ What the e2e proves, and what it does not:
 - The canary run: A gets exactly `Bearer <canary>` once; B, not granted, gets the client's placeholder header untouched; plain HTTP gets 405 and never reaches A; C, granted but self signed, sees a failed TLS handshake and no request while the client gets 502 on its `CONNECT`; a wrong or missing credential gets 407; the canary is in no environment dump, CLI or child output, `berthd` log, database file or proxy temp file (checked during and after the run); the session ends `Ended` with one injected request.
 - Lifecycle: a revoke during a run stops injection and the session ends `Ended`; `SIGKILL` on the proxy makes the session `Lost` through kqueue `NOTE_EXIT`; `rotate` puts the new value in the next run; `rm` revokes the grants and the next `berth run --proxy` exits 8 with no session; `berth-proxy` with `GODEBUG` exits 2 before contacting `berthd`.
 - Ticket kinds: the fake helper's `trust_parent` switch takes the parent to be the other kind without checking its signature, so the e2e proves `berthd` records and returns the consumer kind and the helper refuses a mismatch; the signature half of the receiver check rests on the receiver table tests in `native/Tests/BerthNativeCoreTests/ReceiverTests.swift` and Wesley's manual check.
-- Remaining for the exit gate: item 7, the agent safety checklist walk for E2b, and Wesley's manual check with real signing, Touch ID and a real API with a test key.
+- Remaining for the exit gate: the agent safety checklist walk for E2b, and Wesley's manual check with real signing, Touch ID and a real API with a test key.
+
+## Exit notes (item 7)
+
+- Grants pin a cdhash (migration 0006, `AuthorizeUseResponse.cdhash`); `berth run --env` spawns the child with `POSIX_SPAWN_START_SUSPENDED` through libSystem trampolines (`internal/spawn`), compares the kernel's live cdhash by `csops`, then sends `SIGCONT` or `SIGKILL` (exit 6).
+- `TestSwappedBinaryNeverRuns` swaps the granted file through a `berth_e2e` only hook (`BERTH_E2E_SWAP_EXE`) after `AuthorizeUse`; the swapped binary never runs, proven by its marker file.
+- Scripts are checked by their interpreter's cdhash, so the race stays open for a script's own bytes; grants older than 0006 go Stale at their first use and must be granted again.
+- `berth run --proxy` still starts its child with `exec.Cmd`: that child holds no value, so the race does not apply.

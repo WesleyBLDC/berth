@@ -122,9 +122,11 @@ func eachMethod(f func(m protoreflect.MethodDescriptor)) {
 }
 
 // TestNoFieldCarriesAValue pins the only places that could hold secret material: bytes fields
-// (tickets, which are not values) and fields named for a value (the proxy header's fixed text).
+// (tickets and a pinned cdhash, which are not values) and fields named for a value (the proxy
+// header's fixed text).
 func TestNoFieldCarriesAValue(t *testing.T) {
 	allowed := []string{
+		"berth.v1.AuthorizeUseResponse.cdhash",
 		"berth.v1.AuthorizeUseResponse.ticket",
 		"berth.v1.ProxyTarget.value_prefix",
 		"berth.v1.ProxyTarget.value_suffix",

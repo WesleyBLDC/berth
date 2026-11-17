@@ -16,6 +16,7 @@ import (
 
 	berthv1 "berth/gen/berth/v1"
 	"berth/gen/berth/v1/berthv1connect"
+	"berth/internal/adapters/execid"
 	"berth/internal/client"
 )
 
@@ -26,15 +27,17 @@ func TestMain(m *testing.M) {
 
 type fakeSecrets struct {
 	berthv1connect.UnimplementedSecretsServiceHandler
-	store     berthv1.StoreOutcome
-	storeErr  error
-	reasons   []string
-	list      *berthv1.ListSecretsResponse
-	use       berthv1.UseOutcome
-	useArgv   []string
-	useExe    string
-	useErr    error
-	passEnv   []string
+	store    berthv1.StoreOutcome
+	storeErr error
+	reasons  []string
+	list     *berthv1.ListSecretsResponse
+	use      berthv1.UseOutcome
+	useArgv  []string
+	useExe   string
+	useErr   error
+	passEnv  []string
+	// cdhash is what AuthorizeUse pins; nil pins the file's real cdhash, as berthd would.
+	cdhash    []byte
 	authorize int
 	target    *berthv1.ProxyTarget
 	grant     berthv1.GrantOutcome
@@ -87,15 +90,22 @@ func (f *fakeSecrets) ListSecrets(context.Context, *berthv1.ListSecretsRequest) 
 	return f.list, nil
 }
 
-func (f *fakeSecrets) AuthorizeUse(_ context.Context, req *berthv1.AuthorizeUseRequest) (*berthv1.AuthorizeUseResponse, error) {
+func (f *fakeSecrets) AuthorizeUse(ctx context.Context, req *berthv1.AuthorizeUseRequest) (*berthv1.AuthorizeUseResponse, error) {
 	f.authorize++
 	f.useExe, f.useArgv = req.GetExePath(), req.GetArgv()
 	if f.useErr != nil {
 		return nil, f.useErr
 	}
-	resp := &berthv1.AuthorizeUseResponse{Outcome: f.use, PassEnv: f.passEnv}
+	resp := &berthv1.AuthorizeUseResponse{Outcome: f.use, PassEnv: f.passEnv, Cdhash: f.cdhash}
 	if f.use == berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED {
 		resp.Ticket = bytes.Repeat([]byte{7}, 32)
+		if f.cdhash == nil {
+			exe, err := execid.New(execid.DefaultCodesign).Identify(ctx, req.GetExePath())
+			if err != nil {
+				return nil, err
+			}
+			resp.Cdhash = exe.CDHash[:]
+		}
 	}
 	return resp, nil
 }

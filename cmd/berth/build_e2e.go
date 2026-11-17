@@ -4,6 +4,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 
 	"berth/internal/paths"
 )
@@ -23,4 +24,23 @@ func proxyBinary() (string, error) {
 		return p, nil
 	}
 	return paths.Beside("berth-proxy")
+}
+
+// beforeStart swaps the granted file for BERTH_E2E_SWAP_EXE after berthd checked it and before
+// berth run starts it, so the end to end tests can prove the suspended cdhash check catches the
+// race; release builds have no such hook.
+func beforeStart(exe string) error {
+	src := os.Getenv("BERTH_E2E_SWAP_EXE")
+	if src == "" {
+		return nil
+	}
+	b, err := os.ReadFile(src) //nolint:gosec // a test fixture the end to end test names
+	if err != nil {
+		return err
+	}
+	tmp := filepath.Join(filepath.Dir(exe), ".swap")
+	if err := os.WriteFile(tmp, b, 0o700); err != nil { //nolint:gosec // an executable fixture
+		return err
+	}
+	return os.Rename(tmp, exe)
 }

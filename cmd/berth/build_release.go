@@ -10,3 +10,6 @@ func nativeHelper() (string, error) { return paths.Beside("berth-native") }
 
 // proxyBinary is always the berth-proxy beside the resolved berth executable.
 func proxyBinary() (string, error) { return paths.Beside("berth-proxy") }
+
+// beforeStart is nil: nothing runs between berthd's check and the suspended start.
+var beforeStart func(exe string) error

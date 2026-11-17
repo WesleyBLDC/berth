@@ -40,6 +40,8 @@ var (
 	helperHash = ports.CDHash{0xe1}
 	proxyHash  = ports.CDHash{0xf1}
 	signedLive = ports.CSValid | ports.CSRuntime
+	toolCDHash = ports.CDHash{0x7c}
+	shCDHash   = ports.CDHash{0x5c}
 )
 
 func peerOf(pid int) ports.Peer { return ports.Peer{PID: pid, AuditToken: [32]byte{byte(pid)}} }
@@ -112,10 +114,10 @@ func newFixtureWith(t *testing.T, approver ports.Approver, tickets ports.TicketS
 	t.Cleanup(func() { _ = store.Close() })
 	fake, _ := approver.(*testutil.Approver)
 	execs := testutil.NewExecIdentity()
-	execs.Set(tool, ports.Executable{Path: toolReal, SHA256: [32]byte{1}})
-	execs.Set(toolReal, ports.Executable{Path: toolReal, SHA256: [32]byte{1}})
-	execs.Set("/bin/sh", ports.Executable{Path: "/bin/sh", SHA256: [32]byte{3}})
-	execs.Set("/opt/x/deploy.sh", ports.Executable{Path: "/opt/x/deploy.sh", SHA256: [32]byte{4}, Shebang: true})
+	execs.Set(tool, ports.Executable{Path: toolReal, SHA256: [32]byte{1}, CDHash: toolCDHash})
+	execs.Set(toolReal, ports.Executable{Path: toolReal, SHA256: [32]byte{1}, CDHash: toolCDHash})
+	execs.Set("/bin/sh", ports.Executable{Path: "/bin/sh", SHA256: [32]byte{3}, CDHash: shCDHash})
+	execs.Set("/opt/x/deploy.sh", ports.Executable{Path: "/opt/x/deploy.sh", SHA256: [32]byte{4}, Shebang: true, CDHash: shCDHash})
 	peers := testutil.NewPeerFacts()
 	peers.Set(ports.Requester{PID: agentPID, Executable: "/usr/local/bin/claude", WorkingDir: "/w"})
 	peers.Set(ports.Requester{PID: berthPID, Executable: "/usr/local/bin/berth", Tree: []ports.Process{{PID: agentPID}}})
@@ -287,7 +289,7 @@ func TestHashChangeMakesTheGrantStale(t *testing.T) {
 	f := newFixture(t, &testutil.Approver{})
 	f.request(t)
 	id := f.grant(t, "").GetConsumer().GetGrantId()
-	f.execs.Set(tool, ports.Executable{Path: toolReal, SHA256: [32]byte{2}})
+	f.execs.Set(tool, ports.Executable{Path: toolReal, SHA256: [32]byte{2}, CDHash: toolCDHash})
 	for range 2 {
 		if got := f.use(t).GetOutcome(); got != berthv1.UseOutcome_USE_OUTCOME_STALE_GRANT {
 			t.Fatalf("outcome %v", got)
@@ -301,6 +303,36 @@ func TestHashChangeMakesTheGrantStale(t *testing.T) {
 	f.grant(t, "")
 	if got := f.use(t).GetOutcome(); got != berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED {
 		t.Fatalf("after regrant %v", got)
+	}
+}
+
+// TestGrantPinsTheCDHash: berth run compares the suspended child's live cdhash with the one
+// AuthorizeUse returns, which berthd read when the person granted the executable.
+func TestGrantPinsTheCDHash(t *testing.T) {
+	f := newFixture(t, &testutil.Approver{})
+	f.request(t)
+	f.grant(t, "")
+	if got := f.use(t).GetCdhash(); string(got) != string(toolCDHash[:]) {
+		t.Fatalf("cdhash %x, want %x", got, toolCDHash)
+	}
+	// The file hashes the same but the kernel would run another image, as when a script's
+	// interpreter is replaced: the grant goes stale.
+	f.execs.Set(tool, ports.Executable{Path: toolReal, SHA256: [32]byte{1}, CDHash: ports.CDHash{0x99}})
+	if got := f.use(t).GetOutcome(); got != berthv1.UseOutcome_USE_OUTCOME_STALE_GRANT {
+		t.Fatalf("outcome %v", got)
+	}
+	// With no cdhash to pin, berth run could never start the consumer, so there is no grant.
+	f.execs.Set("/opt/x/unsigned", ports.Executable{Path: "/opt/x/unsigned", SHA256: [32]byte{5}})
+	if _, err := f.s.GrantSecret(t.Context(), &berthv1.GrantSecretRequest{Name: "gh-token", ExePath: "/opt/x/unsigned"}, peerOf(berthPID)); !errors.Is(err, api.ErrExecutableNotFound) {
+		t.Fatalf("grant without a cdhash: %v", err)
+	}
+	// A script pins its interpreter's cdhash, which is what the kernel reports for it.
+	if _, err := f.s.GrantSecret(t.Context(), &berthv1.GrantSecretRequest{Name: "gh-token", ExePath: "/opt/x/deploy.sh", AllowInterpreter: true}, peerOf(berthPID)); err != nil {
+		t.Fatal(err)
+	}
+	resp, err := f.s.AuthorizeUse(t.Context(), &berthv1.AuthorizeUseRequest{Name: "gh-token", ExePath: "/opt/x/deploy.sh"}, peerOf(berthPID))
+	if err != nil || string(resp.GetCdhash()) != string(shCDHash[:]) {
+		t.Fatalf("script use %v %v", resp, err)
 	}
 }
 

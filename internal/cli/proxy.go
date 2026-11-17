@@ -151,7 +151,7 @@ func runProxied(ctx context.Context, names []string, exe string, argv []string, 
 		return ExitProxyFailed
 	}
 	go func() { _, _ = io.Copy(io.Discard, p.Stdout) }()
-	code := startChild(ctx, exe, argv, proxyChildEnv(os.Environ(), ctl), nil, nil, env)
+	code := startChild(ctx, exe, argv, proxyChildEnv(os.Environ(), ctl), env)
 	stopProxy(p, env, false)
 	return code
 }

@@ -103,7 +103,7 @@ The proxy exits 0 when it ended normally, 1 on an error (berthd, `berth-native` 
 | 3 | The person denied the dialog or Touch ID |
 | 4 | The store, grant, rotate or remove failed |
 | 5 | `run`: no grant lets this executable use the secret; nothing started |
-| 6 | `run`: the executable changed since it was granted; nothing started |
+| 6 | `run`: the executable changed since it was granted, or the image the kernel loaded is not the granted code (killed while suspended); nothing ran |
 | 7 | The secret is busy: a store, rotate or remove dialog or a grant's Touch ID is open (`ERROR_REASON_BUSY`) |
 | 8 | `run --proxy`: `berth-proxy` did not start or answered badly; nothing started |
 
@@ -135,7 +135,7 @@ flowchart LR
 | Policies | `internal/core/{envpolicy,hostpolicy}/` | stdlib only | Pure rules the daemon and its clients must apply alike: which variables a consumer gets, which proxy hosts are local |
 | Adapters | `internal/adapters/{sqlite,socket,api,clock,native,execid,peer,ticket}/` | core, gen | Implementations of the ports and the API handlers |
 | Shell | `internal/berthd/` | everything | Wires adapters, runs actors, performs effects |
-| Clients | `internal/client/`, `internal/cli/`, `internal/proxy/`, `internal/peertrust/`, `cmd/` | gen, api, adapters | The Go client, the CLI logic, the `berth-proxy` logic, the shared rule for trusting signed Berth peers and the signed `berthd` (release or `berth_e2e`), thin entry points |
+| Clients | `internal/client/`, `internal/cli/`, `internal/proxy/`, `internal/peertrust/`, `internal/spawn/`, `cmd/` | gen, api, adapters | The Go client, the CLI logic, the `berth-proxy` logic, the shared rule for trusting signed Berth peers and the signed `berthd` (release or `berth_e2e`), the suspended start and live cdhash read for `berth run`, thin entry points |
 | Fakes | `internal/testutil/` | ports | In memory store, fake clock, scriptable secrets fakes |
 
 The rules are enforced by `golangci-lint`, not by convention:
@@ -303,7 +303,7 @@ One SQLite file, `$BERTH_HOME/berth.db`, through the pure Go driver `modernc.org
 | `machine_event` | 0001 | Every transition: entity, version, event, from and to state, a secret free detail, time; unique per entity and version |
 | `request_log` | 0001 | The first response to each mutating `request_id`, so retries replay instead of acting twice |
 | `secrets` | 0002 | Secret names and creation time; never values |
-| `grants` | 0002, rebuilt by 0004 | Pinned consumers: kind (`exe` or `proxy`); for `exe` the resolved path, SHA-256, team and signing ID, argument glob and passed variables; for `proxy` the host, port, header, value prefix and suffix, path glob, methods and placeholder variable; use count and last use. CHECKs refuse a row mixing the two, and the rebuild kept every id |
+| `grants` | 0002, rebuilt by 0004, 0006 | Pinned consumers: kind (`exe` or `proxy`); for `exe` the resolved path, SHA-256, cdhash (the interpreter's for a script; empty for grants older than 0006), team and signing ID, argument glob and passed variables; for `proxy` the host, port, header, value prefix and suffix, path glob, methods and placeholder variable; use count and last use. CHECKs refuse a row mixing the two, and the rebuild kept every id |
 | `proxy_sessions` | 0005 | One row per `berth-proxy` run: id, proxy pid, created and ended time, injected and refused counts; never paths, request details or values |
 | `proxy_session_grants` | 0005 | Which proxy grants each session holds tickets for, so a revoke finds the sessions to stop |
 
@@ -333,7 +333,7 @@ Instructions and prompts are never a security control.
 
 Agents may store a secret (the person types it into a native dialog) and use one (Berth injects it where it was granted), but never read one ([ADR 0012](docs/adr/0012-agents-can-store-and-use-secrets-never-read-them.md)).
 
-- No message in the schema carries a value; values exist only inside `berth-native`, in the child process `berth run --env` starts, and in the `berth-proxy` of a `berth run --proxy`, never in its child.
+- No message in the schema carries a value; values exist only inside `berth-native`, in the child process `berth run --env` starts (and in `berth` as bytes until the child holds them), and in the `berth-proxy` of a `berth run --proxy`, never in its child.
 - In Go a value is a `[]byte`, zeroed after use, never a `string`, never in a log, error, event note or reply.
 - Keychain items Berth creates use the service prefix `berth.` so they never collide with existing items.
 - Dialog and Touch ID text is built only from facts `berthd` verified from the kernel (peer process, executable, process tree, working directory) and from the file on disk (path, SHA-256, code signature); the requester's reason is shown quoted and labelled as the requester's claim, and never stored in an event.
@@ -348,13 +348,15 @@ sequenceDiagram
   participant N as berth-native
   R->>D: AuthorizeUse(name, exe, argv)
   D->>D: caller is the signed berth? hash exe itself, match an Active grant
-  D-->>R: ticket (32 bytes, 30 s, one use)
+  D-->>R: ticket (32 bytes, 30 s, one use), the grant's pinned cdhash
   R->>N: read, ticket on stdin, socketpair end on fd 3
   N->>N: fd 3 peer is my parent and the signed berth?
   N->>D: RedeemUseTicket(ticket)
   D-->>N: name (only to the signed helper)
   N-->>R: value bytes over the socketpair
-  R->>R: put in child env, zero copy, mask output
+  R->>R: posix_spawn the child suspended, value in its env as bytes, zero copies
+  R->>R: live cdhash of the child equals the pin? SIGCONT, else SIGKILL
+  R->>R: mask output
 ```
 
 - **Who may hold a ticket.** A ticket lets its holder start `berth-native` and read the value, so `berthd` issues one only when the `AuthorizeUse` caller is the signed `berth` CLI, which puts the value straight into its child. Any other process, including one an agent wrote, gets `ERROR_REASON_PEER_NOT_TRUSTED`.
@@ -365,6 +367,9 @@ sequenceDiagram
 - Pins are read from a private copy (0600 in a fresh 0700 folder) so the requirement check and the hash see the same bytes, and a file is pinned again at most once every 10 seconds. The copy does not stop a same-user process from swapping the file before it is copied: a swapped pin can at worst make Berth trust a fake CLI or helper, and the receiver check stops that fake from getting a value.
 - An unsigned development `berth run` is refused with a message to run `make build`. The end to end tests compile a test only pin rule (`-tags berth_e2e`, no environment variable) that accepts ad hoc signed binaries beside `berthd`, still requiring the hardened runtime.
 - `berthd` identifies the executable itself and never trusts a client hash; a changed hash moves the grant to `Stale`.
+- **The file cannot change between the check and the start.** A grant pins the executable's cdhash as well as its SHA-256, read with `codesign` when the person grants it (migration 0006), and `AuthorizeUse` returns that pin. `berth run --env` starts the child with `posix_spawn` and `POSIX_SPAWN_START_SUSPENDED`, so the kernel loads the image and stops before its first instruction, then asks the kernel for the child's live cdhash and signature status (`csops` by pid; an unreaped child keeps its pid, so the pid names no other process). On a match with a valid signature it sends `SIGCONT`; otherwise it sends `SIGKILL`, the child never runs, and `berth run` exits 6. Apple silicon kills a process whose pages fail their code directory hashes, so the cdhash identifies the code that runs. Every arm64 Mach-O carries at least an ad hoc linker signature, whose cdhash serves; an executable with no cdhash at all cannot be granted (`EXECUTABLE_NOT_FOUND`), and a grant made before cdhash pins goes `Stale` at its first use and must be granted again.
+- The suspended child gets exactly stdin, stdout and stderr (`POSIX_SPAWN_CLOEXEC_DEFAULT`), an empty signal mask and berth's process group, and its environment is built from `[]byte` all the way, so `berth` never turns a value into a Go string. `posix_spawn` is reached through libSystem trampolines, as `golang.org/x/sys/unix` reaches libc, with no cgo.
+- **Scripts stay open to the race.** A `#!` script is not Mach-O: the kernel runs its interpreter, so the pin and the live check are the interpreter's cdhash (for `#!/usr/bin/env python3`, `env`'s), and the script's own bytes can still change between `AuthorizeUse` and the start. Scripts are interpreters and need `--allow-interpreter` already.
 - A grant to an interpreter (a shell, `python`, `perl`, `ruby`, `node`, `osascript`, `env`, or any `#!` file) is refused unless `--allow-interpreter` is passed, and then the Touch ID text says the interpreter can print the secret.
 - **The consumer's environment.** The child gets only `HOME`, `PATH`, `TERM`, `LANG`, `LC_ALL`, `LC_CTYPE`, `USER`, `LOGNAME`, `SHELL`, `TMPDIR`, the bound secret keys, and the names its grant lists (`berth secret grant --pass-env NAME`, shown in the Touch ID text, returned by `AuthorizeUse`; with several secrets, only names every grant lists). `DYLD_*`, `LD_*`, `*_OPTIONS`, `*_OPTS` and `*OPT` are always dropped, even when listed, because they make a tool load or run other code. Interpreters and tools that run configured commands (`git`, `ssh`, `make`, `find`, `xargs`, `awk`, editors, `java`, `swift`, `expect`) need `--allow-interpreter`.
 - A ticket is bound to the secret name, the executable hash and the caller's process ID, lives only in memory, and is valid once for 30 seconds.
@@ -428,7 +433,7 @@ Running agents under a separate user or in a sandbox (E3) is the stronger isolat
 ### Honest limits
 
 - Any process that holds a secret can leak it: environment injection is only as safe as the command it is pinned to, which is why grants pin the exact executable and an optional argument glob, and why the header proxy is the mode for API keys.
-- The executable can change between `AuthorizeUse` hashing it and `berth run` starting it; E2b item 7 closes that gap by starting the child suspended and comparing its live cdhash before it runs.
+- A granted `#!` script can change between `AuthorizeUse` hashing it and `berth run` starting it, since the suspended check sees only its interpreter; for Mach-O consumers the suspended cdhash check closes that gap.
 - Environment injection protects against accidental exposure and limits what an agent can steer through variables, but a process running as the same user can still configure a tool through its dotfiles (for example `~/.gitconfig` or `~/.npmrc`), so a hostile agent can make a configurable tool reveal a secret from its environment. The consumer also gets the caller's `PATH` and `HOME`, so a tool that starts other programs through `PATH` can start one the agent placed earlier in `PATH`, and one that reads files under `HOME` reads what the agent left there. The header proxy is the mode for strong isolation of API keys.
 - **The proxy credential sits in the child's environment**, readable by any process of the same user while the run lives. It grants only use of the granted hosts, within the grant's method and path limits, until the run ends or the grant is revoked; never the value.
 - **What a hostile same user agent can still do with the proxy:** use the key against the granted host while a run lives; turn use into a readable credential if the API mints keys or echoes request headers (the method and path limits narrow this); exfiltrate data through the granted API itself; start `berth-proxy` directly, which gives it nothing beyond `berth run --proxy`; and deny service. It cannot read the value, send it to another host, send it over cleartext, keep using it after a revoke or remove, or find it in `berth`, `berthd`, the child, files or logs.
@@ -461,7 +466,7 @@ Each milestone starts from a plan in [`docs/plans/`](docs/plans) with acceptance
 | M4 Managed Chromium | `BrowserDriver` over a private CDP pipe, the token gated CDP proxy, profile locks, session tokens, `berth-mcp` | Planned |
 | M5 Mac app | `Berth.app`, login item registration, live view and takeover, window pictures, notifications | Planned |
 | M6 Credentials and runbooks | Browser grants, the atomic fill, hard limits per profile, runbooks served to agents | Planned |
-| E2b Header proxy and secret lifecycle | `berth-proxy` and `berth run --proxy`, `berth secret proxy`, `revoke`, `rm`, `rotate`, the proxy session machine | In progress: built and wired with the canary and lifecycle end to end tests; item 7 (the hash to exec race) and the manual check with real signing, Touch ID and a real API remain. `copy` moved to E3 or M5, MCP tools to M4 ([plan](docs/plans/e2b-header-proxy.md)) |
+| E2b Header proxy and secret lifecycle | `berth-proxy` and `berth run --proxy`, `berth secret proxy`, `revoke`, `rm`, `rotate`, the proxy session machine | In progress: built and wired with the canary and lifecycle end to end tests, and item 7 closes the hash to exec race for Mach-O consumers; the manual check with real signing, Touch ID and a real API remains. `copy` moved to E3 or M5, MCP tools to M4 ([plan](docs/plans/e2b-header-proxy.md)) |
 | E1 Other password stores | Helper contract with 1Password and Bitwarden helpers | Optional |
 | M7 Firefox and your daily Chrome | WebDriver BiDi adapter; connecting to your own Chrome as a Touch ID power action | Planned |
 | M8 Release | License, signed and notarized build, tamper evident audit log, published signature format, first tagged release | Planned |

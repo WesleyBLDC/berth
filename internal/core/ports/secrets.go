@@ -12,6 +12,9 @@ type Executable struct {
 	SigningID string
 	// Shebang is true when the file starts with #!, so it runs under an interpreter.
 	Shebang bool
+	// CDHash is what the kernel reports for a process started from the file: the file's own code
+	// directory hash, or for a #! script its interpreter's. Zero when there is none to read.
+	CDHash CDHash
 }
 
 // Signed reports whether the code signature named a team.

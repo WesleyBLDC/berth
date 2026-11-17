@@ -96,6 +96,9 @@ type Env struct {
 	Read ValueReader
 	// StartProxy starts berth-proxy for berth run --proxy, which refuses without it.
 	StartProxy ProxyStarter
+	// BeforeStart runs just before berth run --env starts its child; only berth_e2e builds set
+	// it, so the end to end tests can swap the file after berthd checked it.
+	BeforeStart func(exe string) error
 }
 
 // Run executes one berth command and returns its exit code.

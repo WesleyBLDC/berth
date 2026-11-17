@@ -45,18 +45,21 @@ func (s *Store) AddGrant(ctx context.Context, g ports.GrantRecord) (int64, error
 	if kind == "" {
 		kind = ports.ConsumerExe
 	}
-	var sum string
+	var sum, cdhash string
 	if kind == ports.ConsumerExe {
 		sum = hex.EncodeToString(g.Exe.SHA256[:])
+		if g.Exe.CDHash != (ports.CDHash{}) {
+			cdhash = hex.EncodeToString(g.Exe.CDHash[:])
+		}
 	}
 	p := g.Proxy
 	res, err := s.db.ExecContext(ctx,
 		`INSERT INTO grants (secret_name, kind, exe_path, sha256, team_id, signing_id, args_glob, pass_env,
 		 proxy_host, proxy_port, proxy_header, proxy_value_prefix, proxy_value_suffix, proxy_path_glob, proxy_methods,
-		 proxy_placeholder_env, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		 proxy_placeholder_env, created_at, cdhash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
 		g.Secret, string(kind), g.Exe.Path, sum, g.Exe.TeamID, g.Exe.SigningID, g.ArgsGlob, strings.Join(g.PassEnv, ","),
 		p.Host, p.Port, p.HeaderName, p.ValuePrefix, p.ValueSuffix, p.PathGlob, strings.Join(p.Methods, ","),
-		p.PlaceholderEnv, g.CreatedAt.UnixMicro())
+		p.PlaceholderEnv, g.CreatedAt.UnixMicro(), cdhash)
 	if err != nil {
 		return 0, err
 	}
@@ -65,17 +68,17 @@ func (s *Store) AddGrant(ctx context.Context, g ports.GrantRecord) (int64, error
 
 const grantColumns = `id, secret_name, kind, exe_path, sha256, team_id, signing_id, args_glob, pass_env,
 	proxy_host, proxy_port, proxy_header, proxy_value_prefix, proxy_value_suffix, proxy_path_glob, proxy_methods,
-	proxy_placeholder_env, created_at, last_used_at, use_count`
+	proxy_placeholder_env, created_at, last_used_at, use_count, cdhash`
 
 func scanGrant(row interface{ Scan(...any) error }) (ports.GrantRecord, error) {
 	var g ports.GrantRecord
-	var kind, sum, passEnv, methods string
+	var kind, sum, passEnv, methods, cdhash string
 	var created int64
 	var lastUsed sql.NullInt64
 	p := &g.Proxy
 	if err := row.Scan(&g.ID, &g.Secret, &kind, &g.Exe.Path, &sum, &g.Exe.TeamID, &g.Exe.SigningID, &g.ArgsGlob, &passEnv,
 		&p.Host, &p.Port, &p.HeaderName, &p.ValuePrefix, &p.ValueSuffix, &p.PathGlob, &methods,
-		&p.PlaceholderEnv, &created, &lastUsed, &g.UseCount); err != nil {
+		&p.PlaceholderEnv, &created, &lastUsed, &g.UseCount, &cdhash); err != nil {
 		return g, err
 	}
 	g.Kind = ports.ConsumerKind(kind)
@@ -85,6 +88,13 @@ func scanGrant(row interface{ Scan(...any) error }) (ports.GrantRecord, error) {
 			return g, fmt.Errorf("grant %d has a malformed sha256", g.ID)
 		}
 		copy(g.Exe.SHA256[:], raw)
+		if cdhash != "" {
+			raw, err := hex.DecodeString(cdhash)
+			if err != nil || len(raw) != len(g.Exe.CDHash) {
+				return g, fmt.Errorf("grant %d has a malformed cdhash", g.ID)
+			}
+			copy(g.Exe.CDHash[:], raw)
+		}
 	}
 	if passEnv != "" {
 		g.PassEnv = strings.Split(passEnv, ",")
