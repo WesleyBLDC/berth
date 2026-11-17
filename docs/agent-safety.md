@@ -7,7 +7,16 @@ The core rule: Berth never trusts the agent's judgement.
 Every agent can be hijacked by text on a web page or in a repository, so every limit is enforced by deterministic code outside the model: the daemon, the native helper, the CDP proxy and Touch ID.
 Instructions and prompts are never a security control.
 
-Most controls below are planned for the browser milestones (M4 to M6); each row says which exist today.
+Each row says which controls exist today; the browser credential controls are still planned (M6).
+
+What each milestone added:
+
+| Milestone | Control |
+|---|---|
+| E2a, E2b | Values only in `berth-native`, the granted child or `berth-proxy`; grants pinned to an executable or a proxy target; Touch ID on power actions |
+| E3 (items 3, 4, 6) | A separate agent socket that serves only the marked methods; a session token on every call there, bound to the agent uid and its process tree; store dialogs and proxy starts limited per session; the proxy of an agent session started by `berthd`, so the agent never holds the process that holds a value. The separate macOS user itself is not set up yet |
+| M2, M3 | Discovery is read only and off the agent surface; raw process arguments never leave `berthd`; text a process chose is escaped before it reaches a terminal; memory per session is bounded |
+| M4 (items 1 to 6) | Chromium only over a private pipe on a Berth profile; a per browser token; a CDP filter that parses strictly and fails closed. Not on the agent surface until item 7 |
 
 ## Why browser agents are the hard case
 
@@ -23,16 +32,16 @@ Most controls below are planned for the browser milestones (M4 to M6); each row 
 
 | Risk | How it hits Berth | Control | Status |
 |---|---|---|---|
-| ASI01 Goal hijack | A page tells the agent to log in somewhere else or send data out | Site binding on every fill; a per profile site allowlist enforced in the browser; session token scope; for API keys, the header proxy writes the key only into requests to the granted host and port | Header proxy built (E2b); the rest planned (M4, M6) |
-| ASI02 Tool misuse | The agent calls tools in harmful combinations | A short agent method allowlist pinned by `TestAgentSurface`; CDP methods outside the session refused; rate limits per session | Allowlist built; the rest planned |
+| ASI01 Goal hijack | A page tells the agent to log in somewhere else or send data out | Site binding on every fill; a per profile site allowlist enforced in the browser; session token scope; for API keys, the header proxy writes the key only into requests to the granted host and port | Header proxy built (E2b); session token scope built for the agent socket (E3 item 4); site binding and the allowlist planned (M6) |
+| ASI02 Tool misuse | The agent calls tools in harmful combinations | A short agent method allowlist pinned by `TestAgentSurface`; CDP methods outside the session refused; rate limits per session | Allowlist built and enforced on the agent socket (E3 item 3); the CDP filter built (M4); store dialogs and proxy starts limited per agent session (E3 items 4, 6); fill and navigation budgets planned (M6) |
 | ASI03 Identity and privilege abuse | The agent acts as you with your logins | Grants per consumer (executable or proxy target today, profile and site later); power actions need Touch ID; strict mode | Terminal and proxy grants built; browser grants planned |
 | ASI04 Supply chain | A fake secret helper, signature file or MCP shim | The helper and `berth-proxy` are trusted by code signing team; other store helpers pinned by signing identity and added with Touch ID; signatures are data, never code; pinned dependencies, `go mod verify`, `govulncheck` | Partly built |
 | ASI05 Unexpected code execution | Agent input reaches a shell | Berth never runs a command built from agent input; helpers get a reference on stdin, never shell arguments | Built |
 | ASI06 Memory and context poisoning | The agent rewrites its own runbook to grant itself more | Agents can read runbooks, never write them; runbook changes land in the audit log | Planned (M6) |
-| ASI07 Insecure agent to agent messages | One agent impersonates another | One token per session; no agent can see or call another session | Planned (M4) |
+| ASI07 Insecure agent to agent messages | One agent impersonates another | One token per session; no agent can see or call another session | Built for the agent socket (E3 item 4): one token per agent session, the request log keyed by session, proxy sessions bound to the audit token that authorized them; one token per managed browser (M4). Limits: with one shared agent user, sessions under one long lived root share a tree, and agent browsers scoped by session wait for M4 item 7 |
 | ASI08 Cascading failures | A loop hammers a login page and locks your account | Rate limits and a circuit breaker that moves the session to Needs you | Planned (M6) |
 | ASI09 Human trust exploitation | The agent writes a convincing approval request | Dialog and Touch ID text built only from facts the daemon verified; agent supplied text shown quoted and labelled as the agent's claim | Built for secrets |
-| ASI10 Rogue agents | The agent keeps going after it should stop | Kill switch per session and for all agents; anomaly rules pause the session into Needs you | Planned |
+| ASI10 Rogue agents | The agent keeps going after it should stop | Kill switch per session and for all agents; anomaly rules pause the session into Needs you | Partly built: `berth agent session revoke` ends a session and stops its proxies at once, `berth secret revoke` and `rm` stop running proxies, `berth stop` ends a browser; a switch for all agents and anomaly rules are planned |
 
 ## The secret is never readable by the agent
 
@@ -52,7 +61,10 @@ The harness never passes a password and never receives one: the planned `fill_lo
 **Where a value never goes:** tool arguments or results, Connect or MCP messages to clients, command line arguments, files, logs, error reports, event notes, screenshots, or the agent's CDP connection.
 The deliberate exceptions are the environment of the child that `berth run --env` starts, pinned by a grant, and the locked memory of the `berth-proxy` that `berth run --proxy` starts, which sends it only to the granted host.
 
-**If a session token leaks** (planned, M4): it works only over the local socket, only as your user, only from the agent's own process tree, only for that session's agent methods, and it ends with the session; it can ask Berth to fill on a granted site, never read a value.
+**If a session token leaks** (built for the agent socket, E3 item 4): it works only on the agent socket, only as the agent user, only from the session's own process tree, only for the agent methods, and it ends with the session; it can ask for a store dialog or a proxy on an existing grant, never read a value.
+A token used before its harness first presents it binds to the thief's tree instead, which is why item 7 will hand it over an inherited descriptor.
+
+**If a CDP token leaks** (M4): any local process, of any user, can drive that one browser through the filter until the browser closes; it reaches nothing outside that browser's profile, and a new launch mints a new token.
 
 **What this cannot cover:** an agent driving a browser Berth does not own, and a command that leaks the value it was given; see the honest limits in [ARCHITECTURE.md](../ARCHITECTURE.md#honest-limits).
 
@@ -81,6 +93,9 @@ Walk this for everything a milestone added, and record the result in its plan in
 6. Every mutating method takes a `request_id`, and a retry cannot act twice.
 7. Every new failure path ends in a named state or a typed error, never a silent retry.
 8. Each OWASP agentic risk above is either covered, unchanged, or written down as a known limit with the milestone that closes it.
+9. Everything an agent, a client or a process can make grow (a map, a queue, a goroutine, an actor, a child process) has a limit, and a test that fails without it.
+10. Text an agent or a process chose is escaped (`shown`) wherever it reaches a terminal, and a token is in one reply once and never in the request log.
+11. Where Berth filters a message that another program then parses, anything the two could read differently is refused.
 
 ## Standards the project follows
 

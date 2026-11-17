@@ -11,6 +11,8 @@ Checked on 2026-11-16 on macOS 26.5.
 | `golangci-lint` | Lint with `exhaustive` and `depguard` | Installed (2.15.0) |
 | `prek` | Pre-commit hooks | Installed (0.5.11) |
 | Node and `npx` | Playwright MCP in M0 and end to end tests | Used through `npx @playwright/mcp` |
+| A Chromium | The browser end to end tests of M2, M3 and M4, which skip without one and install nothing | Found in this order: `BERTH_E2E_CHROME`, Playwright's cache (`~/Library/Caches/ms-playwright`), Puppeteer's cache (`~/.cache/puppeteer`), `/Applications/Google Chrome.app` |
+| `playwright-core`, `puppeteer-core` | The M4 driver compatibility test, which skips without them | Found in npx's cache, or through `BERTH_E2E_PLAYWRIGHT_CORE` and `BERTH_E2E_PUPPETEER_CORE` |
 | Apple ID in Xcode | Free signing for M0 to M7 | Personal Team; Apple Development certificate valid, team `XPJ7XA42J4`. It needs Apple's WWDR G3 intermediate (`AppleWWDRCAG3.cer` from apple.com/certificateauthority) in the login keychain, added 2026-11-16 |
 
 ## macOS permissions, all of them
