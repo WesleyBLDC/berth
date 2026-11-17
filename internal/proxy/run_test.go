@@ -367,6 +367,14 @@ func TestNoGrantOrBadRequestServesNothing(t *testing.T) {
 	}
 }
 
+func TestLogRedactsSecretNamedAttributes(t *testing.T) {
+	var out bytes.Buffer
+	newLog(&out).Warn("upstream said", "authorization", canary, "token", canary, "host", grantHost)
+	if strings.Contains(out.String(), canary) || !strings.Contains(out.String(), grantHost) {
+		t.Fatalf("log line %q", out.String())
+	}
+}
+
 // TestRequestMustNameItsMode: a starter that does not say whose run this is gets nothing, so the
 // proxy never falls back to tunnelling for an agent.
 func TestRequestMustNameItsMode(t *testing.T) {

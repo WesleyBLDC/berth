@@ -20,6 +20,7 @@ import (
 
 	berthv1 "berth/gen/berth/v1"
 	"berth/gen/berth/v1/berthv1connect"
+	"berth/internal/logging"
 	"berth/internal/proxyctl"
 )
 
@@ -81,7 +82,7 @@ func run(ctx context.Context, d Deps) (int, []*Grant) {
 	}
 	// A core file would hold the values.
 	_ = unix.Setrlimit(unix.RLIMIT_CORE, &unix.Rlimit{})
-	log := slog.New(slog.NewTextHandler(d.Stderr, nil))
+	log := newLog(d.Stderr)
 	fail := func(code int, msg string, err error) int {
 		if err != nil {
 			msg += ": " + err.Error()
@@ -122,7 +123,7 @@ func run(ctx context.Context, d Deps) (int, []*Grant) {
 			return fail(ExitRefused, "secret "+g.Name+" refused", err), grants
 		}
 		if !g.value.Locked() {
-			log.Warn("could not lock a secret in memory; it may reach swap", "secret", g.Name)
+			log.Warn("could not lock a secret in memory; it may reach swap", "name", g.Name)
 		}
 	}
 
@@ -224,6 +225,12 @@ func run(ctx context.Context, d Deps) (int, []*Grant) {
 		}
 	}
 	return code, grants
+}
+
+// newLog writes through the redacting handler berthd uses, so an attribute named like a secret
+// never reaches stderr, which berthd copies into its own log for an agent session's proxy.
+func newLog(w io.Writer) *slog.Logger {
+	return slog.New(logging.NewRedacting(slog.NewTextHandler(w, nil)))
 }
 
 // waitForEnd blocks until the run must end and says with what exit code, and whether berthd is
