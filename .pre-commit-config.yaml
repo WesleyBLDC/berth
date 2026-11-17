@@ -20,14 +20,11 @@ repos:
     rev: v0.17.5
     hooks:
       - id: ruff-check
-        exclude: ^spike/
       - id: ruff-format
-        exclude: ^spike/
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.11.0.1-1
     hooks:
       - id: shellcheck
-        exclude: ^spike/
   - repo: local
     hooks:
       - id: golangci-lint
@@ -47,9 +44,9 @@ repos:
         entry: scripts/lint-swift.sh
         language: system
         types: [swift]
-        exclude: ^spike/
       - id: no-dash-punctuation
         name: no em or en dashes in docs
         entry: '[—–]'
         language: pygrep
         types_or: [markdown, text]
+        exclude: ^\.pre-commit-config\.yaml$

@@ -1,0 +1,50 @@
+syntax = "proto3";
+
+package berth.v1;
+
+import "berth/v1/options.proto";
+import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
+
+// DaemonService reports and controls berthd itself.
+service DaemonService {
+  // Handshake checks that client and daemon speak the same protocol version.
+  rpc Handshake(HandshakeRequest) returns (HandshakeResponse) {
+    option (berth.v1.agent) = true;
+  }
+  rpc Status(StatusRequest) returns (StatusResponse);
+  rpc Shutdown(ShutdownRequest) returns (ShutdownResponse);
+}
+
+message HandshakeRequest {
+  uint32 protocol_version = 1 [(buf.validate.field).uint32.gt = 0];
+  string client_name = 2 [(buf.validate.field).string.max_len = 64];
+}
+
+message HandshakeResponse {
+  uint32 protocol_version = 1;
+  string daemon_version = 2;
+}
+
+message StatusRequest {}
+
+message StatusResponse {
+  string state = 1;
+  int64 state_version = 2;
+  int32 pid = 3;
+  google.protobuf.Timestamp started_at = 4;
+  string socket_path = 5;
+  string daemon_version = 6;
+}
+
+message ShutdownRequest {
+  // request_id makes the call idempotent: a retry with the same id returns the first result.
+  string request_id = 1 [(buf.validate.field).string = {
+    min_len: 8
+    max_len: 128
+  }];
+}
+
+message ShutdownResponse {
+  google.protobuf.Timestamp accepted_at = 1;
+}

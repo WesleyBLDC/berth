@@ -10,7 +10,7 @@ nearest() { d=$(dirname "$1"); while [ "$d" != "/" ] && [ ! -f "$d/$2" ]; do d=$
 report() { out=$("$@" 2>&1) || { echo "$out" | head -40 >&2; exit 2; }; }
 
 case "$file" in
-  */spike/*|*/gen/*|*/SpikeProto/*|*.pb.go|*.pb.swift|*.grpc.swift|*.connect.go) exit 0 ;;
+  */gen/*|*.pb.go|*.pb.swift|*.grpc.swift|*.connect.go) exit 0 ;;
   *.go)
     mod=$(nearest "$file" go.mod) || exit 0
     cd "$mod" || exit 0

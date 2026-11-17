@@ -34,7 +34,6 @@ https://wiki.wesleybldc.com/wiki-artifacts/berth (start with the reading order o
 - Python and shell: `ruff` and `shellcheck`.
 - Every file: trailing whitespace, final newline, private key detection, `gitleaks`, and no em or en dashes in Markdown.
 - Claude Code hooks in `.claude/settings.json`: after every edit the file is formatted and linted, and problems come straight back to the agent; a guard refuses Bash commands that would print a Keychain secret or put one on the command line.
-- `spike/` is throwaway (deleted when M0 closes) and is exempt from the language linters, not from the whitespace and secret checks.
 
 ## Writing style
 

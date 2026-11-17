@@ -24,6 +24,25 @@ linters:
   settings:
     exhaustive:
       default-signifies-exhaustive: false
+    errcheck:
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+    revive:
+      rules:
+        # Comments explain why, never what, so exported names do not each need a doc comment.
+        - name: exported
+          disabled: true
+        - name: package-comments
+        - name: unused-parameter
+        - name: var-naming
+        - name: indent-error-flow
+        - name: error-strings
+        - name: error-return
+        - name: blank-imports
+        - name: context-as-argument
+        - name: receiver-naming
     depguard:
       rules:
         core-imports-no-adapters:
@@ -47,7 +66,8 @@ linters:
       exclude-godoc-examples: true
   exclusions:
     rules:
-      - path: '(^|/)(cmd|spike)/'
+      # The Clock and print rules guard the core; adapters and commands may use time and stdout.
+      - path-except: '(^|/)internal/core/'
         linters: [forbidigo]
       - path: '_test\.go'
         linters: [gosec, forbidigo]
@@ -59,6 +79,9 @@ formatters:
     - gofumpt
     - goimports
   settings:
+    gofumpt:
+      # The module path has no dot, so gofumpt must be told berth/... is not the standard library.
+      module-path: berth
     goimports:
       local-prefixes:
         - berth
