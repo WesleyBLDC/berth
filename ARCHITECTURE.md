@@ -60,13 +60,13 @@ Swift does the native work because Keychain, Touch ID and ScreenCaptureKit are A
 ### The native helper protocol (built)
 
 `berthd` and `berth run` start `berth-native <command>` once per request, with a scrubbed environment (only `HOME`, `PATH`, `BERTH_HOME`).
-The helper reads one JSON object on one line from stdin and writes one JSON line to stdout, except for `read`.
+The helper reads one JSON object on one line from stdin and writes one JSON line to stdout, except for `read`, whose value goes to file descriptor 3.
 
 | Command | Does | Replies |
 |---|---|---|
 | `store` | Shows the secure input dialog with facts `berthd` verified, then Touch ID, then writes Keychain item `berth.<name>` | `stored`, `denied` or `failed`; never the value |
 | `confirm` | Shows a Touch ID prompt for a power action (today: a grant); with `"interpreter":true` the text starts with "<path> is an interpreter and can print this secret", and `"pass_env"` names are listed | `approved`, `denied` or `failed` |
-| `read` | Refuses unless stdout is a pipe and its parent is the signed `berth` CLI; connects to the socket, checks by the peer's audit token that the signed `berthd` answers, then redeems the ticket and reads `berth.<name>` | The raw value bytes on stdout, or nothing and exit code 3 |
+| `read` | Refuses unless fd 3 is a connected Unix stream socket whose peer, by its audit token, is the helper's parent and satisfies the CLI requirement; connects to the daemon socket, checks by the peer's audit token that the signed `berthd` answers, then redeems the ticket and reads `berth.<name>` | The raw value bytes on fd 3, one end of a socketpair `berth run` created and passed in; or nothing and exit code 3. stdout carries nothing |
 
 The exact message shapes are in [the E2 plan](docs/plans/e2-terminal-secrets.md#native-helper-protocol-items-2-4-and-6-must-match-it-exactly).
 Go tests use a fake helper written in Go ([`internal/adapters/native/fakehelper`](internal/adapters/native/fakehelper)), never the Swift binary.
@@ -268,20 +268,20 @@ sequenceDiagram
   R->>D: AuthorizeUse(name, exe, argv)
   D->>D: caller is the signed berth? hash exe itself, match an Active grant
   D-->>R: ticket (32 bytes, 30 s, one use)
-  R->>N: read, ticket on stdin
-  N->>N: parent is the signed berth?
+  R->>N: read, ticket on stdin, socketpair end on fd 3
+  N->>N: fd 3 peer is my parent and the signed berth?
   N->>D: RedeemUseTicket(ticket)
   D-->>N: name (only to the signed helper)
-  N-->>R: value bytes over a pipe
+  N-->>R: value bytes over the socketpair
   R->>R: put in child env, zero copy, mask output
 ```
 
 - **Who may hold a ticket.** A ticket lets its holder start `berth-native` and read the value, so `berthd` issues one only when the `AuthorizeUse` caller is the signed `berth` CLI, which puts the value straight into its child. Any other process, including one an agent wrote, gets `ERROR_REASON_PEER_NOT_TRUSTED`.
 - **How a binary is recognised.** At start `berthd` checks the `berth` and `berth-native` files beside it against the requirement `anchor apple generic and certificate leaf[subject.OU] = "XPJ7XA42J4" and identifier "<id>"` (`com.wesleybldc.berth.cli`, `com.wesleybldc.berth.native`) and pins each one's cdhash. A socket peer counts as that binary only when the kernel, asked by the peer's audit token (`LOCAL_PEERTOKEN`, then `csops_audittoken`), reports the same cdhash for the image it is running, a valid signature and the hardened runtime. Paths and names are never trusted, a reused pid or an exec'd process fails its audit token, and a debugger cannot attach to a hardened process. A cdhash that differs makes `berthd` read the file once more, so a fresh `make build` works without a restart.
-- `RedeemUseTicket` uses the same live check for `berth-native`, before the request log is read, and accepts a ticket only from a helper whose parent is the process the ticket was issued to. `berth-native read` checks the other direction too: its parent must satisfy the CLI requirement (`SecCode` by pid, with `getppid` read again afterwards).
+- `RedeemUseTicket` uses the same live check for `berth-native`, before the request log is read, and accepts a ticket only from a helper whose parent is the process the ticket was issued to. `berth-native read` checks the other direction too, through the receiver check below.
 - **Who answers the socket.** Anyone can listen on a socket at `BERTH_HOME`, so both clients authenticate the daemon before they act on its answers. `berth run` checks the peer's audit token with the same live check against the signed `berthd` beside it (requirement identifier `com.wesleybldc.berth.daemon`) before `AuthorizeUse`; `berth-native read` checks it with `SecCodeCopyGuestWithAttributes` and the same requirement before it sends the ticket. A server an agent started fails closed in both.
-- **Which helper gets the value.** A release `berth` starts only the `berth-native` beside its own resolved executable; the `BERTH_NATIVE` override exists only under the `berth_e2e` build tag. Before `AuthorizeUse`, so a refusal spends no ticket, `berth` copies that file into a private folder (0700, the copy 0600 while checked), checks the copy against the helper requirement, runs the copy, and deletes the folder after the command exits; a copied or linked `berth` beside a wrapper script named `berth-native` is refused. `berth-native read` writes the value only into a pipe, never a file or terminal a wrapper put on its stdout.
-- Pins are read from a private copy (0600 in a fresh 0700 folder) so the file cannot be swapped between the requirement check and the hash, and a file is pinned again at most once every 10 seconds.
+- **Who receives the value.** Berth does not try to make sure it starts the right helper; the helper makes sure the right process receives the value. A release `berth` starts the `berth-native` beside its own resolved executable (the `BERTH_NATIVE` override exists only under the `berth_e2e` build tag) and hands it one end of a Unix socketpair as fd 3. Before it redeems the ticket, `berth-native read` asks the kernel who holds the other end: fd 3 must be a connected `AF_UNIX` stream socket, the pid in its `LOCAL_PEERTOKEN` audit token must equal `getppid()`, and `SecCodeCopyGuestWithAttributes` with that audit token plus `SecCodeCheckValidity` must satisfy the CLI requirement. Anything else (a pipe, FIFO, file or terminal on fd 3, or berth's socket handed through a wrapper process that is now the parent) exits 3 with nothing written. A wrapper that only `exec`s the helper keeps berth as the parent, so the value still reaches only berth. `berthd` also accepts a redeem only from a signed helper whose parent holds the ticket.
+- Pins are read from a private copy (0600 in a fresh 0700 folder) so the requirement check and the hash see the same bytes, and a file is pinned again at most once every 10 seconds. The copy does not stop a same-user process from swapping the file before it is copied: a swapped pin can at worst make Berth trust a fake CLI or helper, and the receiver check stops that fake from getting a value.
 - An unsigned development `berth run` is refused with a message to run `make build`. The end to end tests compile a test only pin rule (`-tags berth_e2e`, no environment variable) that accepts ad hoc signed binaries beside `berthd`, still requiring the hardened runtime.
 - `berthd` identifies the executable itself and never trusts a client hash; a changed hash moves the grant to `Stale`.
 - A grant to an interpreter (a shell, `python`, `perl`, `ruby`, `node`, `osascript`, `env`, or any `#!` file) is refused unless `--allow-interpreter` is passed, and then the Touch ID text says the interpreter can print the secret.
@@ -297,6 +297,12 @@ A fill is one atomic step with the agent's CDP traffic paused: check the page's 
 The CDP proxy refuses methods outside the agent's own session and logs the rest ([ADR 0009](docs/adr/0009-cdp-proxy-refuses-cross-session-methods-from-day-one.md)).
 Other password stores plug in as `berth-secret-<name>` helper programs pinned by code signing identity ([ADR 0011](docs/adr/0011-secret-stores-beyond-the-keychain-are-helper-programs.md)).
 
+### Threat model
+
+E2a defends against agents that are honest, confused, or prompt injected into asking for or printing secrets, and against casual misuse of the signed binaries (copying them, wrapping the helper, pointing them at a fake daemon).
+A determined agent running as the same user that can run arbitrary code can still leak an environment injected secret through tool configuration (dotfiles, `PATH`, `HOME`).
+The header proxy (E2b) and, beyond that, running agents under a separate user or in a sandbox are the stronger isolation.
+
 ### Honest limits
 
 - Any process that holds a secret can leak it: environment injection is only as safe as the command it is pinned to, which is why grants pin the exact executable and an optional argument glob, and why the header proxy (E2b) will be the default for API keys.
@@ -306,7 +312,7 @@ Other password stores plug in as `berth-secret-<name>` helper programs pinned by
 - Output masking matches only the literal value: an encoded, split by the child, or transformed copy (base64, hex, one character per line) passes through unmasked.
 - The store dialog's `NSSecureTextField` hands the value over as a Swift `String`, which cannot be wiped; `berth-native` copies it into a buffer it zeroes and clears the field, but the string's own memory lives until the process exits a moment later.
 - A granted interpreter can print the secret whatever the glob says; `--allow-interpreter` only makes that a deliberate choice.
-- `berth-native` finds its parent by pid, because Security offers no way to get the parent's audit token; reading `getppid` again after the check catches a parent that exited meanwhile, and `berthd`'s audit token check of the CLI stays the main control.
+- The receiver check compares the socket peer's audit token pid with `getppid()`; a parent that exited would reparent the helper (to pid 1) and fail that comparison, and the audit token itself stops matching once its process exits or execs.
 - Until session tokens (M4), a malicious process running as the person can call every method; it still cannot read a value through the API or grant itself access without Touch ID.
 - The peer adapter reads process facts through a raw `proc_info` syscall with a hardcoded struct offset, which a macOS update could break; its test guards it.
 - Builds are signed with a free Apple Development identity; the data protection keychain, notarization and Developer ID signing wait for the paid program at M8.

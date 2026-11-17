@@ -7,7 +7,8 @@ import (
 )
 
 // TestReleaseIgnoresBERTHNATIVE: an agent must not be able to point berth run at a program
-// of its own that would receive the value on its stdout.
+// of its own. The helper's receiver check would refuse it anyway; this keeps the override a
+// test only knob.
 func TestReleaseIgnoresBERTHNATIVE(t *testing.T) {
 	t.Setenv("BERTH_NATIVE", "/tmp/not-berth-native")
 	got, err := nativeHelper()

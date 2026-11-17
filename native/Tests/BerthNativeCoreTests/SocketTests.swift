@@ -4,22 +4,29 @@ import Testing
 
 @testable import BerthNativeCore
 
-@Test func pipeIsAPipeAndAFileIsNot() throws {
-    var fds: [Int32] = [0, 0]
-    #expect(pipe(&fds) == 0)
-    defer {
-        close(fds[0])
-        close(fds[1])
-    }
-    #expect(isPipe(fds[1]))
-    let path = NSTemporaryDirectory() + "berth-not-a-pipe-\(getpid())"
+/// The test process holds both ends of a socketpair, so it is the peer; with parent set to
+/// this process, only the requirement decides.
+@Test func valueChannelMustBeASocketToTheSignedParent() throws {
+    var pair: [Int32] = [0, 0]
+    #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &pair) == 0)
+    var pipeFDs: [Int32] = [0, 0]
+    #expect(pipe(&pipeFDs) == 0)
+    let path = NSTemporaryDirectory() + "berth-not-a-socket-\(getpid())"
     let file = open(path, O_CREAT | O_WRONLY, 0o600)
+    let unconnected = socket(AF_UNIX, SOCK_STREAM, 0)
     defer {
-        close(file)
+        for fd in pair + pipeFDs + [file, unconnected] { close(fd) }
         unlink(path)
     }
-    #expect(file >= 0)
-    #expect(!isPipe(file))
+    let me = getpid()
+    #expect(valueChannelRefusal(pair[1], parent: me, requirement: "always") == nil)
+    let unsigned = valueChannelRefusal(pair[1], parent: me, requirement: berthCLIRequirement)
+    #expect(unsigned?.contains("not the signed berth") == true)
+    #expect(valueChannelRefusal(pair[1], parent: me + 1, requirement: "always")?.contains("is not the parent") == true)
+    #expect(valueChannelRefusal(pipeFDs[1], parent: me, requirement: "always") == "the value channel is not a socket")
+    #expect(valueChannelRefusal(file, parent: me, requirement: "always") == "the value channel is not a socket")
+    #expect(valueChannelRefusal(unconnected, parent: me, requirement: "always")?.contains("has no peer") == true)
+    #expect(valueChannelRefusal(999, parent: me, requirement: "always") == "no value channel on fd 999")
 }
 
 /// Serves one connection on a temporary socket from this process, answering with reply.

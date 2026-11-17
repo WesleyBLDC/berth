@@ -178,8 +178,11 @@ func parseDisplay(out []byte) (team, signing string) {
 }
 
 // PinSigned copies the file at path into a private folder, checks the copy against
-// requirement and reads the copy's cdhash, so the file cannot be swapped between the check and
-// the hash. ok is false when the copy does not satisfy the requirement.
+// requirement and reads the copy's cdhash, so the check and the hash see the same bytes. The
+// copy is not safe from a same-user process swapping the file before it is copied: a swapped
+// pin can at worst make Berth trust a fake CLI or helper, and berth-native's receiver check
+// (the value goes only to its parent, running the signed berth) stops that fake from getting
+// a value. ok is false when the copy does not satisfy the requirement.
 func (x *Identity) PinSigned(ctx context.Context, path, requirement string) (sum ports.CDHash, ok bool, err error) {
 	err = x.withPrivateCopy(path, func(cp string) error {
 		if ok, err = x.Satisfies(ctx, cp, requirement); err != nil || !ok {
@@ -202,8 +205,8 @@ func (x *Identity) PinAny(ctx context.Context, path string) (ports.CDHash, error
 	return sum, err
 }
 
-// withPrivateCopy copies path to a 0600 file in a fresh 0700 folder only this user can reach,
-// runs do on it, and removes both.
+// withPrivateCopy copies path to a 0600 file in a fresh 0700 folder, runs do on it, and removes
+// both; see PinSigned for what the copy does and does not protect.
 func (*Identity) withPrivateCopy(path string, do func(cp string) error) error {
 	dir, err := os.MkdirTemp("", "berth-pin-")
 	if err != nil {

@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -57,20 +58,32 @@ func cliRunEnv(t *testing.T, h string, extra []string, outputs *[]string, args .
 }
 
 // helperRead runs the fake berth-native read the way berth run does, from this test process.
+// helperRead runs berth-native read from this test process, handing it a socketpair on fd 3
+// as berth run does, and returns what arrived on either the socket or stdout.
 func helperRead(t *testing.T, h string, ticket []byte) ([]byte, int) {
 	t.Helper()
+	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mine, theirs := os.NewFile(uintptr(fds[0]), "mine"), os.NewFile(uintptr(fds[1]), "theirs")
+	defer func() { _ = mine.Close() }()
 	cmd := exec.CommandContext(t.Context(), filepath.Join(binDir, "berth-native"), "read")
 	cmd.Env = []string{"HOME=" + os.Getenv("HOME"), "PATH=" + os.Getenv("PATH"), "BERTH_HOME=" + h}
 	cmd.Stdin = strings.NewReader(hex.EncodeToString(ticket) + "\n")
+	cmd.ExtraFiles = []*os.File{theirs}
 	var stdout bytes.Buffer
 	cmd.Stdout = &stdout
-	err := cmd.Run()
+	err = cmd.Run()
+	_ = theirs.Close()
+	got, _ := io.ReadAll(mine)
+	got = append(got, stdout.Bytes()...)
 	var exit *exec.ExitError
 	switch {
 	case err == nil:
-		return stdout.Bytes(), 0
+		return got, 0
 	case errors.As(err, &exit):
-		return stdout.Bytes(), exit.ExitCode()
+		return got, exit.ExitCode()
 	}
 	t.Fatalf("helper read: %v", err)
 	return nil, 0
@@ -456,7 +469,10 @@ func TestRunRefusesAServerThatIsNotTheSignedBerthd(t *testing.T) {
 // TestCopiedBerthRefusesAWrapperHelper copies the signed berth and berthd into a folder of the
 // agent's, beside a wrapper script named berth-native that would save the value to a file. berth
 // must refuse before asking for a ticket, and the value must reach nothing.
-func TestCopiedBerthRefusesAWrapperHelper(t *testing.T) {
+// TestWrapperHelperBesideACopiedBerth puts a same-user agent's berth-native wrapper beside a
+// copy of the signed berth. The wrapper runs the real (fake) helper, so berthd trusts it; only
+// the helper's check on who receives the value stands between the wrapper and the value.
+func TestWrapperHelperBesideACopiedBerth(t *testing.T) {
 	h := home(t)
 	canary := "canary-copy-" + rand.Text()
 	fakeDir := filepath.Join(h, "fake-native")
@@ -484,37 +500,68 @@ func TestCopiedBerthRefusesAWrapperHelper(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = os.RemoveAll(dir) })
 	for _, name := range []string{"berth", "berthd"} {
-		if err := os.WriteFile(filepath.Join(dir, name), []byte(readFile(t, filepath.Join(binDir, name))), 0o700); err != nil { //nolint:gosec // a copy of the test binary
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(readFile(t, filepath.Join(binDir, name))), 0o700); err != nil { //nolint:gosec // a copy of the signed test binary
 			t.Fatal(err)
 		}
 	}
+	real := strconv.Quote(filepath.Join(binDir, "berth-native"))
 	leak := filepath.Join(dir, "leak")
-	wrapper := "#!/bin/sh\n\"" + filepath.Join(binDir, "berth-native") + "\" \"$@\" > \"" + leak + "\"\ncat \"" + leak + "\"\n"
-	if err := os.WriteFile(filepath.Join(dir, "berth-native"), []byte(wrapper), 0o700); err != nil { //nolint:gosec // the attacker's wrapper
+	fifo := filepath.Join(dir, "fifo")
+	if err := syscall.Mkfifo(fifo, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.CommandContext(t.Context(), filepath.Join(dir, "berth"), "run", "--env", "K=e2e-copy", "--", exe)
-	cmd.Env = append(os.Environ(), "BERTH_HOME="+h)
-	out, err := cmd.CombinedOutput()
-	var exit *exec.ExitError
-	if !errors.As(err, &exit) || exit.ExitCode() != 1 || !strings.Contains(string(out), "will not start this berth-native") {
-		t.Fatalf("copied berth with a wrapper helper: %v %q", err, out)
-	}
-	if _, err := os.Stat(leak); !os.IsNotExist(err) {
-		t.Fatalf("the wrapper ran: %v", err)
-	}
-	list, err := c.Secrets.ListSecrets(t.Context(), &berthv1.ListSecretsRequest{})
+	// Opened before the run, so the wrapper never blocks on it and the test can drain it.
+	fifoReader, err := os.OpenFile(fifo, os.O_RDWR|syscall.O_NONBLOCK, 0) //nolint:gosec // the test's own FIFO
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, s := range list.GetSecrets() {
-		for _, cons := range s.GetConsumers() {
-			if cons.GetUseCount() != 0 {
-				t.Fatalf("a ticket was spent before the helper was refused: %v", cons)
-			}
-		}
+	t.Cleanup(func() { _ = fifoReader.Close() })
+	sum := sha256.Sum256([]byte(canary))
+	cases := []struct {
+		name, wrapper string
+		delivered     bool
+	}{
+		{"value channel redirected to a file", "exec 3>" + strconv.Quote(leak) + "\nexec " + real + ` "$@"`, false},
+		{"value channel redirected to a FIFO", "exec 3<>" + strconv.Quote(fifo) + "\nexec " + real + ` "$@"`, false},
+		// berthd's own check (the redeemer's parent must be the berth the ticket went to) also
+		// refuses this one; TestRecipientMustBeTheParent proves the helper's pid rule alone.
+		{"helper run as the wrapper's child", real + ` "$@" >` + strconv.Quote(leak) + "\nexit $?", false},
+		{"berth's socket passed through", "exec " + real + ` "$@"`, true},
 	}
-	everything := string(out) + strings.Join(outputs, "") + readFile(t, filepath.Join(h, "berthd.log"))
+	runs := 0
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := os.WriteFile(filepath.Join(dir, "berth-native"), []byte("#!/bin/sh\n"+tc.wrapper+"\n"), 0o700); err != nil { //nolint:gosec // the agent's wrapper
+				t.Fatal(err)
+			}
+			cmd := exec.CommandContext(t.Context(), filepath.Join(dir, "berth"), "run", "--env", "K=e2e-copy", "--", exe)
+			cmd.Env = append(os.Environ(), "BERTH_HOME="+h)
+			out, err := cmd.CombinedOutput()
+			runs++
+			outputs = append(outputs, string(out))
+			if tc.delivered {
+				if err != nil || !strings.Contains(string(out), hex.EncodeToString(sum[:])) {
+					t.Fatalf("the normal flow through an exec wrapper failed: %v %q", err, out)
+				}
+			} else {
+				var exit *exec.ExitError
+				if !errors.As(err, &exit) || exit.ExitCode() != 1 || !strings.Contains(string(out), "cannot read secret e2e-copy") {
+					t.Fatalf("want berth run to fail the read: %v %q", err, out)
+				}
+			}
+			lines := strings.Split(strings.TrimSpace(readFile(t, filepath.Join(fakeDir, "requests.jsonl"))), "\n")
+			if last := lines[len(lines)-1]; strings.Contains(last, `"redeemed":true`) != tc.delivered {
+				t.Fatalf("redeemed is wrong for this receiver: %s", last)
+			}
+		})
+	}
+	if runs != len(cases) {
+		t.Fatalf("ran %d of %d cases", runs, len(cases))
+	}
+	leaked, _ := os.ReadFile(leak) //nolint:gosec // the test's own file
+	drained := make([]byte, 4096)
+	n, _ := fifoReader.Read(drained)
+	everything := string(leaked) + string(drained[:n]) + strings.Join(outputs, "") + readFile(t, filepath.Join(h, "berthd.log"))
 	for _, e := range mustReadDir(t, h) {
 		if strings.HasPrefix(e, "berth.db") {
 			everything += readFile(t, filepath.Join(h, e))
@@ -522,6 +569,9 @@ func TestCopiedBerthRefusesAWrapperHelper(t *testing.T) {
 	}
 	if strings.Contains(everything, canary) {
 		t.Fatal("the canary leaked")
+	}
+	if _, err := c.Secrets.ListSecrets(t.Context(), &berthv1.ListSecretsRequest{}); err != nil {
+		t.Fatal(err)
 	}
 }
 

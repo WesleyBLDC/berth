@@ -37,7 +37,7 @@ Most controls below are planned for the browser milestones (M4 to M6); each row 
 ## The secret is never readable by the agent
 
 Agents store and use secrets but never read them ([ADR 0012](adr/0012-agents-can-store-and-use-secrets-never-read-them.md)).
-In the terminal, values travel only from `berth-native` over a pipe into the one child process `berth run` starts; the flow is in [ARCHITECTURE.md](../ARCHITECTURE.md#secrets-store-and-use-never-read).
+In the terminal, values travel only from `berth-native` over a socketpair, whose peer it checks is its parent and the signed `berth`, into the one child process `berth run` starts; the flow is in [ARCHITECTURE.md](../ARCHITECTURE.md#secrets-store-and-use-never-read).
 
 In a browser (planned, M6), typing a password into a page puts it in the DOM, where any CDP client can read it back with `Runtime.evaluate` or a screenshot, so the fill runs as one atomic step the agent cannot watch ([ADR 0008](adr/0008-atomic-fill-with-the-agent-paused.md)):
 

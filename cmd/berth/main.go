@@ -34,28 +34,8 @@ func main() {
 			return client.Connect(ctx, paths.Socket(home), "berth-cli")
 		},
 		ConnectTrusted: connectTrusted,
-		PrepareRead:    prepareHelper,
 		Read:           read,
 	}))
-}
-
-// helperCopy is the checked private copy of berth-native that read starts.
-var helperCopy string
-
-// prepareHelper copies the berth-native beside berth into a private folder and checks the copy
-// against the helper requirement, so a copied or linked berth cannot be made to start a wrapper
-// that puts the value somewhere else.
-func prepareHelper(ctx context.Context) (func(), error) {
-	src, err := nativeHelper()
-	if err != nil {
-		return nil, err
-	}
-	exe, cleanup, err := codetrust.ExecutableCopy(ctx, src, codetrust.HelperSigningID, filePinner(execid.New(execid.DefaultCodesign)))
-	if err != nil {
-		return nil, err
-	}
-	helperCopy = exe
-	return cleanup, nil
 }
 
 // connectTrusted connects only when the process answering on the socket is the signed berthd
@@ -90,15 +70,18 @@ func connectTrusted(ctx context.Context) (*client.Client, error) {
 	})
 }
 
-// read hands the ticket to the checked copy of berth-native that prepareHelper made.
+// read hands the ticket to the berth-native beside berth. Which file that is does not decide
+// who gets the value: berth-native writes it only over a socket whose peer the kernel shows is
+// its parent, running the signed berth.
 func read(ctx context.Context, ticket []byte) ([]byte, error) {
 	var t ports.Ticket
 	if len(ticket) != len(t) {
 		return nil, errors.New("berthd sent a ticket of the wrong length")
 	}
-	if helperCopy == "" {
-		return nil, errors.New("berth-native was not checked")
-	}
 	copy(t[:], ticket)
-	return native.Read(ctx, helperCopy, t)
+	helper, err := nativeHelper()
+	if err != nil {
+		return nil, err
+	}
+	return native.Read(ctx, helper, t)
 }

@@ -6,11 +6,7 @@ package codetrust
 
 import (
 	"context"
-	"fmt"
-	"io"
 	"log/slog"
-	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -114,51 +110,4 @@ func (f *File) Runs(ctx context.Context, peer ports.Peer) bool {
 	// pin rule checks the file itself.
 	f.repin(ctx)
 	return f.matches(live)
-}
-
-// ExecutableCopy copies the file at path into a fresh private folder (0700, the copy 0600 while
-// it is checked), checks the copy with pin, and makes it executable by the owner only. Running
-// the copy rather than the file means nothing beside a copied or linked berth, such as a
-// wrapper script named berth-native, can stand in for the signed binary. cleanup removes the
-// folder; call it once the program has exited.
-func ExecutableCopy(ctx context.Context, path, identifier string, pin Pinner) (exe string, cleanup func(), err error) {
-	dir, err := os.MkdirTemp("", "berth-exec-")
-	if err != nil {
-		return "", nil, err
-	}
-	cleanup = func() { _ = os.RemoveAll(dir) }
-	exe = filepath.Join(dir, filepath.Base(path))
-	if err := copyFile(path, exe); err != nil {
-		cleanup()
-		return "", nil, err
-	}
-	if _, ok, err := pin(ctx, exe, identifier); err != nil || !ok {
-		cleanup()
-		if err == nil {
-			err = fmt.Errorf("%s is not Berth's signed %s", path, identifier)
-		}
-		return "", nil, err
-	}
-	if err := os.Chmod(exe, 0o700); err != nil { //nolint:gosec // owner only, to run the checked copy
-		cleanup()
-		return "", nil, err
-	}
-	return exe, cleanup, nil
-}
-
-func copyFile(from, to string) error {
-	src, err := os.Open(from) //nolint:gosec // a Berth binary beside the running one
-	if err != nil {
-		return err
-	}
-	defer func() { _ = src.Close() }()
-	dst, err := os.OpenFile(to, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) //nolint:gosec // a fresh private folder
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(dst, src); err != nil {
-		_ = dst.Close()
-		return err
-	}
-	return dst.Close()
 }

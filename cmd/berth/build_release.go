@@ -8,10 +8,9 @@ import (
 	"berth/internal/paths"
 )
 
-// nativeHelper is always the berth-native beside the resolved berth executable: no environment
-// variable can point berth run elsewhere. berth runs a checked private copy of it, never the
-// file itself.
+// nativeHelper is always the berth-native beside the resolved berth executable; no environment
+// variable points berth run elsewhere. The helper itself checks who receives the value.
 func nativeHelper() (string, error) { return paths.Beside("berth-native") }
 
-// filePinner trusts only a berthd or berth-native signed by Berth's team through Apple's chain.
+// filePinner trusts only a berthd signed by Berth's team through Apple's chain.
 func filePinner(x *execid.Identity) codetrust.Pinner { return codetrust.SignedPinner(x) }

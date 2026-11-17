@@ -2,15 +2,19 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
+	"io"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync/atomic"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -75,12 +79,13 @@ func TestReadRedeemsTicketAndPrintsValue(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(values, "gh-token"), canary, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	var stdout, stderr bytes.Buffer
+	var value, stdout, stderr bytes.Buffer
+	useRecipient(t, &value, nil)
 	if code := run([]string{"read"}, ticketLine(ticket), &stdout, &stderr); code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, stderr.String())
 	}
-	if !bytes.Equal(stdout.Bytes(), canary) {
-		t.Fatalf("stdout is not the stored value")
+	if !bytes.Equal(value.Bytes(), canary) || stdout.Len() != 0 {
+		t.Fatalf("the value went somewhere other than the value channel")
 	}
 	if n := calls.Load(); n != 1 {
 		t.Fatalf("berthd saw %d calls, want 1", n)
@@ -97,12 +102,13 @@ func TestReadRedeemsTicketAndPrintsValue(t *testing.T) {
 func TestReadRefusedTicketPrintsNothing(t *testing.T) {
 	home, _ := fakeBerthd(t, bytes.Repeat([]byte{7}, 32), "gh-token")
 	t.Setenv("BERTH_HOME", home)
-	var stdout, stderr bytes.Buffer
+	var value, stdout, stderr bytes.Buffer
+	useRecipient(t, &value, nil)
 	if code := run([]string{"read"}, ticketLine(bytes.Repeat([]byte{8}, 32)), &stdout, &stderr); code != exitRefused {
 		t.Fatalf("exit %d, want %d", code, exitRefused)
 	}
-	if stdout.Len() != 0 {
-		t.Fatalf("stdout not empty on refusal")
+	if value.Len() != 0 || stdout.Len() != 0 {
+		t.Fatalf("output on refusal")
 	}
 }
 
@@ -125,5 +131,54 @@ func TestStoreRefusesExistingItem(t *testing.T) {
 	got, err := os.ReadFile(filepath.Join(dir, "values", "n"))
 	if err != nil || string(got) != "canary" {
 		t.Fatalf("stored value wrong: %v", err)
+	}
+}
+
+type nopCloser struct{ *bytes.Buffer }
+
+func (nopCloser) Close() error { return nil }
+
+// useRecipient stands in for the value channel check, so these tests reach redeem.
+func useRecipient(t *testing.T, buf *bytes.Buffer, err error) {
+	t.Helper()
+	old := recipient
+	recipient = func(context.Context) (io.WriteCloser, error) {
+		if err != nil {
+			return nil, err
+		}
+		return nopCloser{buf}, nil
+	}
+	t.Cleanup(func() { recipient = old })
+}
+
+func TestReadChecksTheReceiverBeforeRedeeming(t *testing.T) {
+	ticket := bytes.Repeat([]byte{7}, 32)
+	home, calls := fakeBerthd(t, ticket, "gh-token")
+	t.Setenv("BERTH_HOME", home)
+	var stdout, stderr bytes.Buffer
+	useRecipient(t, nil, errors.New("not berth"))
+	if code := run([]string{"read"}, ticketLine(ticket), &stdout, &stderr); code != exitRefused || calls.Load() != 0 {
+		t.Fatalf("exit %d, redeem calls %d", code, calls.Load())
+	}
+}
+
+func TestRecipientMustBeTheParent(t *testing.T) {
+	fds, err := syscall.Socketpair(syscall.AF_UNIX, syscall.SOCK_STREAM, 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	theirs := os.NewFile(uintptr(fds[0]), "theirs")
+	defer func() { _ = theirs.Close() }()
+	f := os.NewFile(uintptr(fds[1]), "mine")
+	conn, err := net.FileConn(f)
+	_ = f.Close()
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+	// This process is the peer, so naming another parent must fail on the pid alone.
+	err = checkRecipient(t.Context(), conn.(*net.UnixConn), os.Getpid()+1)
+	if err == nil || !strings.Contains(err.Error(), "is not the parent") {
+		t.Fatalf("want a parent refusal, got %v", err)
 	}
 }

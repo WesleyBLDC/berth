@@ -21,7 +21,7 @@ func nativeHelper() (string, error) {
 	return paths.Beside("berth-native")
 }
 
-// filePinner accepts the ad hoc signed test berthd and berth-native by their identifier,
+// filePinner accepts the ad hoc signed test berthd by its identifier,
 // without Apple's chain; the live check of berthd still demands a valid signature and the
 // hardened runtime.
 func filePinner(x *execid.Identity) codetrust.Pinner {
