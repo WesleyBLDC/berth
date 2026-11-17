@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -85,5 +87,37 @@ func TestRunsNeedsMatchingHardenedCodeAndRepinsAtMostEveryInterval(t *testing.T)
 	peer.code = ports.LiveCode{}
 	if f.Runs(t.Context(), p) {
 		t.Fatal("a process the kernel could not describe was trusted")
+	}
+}
+
+func TestExecutableCopyRunsOnlyACheckedPrivateCopy(t *testing.T) {
+	dir := t.TempDir()
+	src := filepath.Join(dir, "berth-native")
+	if err := os.WriteFile(src, []byte("#!/bin/sh\necho hi\n"), 0o700); err != nil { //nolint:gosec // a fixture
+		t.Fatal(err)
+	}
+	var checked string
+	accept := func(_ context.Context, path, _ string) (ports.CDHash, bool, error) {
+		checked = path
+		return ports.CDHash{}, true, nil
+	}
+	exe, cleanup, err := codetrust.ExecutableCopy(t.Context(), src, codetrust.HelperSigningID, accept)
+	if err != nil {
+		t.Fatal(err)
+	}
+	info, err := os.Stat(exe)
+	if err != nil || exe == src || checked != exe || info.Mode().Perm() != 0o700 {
+		t.Fatalf("copy %s (checked %s): %v %v", exe, checked, info.Mode(), err)
+	}
+	if dirInfo, _ := os.Stat(filepath.Dir(exe)); dirInfo.Mode().Perm() != 0o700 {
+		t.Fatalf("folder mode %v", dirInfo.Mode())
+	}
+	cleanup()
+	if _, err := os.Stat(filepath.Dir(exe)); !os.IsNotExist(err) {
+		t.Fatalf("folder left behind: %v", err)
+	}
+	refuse := func(context.Context, string, string) (ports.CDHash, bool, error) { return ports.CDHash{}, false, nil }
+	if _, _, err := codetrust.ExecutableCopy(t.Context(), src, codetrust.HelperSigningID, refuse); err == nil {
+		t.Fatal("a file failing the check was accepted")
 	}
 }

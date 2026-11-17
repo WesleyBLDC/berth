@@ -34,8 +34,28 @@ func main() {
 			return client.Connect(ctx, paths.Socket(home), "berth-cli")
 		},
 		ConnectTrusted: connectTrusted,
+		PrepareRead:    prepareHelper,
 		Read:           read,
 	}))
+}
+
+// helperCopy is the checked private copy of berth-native that read starts.
+var helperCopy string
+
+// prepareHelper copies the berth-native beside berth into a private folder and checks the copy
+// against the helper requirement, so a copied or linked berth cannot be made to start a wrapper
+// that puts the value somewhere else.
+func prepareHelper(ctx context.Context) (func(), error) {
+	src, err := nativeHelper()
+	if err != nil {
+		return nil, err
+	}
+	exe, cleanup, err := codetrust.ExecutableCopy(ctx, src, codetrust.HelperSigningID, filePinner(execid.New(execid.DefaultCodesign)))
+	if err != nil {
+		return nil, err
+	}
+	helperCopy = exe
+	return cleanup, nil
 }
 
 // connectTrusted connects only when the process answering on the socket is the signed berthd
@@ -51,7 +71,7 @@ func connectTrusted(ctx context.Context) (*client.Client, error) {
 		return nil, err
 	}
 	log := slog.New(slog.DiscardHandler)
-	daemon := codetrust.New(ctx, daemonPath, codetrust.DaemonSigningID, daemonPinner(execid.New(execid.DefaultCodesign)),
+	daemon := codetrust.New(ctx, daemonPath, codetrust.DaemonSigningID, filePinner(execid.New(execid.DefaultCodesign)),
 		peer.NewCode(), clock.System{}, log)
 	sock := paths.Socket(home)
 	return client.ConnectVerified(ctx, sock, "berth-cli", func(c *net.UnixConn) error {
@@ -70,16 +90,15 @@ func connectTrusted(ctx context.Context) (*client.Client, error) {
 	})
 }
 
-// read hands the ticket to the berth-native beside berth, the only helper berthd trusts.
+// read hands the ticket to the checked copy of berth-native that prepareHelper made.
 func read(ctx context.Context, ticket []byte) ([]byte, error) {
 	var t ports.Ticket
 	if len(ticket) != len(t) {
 		return nil, errors.New("berthd sent a ticket of the wrong length")
 	}
-	copy(t[:], ticket)
-	helper, err := nativeHelper()
-	if err != nil {
-		return nil, err
+	if helperCopy == "" {
+		return nil, errors.New("berth-native was not checked")
 	}
-	return native.Read(ctx, helper, t)
+	copy(t[:], ticket)
+	return native.Read(ctx, helperCopy, t)
 }

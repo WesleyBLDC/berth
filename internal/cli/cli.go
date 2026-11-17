@@ -74,6 +74,9 @@ type Env struct {
 	ConnectTrusted func(ctx context.Context) (*client.Client, error)
 	// Read is nil until berth-native is wired in; berth run refuses without it.
 	Read ValueReader
+	// PrepareRead, when set, readies the helper Read will start (berth checks a private copy of
+	// berth-native) before any ticket is asked for; cleanup runs once the command has exited.
+	PrepareRead func(ctx context.Context) (cleanup func(), err error)
 }
 
 // Run executes one berth command and returns its exit code.

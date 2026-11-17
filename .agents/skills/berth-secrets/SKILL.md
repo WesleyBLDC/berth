@@ -59,7 +59,7 @@ A grant pins the file's hash, so after the tool is upgraded the person grants it
 | Code | Meaning | Fix |
 |---|---|---|
 | 0 | Success | |
-| 1 | berthd unreachable, or it refused the request; the message says why | `berth status`; for "already exists" use the stored secret; for "no stored secret" request it; for "signed berth binary" or "not the signed berthd" the person runs `make build`, starts `bin/berthd`, and you use `bin/berth`; for "is an interpreter" ask the person whether to grant the real tool instead |
+| 1 | berthd unreachable, or it refused the request; the message says why | `berth status`; for "already exists" use the stored secret; for "no stored secret" request it; for "signed berth binary" or "not the signed berthd" the person runs `make build`, starts `bin/berthd`, and you use `bin/berth`; for "will not start this berth-native" the person runs `make native`, and you use `bin/berth` rather than a copy; right after a rebuild, wait 10 seconds and try once more; for "is an interpreter" ask the person whether to grant the real tool instead |
 | 2 | Usage error | Check the command shape above |
 | 3 | The person denied the dialog or Touch ID | Do not retry on your own; ask the person whether they want to |
 | 4 | The store or grant failed | Read the message, then ask the person |

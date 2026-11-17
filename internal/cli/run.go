@@ -56,6 +56,15 @@ func runCommand(ctx context.Context, args []string, env Env) int {
 		return ExitError
 	}
 	argv := fs.Args()[1:]
+	// The helper is checked before AuthorizeUse, so a refused helper never spends a ticket.
+	if env.PrepareRead != nil {
+		cleanup, err := env.PrepareRead(ctx)
+		if err != nil {
+			fmt.Fprintf(env.Stderr, "berth run will not start this berth-native: %v; run make native and use the bin/ folder it built\n", err)
+			return ExitError
+		}
+		defer cleanup()
+	}
 	if env.ConnectTrusted == nil {
 		fmt.Fprintln(env.Stderr, "berth run needs a verified connection to berthd")
 		return ExitError

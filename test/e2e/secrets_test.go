@@ -452,3 +452,88 @@ func TestRunRefusesAServerThatIsNotTheSignedBerthd(t *testing.T) {
 		t.Fatalf("berth asked the fake berthd for %d tickets", n)
 	}
 }
+
+// TestCopiedBerthRefusesAWrapperHelper copies the signed berth and berthd into a folder of the
+// agent's, beside a wrapper script named berth-native that would save the value to a file. berth
+// must refuse before asking for a ticket, and the value must reach nothing.
+func TestCopiedBerthRefusesAWrapperHelper(t *testing.T) {
+	h := home(t)
+	canary := "canary-copy-" + rand.Text()
+	fakeDir := filepath.Join(h, "fake-native")
+	if err := os.MkdirAll(fakeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := json.Marshal(map[string]string{"answer": "approve", "value": base64.StdEncoding.EncodeToString([]byte(canary))})
+	if err := os.WriteFile(filepath.Join(fakeDir, "config.json"), cfg, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	start(t, h)
+	c := waitServing(t, h)
+	var outputs []string
+	if out, code := cliRun(t, h, &outputs, "secret", "request", "e2e-copy", "--why", "copy test"); code != 0 {
+		t.Fatalf("request: %d %q", code, out)
+	}
+	exe := consumerCopy(t)
+	if out, code := cliRun(t, h, &outputs, "secret", "grant", "e2e-copy", "--exe", exe); code != 0 {
+		t.Fatalf("grant: %d %q", code, out)
+	}
+
+	dir, err := os.MkdirTemp("", "berth-agent-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	for _, name := range []string{"berth", "berthd"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(readFile(t, filepath.Join(binDir, name))), 0o700); err != nil { //nolint:gosec // a copy of the test binary
+			t.Fatal(err)
+		}
+	}
+	leak := filepath.Join(dir, "leak")
+	wrapper := "#!/bin/sh\n\"" + filepath.Join(binDir, "berth-native") + "\" \"$@\" > \"" + leak + "\"\ncat \"" + leak + "\"\n"
+	if err := os.WriteFile(filepath.Join(dir, "berth-native"), []byte(wrapper), 0o700); err != nil { //nolint:gosec // the attacker's wrapper
+		t.Fatal(err)
+	}
+	cmd := exec.CommandContext(t.Context(), filepath.Join(dir, "berth"), "run", "--env", "K=e2e-copy", "--", exe)
+	cmd.Env = append(os.Environ(), "BERTH_HOME="+h)
+	out, err := cmd.CombinedOutput()
+	var exit *exec.ExitError
+	if !errors.As(err, &exit) || exit.ExitCode() != 1 || !strings.Contains(string(out), "will not start this berth-native") {
+		t.Fatalf("copied berth with a wrapper helper: %v %q", err, out)
+	}
+	if _, err := os.Stat(leak); !os.IsNotExist(err) {
+		t.Fatalf("the wrapper ran: %v", err)
+	}
+	list, err := c.Secrets.ListSecrets(t.Context(), &berthv1.ListSecretsRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, s := range list.GetSecrets() {
+		for _, cons := range s.GetConsumers() {
+			if cons.GetUseCount() != 0 {
+				t.Fatalf("a ticket was spent before the helper was refused: %v", cons)
+			}
+		}
+	}
+	everything := string(out) + strings.Join(outputs, "") + readFile(t, filepath.Join(h, "berthd.log"))
+	for _, e := range mustReadDir(t, h) {
+		if strings.HasPrefix(e, "berth.db") {
+			everything += readFile(t, filepath.Join(h, e))
+		}
+	}
+	if strings.Contains(everything, canary) {
+		t.Fatal("the canary leaked")
+	}
+}
+
+func mustReadDir(t *testing.T, dir string) []string {
+	t.Helper()
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := make([]string, 0, len(entries))
+	for _, e := range entries {
+		names = append(names, e.Name())
+	}
+	return names
+}

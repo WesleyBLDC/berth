@@ -21,11 +21,11 @@ func nativeHelper() (string, error) {
 	return paths.Beside("berth-native")
 }
 
-// daemonPinner accepts the ad hoc signed test berthd by cdhash, without Apple's chain; the
-// live check still demands a valid signature and the hardened runtime.
-func daemonPinner(x *execid.Identity) codetrust.Pinner {
-	return func(ctx context.Context, path, _ string) (ports.CDHash, bool, error) {
-		h, err := x.PinAny(ctx, path)
-		return h, err == nil, err
+// filePinner accepts the ad hoc signed test berthd and berth-native by their identifier,
+// without Apple's chain; the live check of berthd still demands a valid signature and the
+// hardened runtime.
+func filePinner(x *execid.Identity) codetrust.Pinner {
+	return func(ctx context.Context, path, identifier string) (ports.CDHash, bool, error) {
+		return x.PinSigned(ctx, path, `identifier "`+identifier+`"`)
 	}
 }
