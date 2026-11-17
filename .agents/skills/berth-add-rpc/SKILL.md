@@ -24,7 +24,7 @@ The schema is the contract every client is generated from, so it changes first a
    - Call the core through a function in `Deps`; the handler holds no state and makes no decisions.
    - Errors: a `connect` code plus `withReason(..., berthv1.ErrorReason_...)` when a client must react to it; add a new `ErrorReason` value rather than parsing messages. Never put a secret or a stored value in an error message.
 4. **Agent surface**: if you marked the method for agents, update `TestAgentSurface` in `api_test.go` in the same change.
-5. **Client and CLI**: Go tools use `internal/client`; add a `berth` subcommand in `cmd/berth` only when the plan asks, with output a person can read and a golden or e2e test.
+5. **Client and CLI**: when `Berth.app` reads the message (today `WatchSessions` and `Session`), update the fixtures with `go test ./internal/cli -run TestSwiftFixtures -update-swift` and the Swift models in `macos/Sources/BerthAppCore/Models.swift`. Go tools use `internal/client`; add a `berth` subcommand in `cmd/berth` only when the plan asks, with output a person can read and a golden or e2e test.
 6. **Tests** with `connectinprocess` in `api_test.go`: the happy path, validation rejection, the typed error, and for mutating calls a repeated `request_id` running once.
 7. `make check` ends with `check: PASS`.
 

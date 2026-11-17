@@ -18,6 +18,8 @@ Paste its last lines in your report; a failure is investigated to its root cause
 | `make fmt` | Format Go, Protobuf, Swift, Python |
 | `make gen` | Regenerate `gen/` after editing `proto/` |
 | `make build` | `bin/berthd`, `bin/berth` and `bin/berth-proxy`, signed |
+| `make test-app` | `Berth.app`'s Swift tests, and its bundle built and checked signed ad hoc; opens no window |
+| `make app` | `bin/Berth.app`, signed, with `berthd` and its helpers in `Contents/Helpers` |
 
 ## Where things live
 
@@ -34,7 +36,8 @@ Paste its last lines in your report; a failure is investigated to its root cause
 | `internal/cli/` | The `berth` command logic, testable against an in process server | client, gen, api |
 | `internal/testutil/` | Fakes for ports (in memory store, fake clock) | ports |
 | `cmd/` | `berthd` and `berth` entry points, thin | internal |
-| `native/` | `berth-native`, the Swift helper that alone touches secret values | |
+| `native/` | `berth-native`, the Swift helper that alone touches secret values, and `BerthSocket`, the socket and peer check code it shares with the app | |
+| `macos/` | `Berth.app`: `BerthAppCore` (the Connect JSON client, models, session store), the SwiftUI shell, `berth-app-probe` for the end to end tests, `Bundle/` plists | `BerthSocket` only, never Keychain code |
 | `test/e2e/` | End to end tests that build and run the binaries | internal, gen |
 | `ARCHITECTURE.md` | The canonical architecture: processes, layers, state machines, storage, security model, milestone status | |
 | `docs/adr/` | One decision record per decision | |
@@ -70,6 +73,7 @@ Paste its last lines in your report; a failure is investigated to its root cause
 - End to end tests drive the real binaries; prefer one more e2e case over mocks.
 - Use `t.Context()` and `exec.CommandContext`; socket paths must stay under 104 bytes, so use `os.MkdirTemp("", ...)`, not `t.TempDir()`, for a `BERTH_HOME`.
 - Never use real secrets; tests plant a canary value and assert it never appears in output.
+- `Berth.app`'s Swift models are hand written (ADR 0019); a change to a message the app reads reruns `go test ./internal/cli -run TestSwiftFixtures -update-swift` and updates the Swift models and tests. Swift tests never launch the app or ask for a permission.
 
 ## Working beside other agents
 

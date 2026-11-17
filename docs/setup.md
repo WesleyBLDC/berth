@@ -29,4 +29,7 @@ Permissions are tied to the bundle ID plus the signing certificate, so every bui
 | 1Password or Bitwarden CLI | Their apps | E1 only | Turn on their CLI integration |
 | Paid Apple Developer Program | Signing | M8 release only | Enroll |
 
+`make app` builds and signs `bin/Berth.app` with the same identity; `make check` builds the bundle signed ad hoc only to check it, and never opens it or asks for a permission.
+The app asks for nothing on its own: Login Items, Notifications and Screen Recording each start from a button in the app (see [the M5 plan](plans/m5-mac-app.md#manual-checks)).
+
 Not needed: Accessibility (input goes through CDP, not synthetic events), Automation (no Apple Events), Full Disk Access (scanning your own processes needs none), Local Network (loopback only), camera and microphone.

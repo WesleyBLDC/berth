@@ -20,6 +20,7 @@ Read the brief or plan item, then the diff (`git diff <base>...HEAD`), then the 
 7. Proto changes that renumber, retype or remove fields.
 8. A behaviour branch with no test that fails without it; a test that mocks what an e2e test could run for real.
 9. Anything beyond the brief's file plan without a reason.
+10. `Berth.app` (`macos/`) linking Keychain code, writing to the socket before the peer check, or showing a process chosen string without `shown`.
 
 ## Report
 
