@@ -69,18 +69,25 @@ func TestStaleVersionIsRejectedAndWritesNothing(t *testing.T) {
 func TestRequestLog(t *testing.T) {
 	ctx := context.Background()
 	s := open(t, filepath.Join(t.TempDir(), "b.db"))
-	if _, _, found, _ := s.Recall(ctx, "req-1"); found {
+	if _, _, found, _ := s.Recall(ctx, "owner", "req-1"); found {
 		t.Fatal("found before remember")
 	}
-	if err := s.Remember(ctx, "req-1", "Shutdown", []byte("first"), time.Now()); err != nil {
+	if err := s.Remember(ctx, "owner", "req-1", "Shutdown", []byte("first"), time.Now()); err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Remember(ctx, "req-1", "Shutdown", []byte("second"), time.Now()); err == nil {
+	if err := s.Remember(ctx, "owner", "req-1", "Shutdown", []byte("second"), time.Now()); err == nil {
 		t.Fatal("a request id was stored twice")
 	}
-	method, resp, found, err := s.Recall(ctx, "req-1")
+	method, resp, found, err := s.Recall(ctx, "owner", "req-1")
 	if err != nil || !found || method != "Shutdown" || string(resp) != "first" {
 		t.Fatalf("recall: %q %q %v %v", method, resp, found, err)
+	}
+	// Another principal's request id is its own: it finds nothing and may store its own reply.
+	if _, _, found, _ := s.Recall(ctx, "agent", "req-1"); found {
+		t.Fatal("another principal found the owner's reply")
+	}
+	if err := s.Remember(ctx, "agent", "req-1", "Shutdown", []byte("agent"), time.Now()); err != nil {
+		t.Fatalf("another principal could not store its own reply: %v", err)
 	}
 }
 

@@ -42,8 +42,9 @@ type Store interface {
 	History(ctx context.Context, entity string, limit int) ([]TransitionRecord, error)
 }
 
-// RequestLog makes mutating calls idempotent by remembering the first response per request ID.
+// RequestLog makes mutating calls idempotent by remembering the first response per principal
+// and request ID, so a reply stored for one caller is never returned to another.
 type RequestLog interface {
-	Recall(ctx context.Context, requestID string) (method string, response []byte, found bool, err error)
-	Remember(ctx context.Context, requestID, method string, response []byte, at time.Time) error
+	Recall(ctx context.Context, principal, requestID string) (method string, response []byte, found bool, err error)
+	Remember(ctx context.Context, principal, requestID, method string, response []byte, at time.Time) error
 }

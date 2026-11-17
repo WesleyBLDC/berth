@@ -154,10 +154,10 @@ func (s *Store) History(ctx context.Context, entity string, limit int) ([]ports.
 	return out, rows.Err()
 }
 
-func (s *Store) Recall(ctx context.Context, requestID string) (string, []byte, bool, error) {
+func (s *Store) Recall(ctx context.Context, principal, requestID string) (string, []byte, bool, error) {
 	var method string
 	var response []byte
-	err := s.db.QueryRowContext(ctx, `SELECT method, response FROM request_log WHERE request_id = ?`, requestID).
+	err := s.db.QueryRowContext(ctx, `SELECT method, response FROM request_log WHERE principal = ? AND request_id = ?`, principal, requestID).
 		Scan(&method, &response)
 	if errors.Is(err, sql.ErrNoRows) {
 		return "", nil, false, nil
@@ -165,9 +165,9 @@ func (s *Store) Recall(ctx context.Context, requestID string) (string, []byte, b
 	return method, response, err == nil, err
 }
 
-func (s *Store) Remember(ctx context.Context, requestID, method string, response []byte, at time.Time) error {
+func (s *Store) Remember(ctx context.Context, principal, requestID, method string, response []byte, at time.Time) error {
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO request_log (request_id, method, response, at) VALUES (?, ?, ?, ?)`,
-		requestID, method, response, at.UnixMicro())
+		`INSERT INTO request_log (principal, request_id, method, response, at) VALUES (?, ?, ?, ?, ?)`,
+		principal, requestID, method, response, at.UnixMicro())
 	return err
 }

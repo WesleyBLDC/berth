@@ -156,7 +156,7 @@ func TestAuthorizeUseNeverRecordsTheTicket(t *testing.T) {
 	if err != nil || len(first.GetTicket()) != 32 {
 		t.Fatalf("first %v, %v", first, err)
 	}
-	_, stored, found, err := f.store.Recall(t.Context(), req.GetRequestId())
+	_, stored, found, err := f.store.Recall(t.Context(), api.Principal(t.Context()), req.GetRequestId())
 	if err != nil || !found || bytes.Contains(stored, bytes.Repeat([]byte{7}, 32)) {
 		t.Fatalf("request log holds the ticket: found %v, %v", found, err)
 	}

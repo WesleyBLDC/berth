@@ -5,6 +5,7 @@ package api
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -154,12 +155,13 @@ func once[T proto.Message](ctx context.Context, h *handlers, method, requestID s
 // carries something which must never be written down (a use ticket).
 func onceKeeping[T proto.Message](ctx context.Context, h *handlers, method, requestID string, empty T, do func() (T, error), keep func(T) T) (T, error) {
 	var zero T
-	release, err := h.claim(ctx, requestID)
+	principal := Principal(ctx)
+	release, err := h.claim(ctx, principal+"\x00"+requestID)
 	if err != nil {
 		return zero, connect.NewError(connect.CodeCanceled, "gave up waiting for an earlier call with this request id")
 	}
 	defer release()
-	storedMethod, stored, found, err := h.d.Requests.Recall(ctx, requestID)
+	storedMethod, stored, found, err := h.d.Requests.Recall(ctx, principal, requestID)
 	if err != nil {
 		return zero, connect.NewError(connect.CodeInternal, "could not read the request log")
 	}
@@ -181,24 +183,54 @@ func onceKeeping[T proto.Message](ctx context.Context, h *handlers, method, requ
 	if err != nil {
 		return zero, connect.NewError(connect.CodeInternal, "could not encode response")
 	}
-	if err := h.d.Requests.Remember(ctx, requestID, method, raw, h.d.Clock.Now()); err != nil {
+	if err := h.d.Requests.Remember(ctx, principal, requestID, method, raw, h.d.Clock.Now()); err != nil {
 		return zero, connect.NewError(connect.CodeInternal, "could not record the request")
 	}
 	return resp, nil
 }
 
-// claim waits until no other call holds requestID, then holds it until release.
-func (h *handlers) claim(ctx context.Context, requestID string) (release func(), err error) {
+// Caller is what the socket learned about a connection: which socket it came in on and the
+// peer's user ID from the kernel.
+type Caller struct {
+	Agent bool
+	UID   uint32
+}
+
+type callerKey struct{}
+
+// WithCaller records the connection's socket and peer uid, for the request log.
+func WithCaller(ctx context.Context, c Caller) context.Context {
+	return context.WithValue(ctx, callerKey{}, c)
+}
+
+// Principal names who a request ID belongs to: the socket, the peer uid and the process (its
+// audit token, which a retry from the same process repeats and no other process shares), so a
+// stored reply is only ever replayed to the caller that made the call. A context without a
+// caller (in process tests) is its own principal.
+func Principal(ctx context.Context) string {
+	kind := "none"
+	c, ok := ctx.Value(callerKey{}).(Caller)
+	switch {
+	case ok && c.Agent:
+		kind = "agent"
+	case ok:
+		kind = "owner"
+	}
+	return fmt.Sprintf("%s:%d:%x", kind, c.UID, peerOf(ctx).AuditToken)
+}
+
+// claim waits until no other call holds key, then holds it until release.
+func (h *handlers) claim(ctx context.Context, key string) (release func(), err error) {
 	for {
 		h.mu.Lock()
-		busy, held := h.inFlight[requestID]
+		busy, held := h.inFlight[key]
 		if !held {
 			done := make(chan struct{})
-			h.inFlight[requestID] = done
+			h.inFlight[key] = done
 			h.mu.Unlock()
 			return func() {
 				h.mu.Lock()
-				delete(h.inFlight, requestID)
+				delete(h.inFlight, key)
 				h.mu.Unlock()
 				close(done)
 			}, nil

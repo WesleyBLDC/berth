@@ -302,7 +302,7 @@ One SQLite file, `$BERTH_HOME/berth.db`, through the pure Go driver `modernc.org
 |---|---|---|
 | `machine_state` | 0001 | Current state and version of every entity |
 | `machine_event` | 0001 | Every transition: entity, version, event, from and to state, a secret free detail, time; unique per entity and version |
-| `request_log` | 0001 | The first response to each mutating `request_id`, so retries replay instead of acting twice |
+| `request_log` | 0001, 0008 | The first response to each mutating `request_id` per principal (socket, peer uid and the caller's audit token), so retries replay instead of acting twice and no caller replays another's reply |
 | `secrets` | 0002 | Secret names and creation time; never values |
 | `grants` | 0002, rebuilt by 0004, 0006, 0007 | Pinned consumers: kind (`exe` or `proxy`); for `exe` the resolved path, SHA-256, cdhash (the interpreter's for a script; empty for grants older than 0006), team and signing ID, signature kind (`team`, `apple` for a platform binary, `adhoc`, `unsigned` or `other`; empty for a grant older than 0007 that names no team), argument glob and passed variables; for `proxy` the host, port, header, value prefix and suffix, path glob, methods and placeholder variable; use count and last use. CHECKs refuse a row mixing the two, and the rebuild kept every id |
 | `proxy_sessions` | 0005 | One row per `berth-proxy` run: id, proxy pid, created and ended time, injected and refused counts; never paths, request details or values |
@@ -322,7 +322,7 @@ Instructions and prompts are never a security control.
 - Every connection's peer user ID is checked with `LOCAL_PEERCRED` before a single byte is read; another user's connection is closed.
 - **The agent socket (built, E3 item 3):** when `berthd` is given an agent uid and gid, it also listens at `/Users/Shared/Berth/<owner uid>/agent.sock` (or `-agent-socket`), outside the owner's `0700` `~/Library` so the agent user can reach it. The folder is `0710` and the socket `0660`, both with the agent group (setup makes it the `berth` group, which the owner belongs to), so the agent can connect but not list the folder. `berthd` refuses a socket folder that is a symlink or another user's, or whose ancestors anyone but the owner or root could write (a root owned sticky folder like `/Users/Shared` is fine), and changes the folder's mode and group through a descriptor opened without following symlinks. Every connection's `LOCAL_PEERCRED` uid must equal the agent uid, and only methods marked `(berth.v1.agent) = true` are served; every other method answers `PermissionDenied` with `ERROR_REASON_NOT_AGENT_METHOD`. With no agent uid the agent socket is off. The owner socket is unchanged and still refuses the agent uid.
 - Every request is validated against `protovalidate` rules in the schema before a handler acts on it.
-- Every mutating call carries a `request_id`; a retry gets the first response, and reusing an ID for another method is a typed error.
+- Every mutating call carries a `request_id`; a retry gets the first response, and reusing an ID for another method is a typed error. Request IDs are scoped to the caller: the socket (owner or agent), the peer uid and the process's audit token, so a retry from the same process replays its reply while any other caller using the same ID gets its own call acted on, never someone else's stored reply.
 - Logs go through a redacting `slog` handler that blanks any attribute whose key names a secret; core dumps are turned off at start.
 
 ### The agent surface

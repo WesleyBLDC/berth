@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"syscall"
 	"testing"
@@ -85,5 +86,49 @@ func TestAgentSocketRefusesEveryOtherUser(t *testing.T) {
 	}
 	if _, err := os.Stat(sock); err != nil {
 		t.Fatalf("the agent socket is not there, so the refusal proves nothing: %v", err)
+	}
+}
+
+// TestRequestLogKeepsEachCallersReplies reuses the owner's request id from the agent socket: the
+// agent must get its own call acted on, never the reply berthd stored for the owner.
+func TestRequestLogKeepsEachCallersReplies(t *testing.T) {
+	h := home(t)
+	_, sock := startWithAgent(t, h, os.Getuid())
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	owner := waitServing(t, h)
+	agent, err := client.Connect(ctx, sock, "e2e-agent")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	const id = "shared-request-0001"
+	first, err := owner.Secrets.RequestSecret(ctx, &berthv1.RequestSecretRequest{RequestId: id, Name: "owner-secret", Reason: "owner"})
+	if err != nil || first.GetName() != "owner-secret" {
+		t.Fatalf("owner store: %v %v", first, err)
+	}
+	got, err := agent.Secrets.RequestSecret(ctx, &berthv1.RequestSecretRequest{RequestId: id, Name: "agent-secret", Reason: "agent"})
+	if err != nil {
+		t.Fatalf("agent store with the owner's request id: %v", err)
+	}
+	if got.GetName() != "agent-secret" {
+		t.Fatalf("the agent got the owner's stored reply: %v", got)
+	}
+	list, err := owner.Secrets.ListSecrets(ctx, &berthv1.ListSecretsRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var names []string
+	for _, s := range list.GetSecrets() {
+		names = append(names, s.GetName())
+	}
+	if !slices.Contains(names, "owner-secret") || !slices.Contains(names, "agent-secret") {
+		t.Fatalf("both stores should have acted, secrets are %v", names)
+	}
+
+	// A retry from the same caller still replays its own reply.
+	again, err := owner.Secrets.RequestSecret(ctx, &berthv1.RequestSecretRequest{RequestId: id, Name: "owner-secret", Reason: "owner"})
+	if err != nil || again.GetName() != "owner-secret" || again.GetOutcome() != first.GetOutcome() {
+		t.Fatalf("owner retry: %v %v", again, err)
 	}
 }

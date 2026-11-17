@@ -260,14 +260,14 @@ func (s *shell) serve(ctx context.Context) error {
 		},
 		Secrets: s.secrets,
 	}, servers...)
-	s.listen(ln, s.sock, owner)
+	s.listen(ln, s.sock, owner, false)
 	if agent != nil {
-		s.listen(agentLn, s.cfg.Agent.Path, agent)
+		s.listen(agentLn, s.cfg.Agent.Path, agent, true)
 	}
 	return nil
 }
 
-func (s *shell) listen(ln net.Listener, sock string, server *connect.Server) {
+func (s *shell) listen(ln net.Listener, sock string, server *connect.Server, agent bool) {
 	mux := http.NewServeMux()
 	connecthttp.Mount(mux, server, connecthttp.WithGRPC(), connecthttp.WithProtoJSON())
 	protocols := new(http.Protocols)
@@ -277,6 +277,9 @@ func (s *shell) listen(ln net.Listener, sock string, server *connect.Server) {
 		Handler: mux, Protocols: protocols, ReadHeaderTimeout: 5 * time.Second,
 		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
 			if uc, ok := c.(*net.UnixConn); ok {
+				// The listener already refused any other uid, so this read cannot fail for a served peer.
+				uid, _ := socket.KernelPeerUID(uc)
+				ctx = api.WithCaller(ctx, api.Caller{Agent: agent, UID: uid})
 				pid, pidErr := socket.KernelPeerPID(uc)
 				token, tokenErr := socket.KernelPeerToken(uc)
 				if pidErr == nil && tokenErr == nil {
