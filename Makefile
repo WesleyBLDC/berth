@@ -18,7 +18,7 @@ gen: ## Regenerate code from proto/
 	buf generate
 
 test: ## Unit tests with the race detector
-	go test -race ./internal/...
+	go test -race ./internal/... ./cmd/...
 
 test-native: ## Swift unit tests for berth-native's core
 	swift test --package-path native
