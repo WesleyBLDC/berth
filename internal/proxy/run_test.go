@@ -387,6 +387,29 @@ func TestRequestMustNameItsMode(t *testing.T) {
 	}
 }
 
+// TestRequestWithTrailingBytesIsRefused: the request line holds one object and nothing after it.
+func TestRequestWithTrailingBytesIsRefused(t *testing.T) {
+	u := newUpstream(t)
+	d := newFakeDaemon(target(u.port(), nil))
+	deps := testDeps(t, d, u, canary)
+	for _, in := range []string{
+		`{"secrets":["api-key"],"mode":"owner"} {"secrets":[],"mode":"agent"}`,
+		`{"secrets":["api-key"],"mode":"owner"}x`,
+		`{"secrets":["api-key"],"mode":"owner"}]`,
+	} {
+		var stdout bytes.Buffer
+		deps.Stdin, deps.Stdout, deps.Stderr = strings.NewReader(in+"\n"), &stdout, io.Discard
+		if code := Run(t.Context(), deps); code != ExitRefused || stdout.Len() != 0 {
+			t.Fatalf("%s: exit %d, stdout %q", in, code, stdout.String())
+		}
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	if d.authorized != 0 {
+		t.Fatalf("%d requests with trailing bytes reached berthd", d.authorized)
+	}
+}
+
 // TestControlLineRoundTripsThroughBerthRun runs the real berth run --proxy logic against this
 // proxy in process, so the control line must pass the CLI's own decoder, and a child that only
 // gets the proxy variables reaches the granted host with the header.

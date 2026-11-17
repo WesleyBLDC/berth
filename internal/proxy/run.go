@@ -262,6 +262,10 @@ func readRequest(in *bufio.Reader) (proxyctl.Request, error) {
 	if err := dec.Decode(&req); err != nil {
 		return proxyctl.Request{}, errRequestLine
 	}
+	// Anything after the object is a second reading of the line, which the starter never wrote.
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+		return proxyctl.Request{}, errRequestLine
+	}
 	if req.Mode != proxyctl.ModeOwner && req.Mode != proxyctl.ModeAgent {
 		return proxyctl.Request{}, errRequestLine
 	}
