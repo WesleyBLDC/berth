@@ -208,6 +208,17 @@ func TestManagedBrowserThroughTheCDPProxy(t *testing.T) {
 			t.Fatalf("%s: %+v, want the proxy's refusal", method, r)
 		}
 	}
+	// The browser target would give the agent a browser session, and Shift+Insert pastes with no
+	// editing command named; a real Chromium does both, so the proxy refuses them.
+	var self struct{ TargetInfo struct{ TargetID string } }
+	c.ok("", "Target.getTargetInfo", map[string]any{}, &self)
+	if r := c.call("", "Target.attachToTarget", map[string]any{"targetId": self.TargetInfo.TargetID, "flatten": true}); r.Error == nil || !strings.Contains(r.Error.Message, "only web content") {
+		t.Fatalf("attach to the browser target: %+v, want the proxy's refusal", r)
+	}
+	paste := map[string]any{"type": "rawKeyDown", "key": "Insert", "code": "Insert", "windowsVirtualKeyCode": 45, "modifiers": 8}
+	if r := c.call(attached.SessionID, "Input.dispatchKeyEvent", paste); r.Error == nil || !strings.Contains(r.Error.Message, "clipboard") {
+		t.Fatalf("Shift+Insert: %+v, want the proxy's refusal", r)
+	}
 	if b := browserByID(t, h, l.id); b.GetState() != berthv1.BrowserState_BROWSER_STATE_READY {
 		t.Fatalf("after the refused Browser.close the browser is %v", b.GetState())
 	}

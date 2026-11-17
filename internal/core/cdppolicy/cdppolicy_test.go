@@ -46,6 +46,8 @@ func TestParseRefusesWhatGoAndChromeReadDifferently(t *testing.T) {
 		`{"id":1,"method":"Page.navigate","params":{"URL":"file:///etc/passwd"}}`,
 		`{"id":1,"method":"Target.attachToTarget","params":{"targetId":"T","Flatten":true}}`,
 		`{"id":1,"method":"Input.dispatchDragEvent","params":{"type":"drop","data":{"Files":["/etc/passwd"]}}}`,
+		// Go would read modifiers 0, Chrome Shift.
+		`{"id":1,"method":"Input.dispatchKeyEvent","params":{"type":"rawKeyDown","key":"Insert","modifiers":8,"Modifiers":0}}`,
 		// Unicode case folding: the long s folds to s.
 		"{\"id\":1,\"method\":\"Page.enable\",\"ſessionId\":\"AGENT\"}",
 	} {
@@ -156,6 +158,9 @@ func TestCheck(t *testing.T) {
 		{method: "Storage.getCookies", allowed: true},
 		{method: "Input.dispatchMouseEvent", allowed: true},
 		{method: "Input.dispatchKeyEvent", params: `{"type":"keyDown","commands":["selectAll"]}`, allowed: true},
+		{method: "Input.dispatchKeyEvent", params: `{"type":"rawKeyDown","key":"Insert","windowsVirtualKeyCode":45}`, allowed: true},
+		{method: "Input.dispatchKeyEvent", params: `{"type":"rawKeyDown","key":"Delete","windowsVirtualKeyCode":46,"modifiers":2}`, allowed: true},
+		{method: "Input.dispatchKeyEvent", params: `{"type":"rawKeyDown","key":"v","code":"KeyV","windowsVirtualKeyCode":86,"modifiers":4}`, allowed: true},
 		{method: "Input.dispatchDragEvent", params: `{"type":"dragEnter","x":1,"y":1,"data":{"items":[],"dragOperationsMask":1}}`, allowed: true},
 		{method: "Target.detachFromTarget", params: `{"sessionId":"AGENT"}`, allowed: true},
 		{method: "Target.createBrowserContext", params: `{"disposeOnDetach":true}`, allowed: true},
@@ -238,6 +243,13 @@ func TestNoLocalFiles(t *testing.T) {
 		row{method: "Target.createBrowserContext", params: `{"proxyServer":"socks5://127.0.0.1:1"}`},
 		row{method: "Input.dispatchKeyEvent", params: `{"type":"keyDown","commands":["paste"]}`},
 		row{method: "Input.dispatchKeyEvent", params: `{"type":"keyDown","commands":["selectAll","Copy"]}`},
+		// Blink's own editing table pastes on Shift+Insert, copies on Ctrl+Insert and cuts on
+		// Shift+Delete with no command named; checked against headless Chromium on 2026-11-17.
+		row{method: "Input.dispatchKeyEvent", params: `{"type":"rawKeyDown","key":"Insert","code":"Insert","windowsVirtualKeyCode":45,"modifiers":8}`},
+		row{method: "Input.dispatchKeyEvent", params: `{"type":"rawKeyDown","windowsVirtualKeyCode":45,"modifiers":2}`},
+		row{method: "Input.dispatchKeyEvent", params: `{"type":"rawKeyDown","code":"Insert","modifiers":10}`},
+		row{method: "Input.dispatchKeyEvent", params: `{"type":"rawKeyDown","key":"Delete","modifiers":8}`},
+		row{method: "Input.dispatchKeyEvent", params: `{"type":"rawKeyDown","key":"Insert","modifiers":"8"}`},
 		// A method of a domain listed method by method that is not on its list is refused.
 		row{method: "Page.newMethodChromeAddsLater"},
 		row{method: "IO.write"},
@@ -251,6 +263,35 @@ func TestNoLocalFiles(t *testing.T) {
 		row{method: "DeviceAccess.selectPrompt", params: `{"id":"p","deviceId":"d"}`},
 	)
 	check(t, rows)
+}
+
+// Only web content can be attached to: the browser target would hand the agent a browser
+// session, and Chrome's own pages reach settings and the disk.
+func TestWebTarget(t *testing.T) {
+	for _, tc := range []struct {
+		kind, url string
+		ok        bool
+	}{
+		{"page", "https://a.example", true},
+		{"page", "about:blank", true},
+		{"page", "", true},
+		{"iframe", "https://b.example", true},
+		{"tab", "data:text/html,x", true},
+		{"worker", "blob:https://a.example/u", true},
+		{"service_worker", "https://a.example/sw.js", true},
+		{"shared_worker", "https://a.example/w.js", true},
+		{"browser", "", false},
+		{"page", "chrome://settings", false},
+		{"page", "file:///etc/hosts", false},
+		{"page", "devtools://devtools/bundled/inspector.html", false},
+		{"other", "https://a.example", false},
+		{"webview", "https://a.example", false},
+		{"auction_worklet", "https://a.example", false},
+	} {
+		if got := cdppolicy.WebTarget(tc.kind, tc.url); got != tc.ok {
+			t.Errorf("WebTarget(%q, %q) = %v, want %v", tc.kind, tc.url, got, tc.ok)
+		}
+	}
 }
 
 func quote(s string) string {

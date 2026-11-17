@@ -134,10 +134,11 @@ Chrome runs as the person, so the filter tries to confine the token holder to we
 | Method | Passes only when |
 |---|---|
 | `Page.navigate`, `Target.createTarget` (empty `url` allowed), `Fetch.continueRequest` (when it sets `url`) | The URL is `http`, `https`, `data`, `blob` or exactly `about:blank`, after stripping what Chrome's parser strips (C0 controls and spaces at either end, tabs and newlines anywhere); `file`, `filesystem`, `chrome`, `chrome-extension`, `devtools`, `view-source`, `javascript` and anything without a scheme are refused |
+| `Target.attachToTarget` | The proxy asks the browser for the target first (`Target.getTargetInfo` on Berth's ids) and attaches only to web content: a `page`, `iframe`, `tab`, `worker`, `shared_worker` or `service_worker` showing a loadable URL; the browser target, whose session is Berth's like `Target.attachToBrowserTarget`'s, and Chrome's own pages are refused. A session auto attach opens to anything else never reaches the agent, and the proxy resumes and detaches it |
 | `Target.attachToTarget`, `Target.setAutoAttach` | `flatten` is exactly `true`, so every message of the new session is a top level message the filter sees; `Target.autoAttachRelated` has no `flatten` parameter, so the filter cannot tell, and it is not listed (no driver tested needs it) |
 | `Target.detachFromTarget` | Its `sessionId` is not Berth's |
 | `Target.createBrowserContext` | It sets no `proxyServer` or `proxyBypassList` |
-| `Input.dispatchKeyEvent` | No editing command names the clipboard (paste, copy, cut) |
+| `Input.dispatchKeyEvent` | No editing command names the clipboard (paste, copy, cut), and the key is none Blink's own editing table turns into a clipboard command with no command named: Shift+Insert (paste), Ctrl+Insert (copy) or Shift+Delete (cut), by `key`, `code` or `windowsVirtualKeyCode` |
 | `Input.dispatchDragEvent` | `data.files` is absent or empty |
 
 **Answered by the proxy:** `Browser.setDownloadBehavior` and `Page.setDownloadBehavior` get an empty success from the proxy and never reach Chrome. Playwright sends `Browser.setDownloadBehavior` for every context when it connects and fails if it is refused, while downloads stay in `<profile>/Downloads`, which `berthd` writes into the profile's `Preferences` before every launch, with no prompt, so a headful download never lands in `~/Downloads`.
@@ -277,6 +278,14 @@ Items 3 and 4 can run in parallel after the contract; 5 joins them; 6 needs 5's 
 - **An agent profile a browser still uses at boot** (a Chrome for Testing a crashed `berthd` left, stopped but not yet gone) is deleted at the next boot.
 - **With one shared agent user, a CDP token is the agent user's, not the session's:** any agent process that reads the output of `berth browser open` or the token file `berth-mcp` writes drives that browser until it closes.
 - **`berth-mcp` does not verify the server on the agent socket,** like `berth` in agent mode: it sends only the session token and receives facts, never a value.
+
+## Checks that need a headful browser
+
+Checked headless on 2026-11-17 against chrome-headless-shell 156.0.8078.4, through the pipe:
+
+- **Shift+Insert pasted, Ctrl+Insert copied and Shift+Delete cut** with no editing command named, so the filter now refuses those keys. Headless has its own clipboard; in a headful browser the same keys would reach the person's pasteboard. Cmd+V and Ctrl+V did nothing without a command, as expected on macOS, where the menu, not Blink, maps them. To check headful: in a headful owner browser with text on the macOS pasteboard, send each key event with no `commands` and confirm the proxy refuses it and the field stays empty.
+- **`Target.attachToTarget` with the browser target's own id succeeded**, which would have given the agent a browser session; the proxy now refuses it. Chrome's own pages (`chrome://settings` and the like) cannot be opened by an agent in a headless browser, so the refusal of a session auto attach opens to one is tested only against the fake browser. To check headful: open `chrome://settings` by hand in a headful owner browser, connect, turn on auto attach, and confirm no `Target.attachedToTarget` for it reaches the client.
+- **A `file:` URL in a drag item did not load:** a `text/uri-list` or `text/plain` item of `file:///etc/hosts` dropped on a page with no handler left the page where it was, so drag items are not filtered beyond `data.files`. A headful browser may navigate to a dropped link: to check, drop the same item on a page in a headful owner browser and confirm the tab does not open the file.
 
 ## Decisions for the maintainer
 

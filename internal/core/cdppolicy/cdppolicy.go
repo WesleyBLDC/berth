@@ -38,8 +38,11 @@ var ErrMalformed = errors.New("a CDP message must be one JSON object with an int
 // levels a key that differs from a known one only by case, or two keys equal but for case, are
 // refused rather than guessed at.
 var readFields = map[string][]string{
-	"":            {"id", "method", "sessionId", "params"},
-	"params":      {"url", "flatten", "sessionId", "targetId", "commands", "data", "proxyServer", "proxyBypassList"},
+	"": {"id", "method", "sessionId", "params"},
+	"params": {
+		"url", "flatten", "sessionId", "targetId", "commands", "data", "proxyServer", "proxyBypassList",
+		"key", "code", "modifiers", "windowsVirtualKeyCode",
+	},
 	"params.data": {"files"},
 }
 
@@ -359,12 +362,50 @@ func checkParams(m Message, own func(string) bool) string {
 				return "editing commands may not reach the clipboard"
 			}
 		}
+		var k struct {
+			Key                   string `json:"key"`
+			Code                  string `json:"code"`
+			Modifiers             int64  `json:"modifiers"`
+			WindowsVirtualKeyCode int64  `json:"windowsVirtualKeyCode"`
+		}
+		if len(m.Params) > 0 && json.Unmarshal(m.Params, &k) != nil {
+			return "unreadable parameters"
+		}
+		if clipboardKey(k.Key, k.Code, k.WindowsVirtualKeyCode, k.Modifiers) {
+			return "keys that reach the clipboard are refused"
+		}
 	case "Input.dispatchDragEvent":
 		if p.Data != nil && len(p.Data.Files) > 0 {
 			return "it hands local files to a page"
 		}
 	}
 	return ""
+}
+
+// CDP's modifier bits, and the Windows key codes Blink's editing table reads.
+const (
+	modCtrl  = 2
+	modShift = 8
+	vkInsert = 45
+	vkDelete = 46
+)
+
+// clipboardKey reports whether a key event is one Blink's own editing table turns into a
+// clipboard command without any editing command named: Shift+Insert pastes, Ctrl+Insert copies
+// and Shift+Delete cuts. The key is matched by its code, its key name or its key code alike,
+// since Chrome may read any of them.
+func clipboardKey(key, code string, vk, modifiers int64) bool {
+	insert := key == "Insert" || code == "Insert" || vk == vkInsert
+	del := key == "Delete" || code == "Delete" || vk == vkDelete
+	return (insert && modifiers&(modShift|modCtrl) != 0) || (del && modifiers&modShift != 0)
+}
+
+// WebTarget reports whether an agent may attach to a target of this type showing this URL: a
+// page, frame, tab or worker of web content. The browser target, Chrome's own pages and its other
+// internal targets are not, as a browser session is Berth's.
+func WebTarget(kind, url string) bool {
+	return slices.Contains([]string{"page", "iframe", "tab", "worker", "shared_worker", "service_worker"}, kind) &&
+		(url == "" || Loadable(url))
 }
 
 // Loadable reports whether a URL is web content: http, https, data, blob or about:blank. It

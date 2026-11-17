@@ -290,6 +290,7 @@ func TestAnEndedConnectionLeavesNothingToTheNext(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	fb.Answer("Target.getTargetInfo", `{"targetInfo":{"targetId":"T2","type":"page","url":"about:blank"}}`)
 	write(t, ws, `{"id":1,"method":"Target.setAutoAttach","params":{"autoAttach":true,"waitForDebuggerOnStart":true,"flatten":true}}`)
 	write(t, ws, `{"id":2,"method":"Fetch.enable"}`)
 	write(t, ws, `{"id":3,"method":"Target.attachToTarget","params":{"targetId":"T2","flatten":true}}`)
@@ -301,8 +302,8 @@ func TestAnEndedConnectionLeavesNothingToTheNext(t *testing.T) {
 	}
 	for _, raw := range []string{
 		`{"id":1,"result":{}}`, `{"id":2,"result":{}}`,
-		`{"method":"Target.attachedToTarget","params":{"sessionId":"S1","targetInfo":{},"waitingForDebugger":true}}`,
-		`{"method":"Target.attachedToTarget","sessionId":"S1","params":{"sessionId":"S1-child","targetInfo":{},"waitingForDebugger":false}}`,
+		`{"method":"Target.attachedToTarget","params":{"sessionId":"S1","targetInfo":{"type":"page"},"waitingForDebugger":true}}`,
+		`{"method":"Target.attachedToTarget","sessionId":"S1","params":{"sessionId":"S1-child","targetInfo":{"type":"iframe"},"waitingForDebugger":false}}`,
 		`{"id":3,"result":{"sessionId":"S2"}}`,
 	} {
 		if err := fb.Emit([]byte(raw)); err != nil {
@@ -428,5 +429,61 @@ func TestConnectionsAreCappedAndRefusalsClose(t *testing.T) {
 	_ = held[0].Close()
 	if err := versionWithin(5 * time.Second); err != nil {
 		t.Fatalf("a freed slot must serve the next request: %v", err)
+	}
+}
+
+// An agent attaches only to web content: the browser target would give it a browser session,
+// which is Berth's, and Chrome's own pages reach settings and the disk. A session auto attach
+// opens to such a target never reaches the agent and is detached.
+func TestOnlyWebContentCanBeAttachedTo(t *testing.T) {
+	fb, endpoint, _ := serve(t)
+	ws, _, err := dial(t, endpoint, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ws.CloseNow() }()
+	fb.Answer("Target.getTargetInfo", `{"targetInfo":{"targetId":"B","type":"browser","url":""}}`)
+	write(t, ws, `{"id":1,"method":"Target.attachToTarget","params":{"targetId":"B","flatten":true}}`)
+	if m := read(t, ws); m["id"] != float64(1) || !strings.Contains(m["error"].(map[string]any)["message"].(string), "only web content") {
+		t.Fatalf("attach to the browser target = %v, want a refusal", m)
+	}
+	fb.Answer("Target.getTargetInfo", `{"targetInfo":{"targetId":"P","type":"page","url":"https://a.example/"}}`)
+	write(t, ws, `{"id":2,"method":"Target.attachToTarget","params":{"targetId":"P","flatten":true}}`)
+	for deadline := time.Now().Add(5 * time.Second); len(fb.Sent()) < 1; time.Sleep(5 * time.Millisecond) {
+		if time.Now().After(deadline) {
+			t.Fatal("an attach to a web page never reached the browser")
+		}
+	}
+	if sent := fb.Sent(); len(sent) != 1 || !strings.Contains(string(sent[0]), `"targetId":"P"`) {
+		t.Fatalf("browser got %q; only the attach to the page may reach it", sent)
+	}
+
+	for _, raw := range []string{
+		`{"method":"Target.attachedToTarget","params":{"sessionId":"UI","targetInfo":{"type":"page","url":"chrome://settings/"},"waitingForDebugger":true}}`,
+		`{"method":"Runtime.executionContextCreated","sessionId":"UI","params":{}}`,
+		`{"method":"Target.detachedFromTarget","params":{"sessionId":"UI"}}`,
+		`{"method":"Target.attachedToTarget","params":{"sessionId":"WEB","targetInfo":{"type":"page","url":"https://a.example/"},"waitingForDebugger":false}}`,
+	} {
+		if err := fb.Emit([]byte(raw)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if m := read(t, ws); m["params"].(map[string]any)["sessionId"] != "WEB" {
+		t.Fatalf("the agent got %v; nothing about a session to Chrome's own page may reach it", m)
+	}
+	var got []string
+	for deadline := time.Now().Add(5 * time.Second); len(got) < 2; time.Sleep(5 * time.Millisecond) {
+		got = got[:0]
+		for _, c := range fb.Calls() {
+			if c.Session == "UI" || strings.Contains(c.Params, `"UI"`) {
+				got = append(got, c.Session+" "+c.Method+" "+c.Params)
+			}
+		}
+		if time.Now().After(deadline) {
+			break
+		}
+	}
+	if !slices.Equal(got, []string{`UI Runtime.runIfWaitingForDebugger `, ` Target.detachFromTarget {"sessionId":"UI"}`}) {
+		t.Fatalf("calls about the hidden session = %q, want it resumed and detached", got)
 	}
 }

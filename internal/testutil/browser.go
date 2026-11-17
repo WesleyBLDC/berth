@@ -69,13 +69,14 @@ type FakeBrowser struct {
 	stubborn bool
 	wedged   bool
 
-	mu     sync.Mutex
-	calls  []FakeCall
-	sent   [][]byte
-	sink   func([]byte)
-	killed bool
-	done   chan struct{}
-	once   sync.Once
+	mu      sync.Mutex
+	answers map[string]string
+	calls   []FakeCall
+	sent    [][]byte
+	sink    func([]byte)
+	killed  bool
+	done    chan struct{}
+	once    sync.Once
 }
 
 func (b *FakeBrowser) Process() ports.ProcessRef { return b.ref }
@@ -93,6 +94,7 @@ type FakeCall struct {
 func (b *FakeBrowser) Call(ctx context.Context, session, method string, params []byte) ([]byte, error) {
 	b.mu.Lock()
 	b.calls = append(b.calls, FakeCall{Session: session, Method: method, Params: string(params)})
+	answer, scripted := b.answers[method]
 	b.mu.Unlock()
 	select {
 	case <-b.done:
@@ -100,6 +102,8 @@ func (b *FakeBrowser) Call(ctx context.Context, session, method string, params [
 	default:
 	}
 	switch {
+	case scripted:
+		return []byte(answer), nil
 	case method == "Browser.close" && b.wedged:
 		<-b.done
 		return nil, ports.ErrBrowserGone
@@ -117,6 +121,16 @@ func (b *FakeBrowser) Call(ctx context.Context, session, method string, params [
 	case <-b.done:
 		return nil, ports.ErrBrowserGone
 	}
+}
+
+// Answer makes every later call of method answer with result.
+func (b *FakeBrowser) Answer(method, result string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.answers == nil {
+		b.answers = map[string]string{}
+	}
+	b.answers[method] = result
 }
 
 func (b *FakeBrowser) Send(raw []byte) error {

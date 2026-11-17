@@ -72,7 +72,7 @@ func (p *Proxy) Serve(id string, conn ports.BrowserConn, tokenHash [32]byte) (st
 	}
 	e := &endpoint{
 		log: p.Log, id: id, conn: conn, tokenHash: tokenHash, addr: ln.Addr().String(), maxBytes: maxBytes,
-		resetWait: resetWait, stale: map[callKey]bool{},
+		resetWait: resetWait, stale: map[callKey]bool{}, hidden: map[string]bool{},
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /json/version", e.version)
@@ -105,6 +105,9 @@ type endpoint struct {
 	// stale holds the calls an ended connection left in flight; their replies are dropped, and
 	// the next connection may not reuse their ids until they come.
 	stale map[callKey]bool
+	// hidden holds the sessions auto attach opened to targets that are not web content; no
+	// connection sees them, and the proxy detaches them.
+	hidden map[string]bool
 }
 
 type callKey struct {
@@ -180,8 +183,10 @@ func (e *endpoint) socket(w http.ResponseWriter, r *http.Request) {
 	ws.SetReadLimit(maxMessage)
 	ctx, cancel := context.WithCancel(r.Context())
 	c := &client{inFlight: map[callKey]string{}, sessions: map[string]string{}, waiting: map[string]bool{}}
-	// The reset runs after the request ends, so it must not end with it.
-	defer e.release(context.WithoutCancel(r.Context()), ws, c)
+	// The reset and the detaches of hidden sessions run after the request ends, so they must not
+	// end with it.
+	base := context.WithoutCancel(r.Context())
+	defer e.release(base, ws, c)
 	defer cancel()
 
 	out := make(chan []byte, queued)
@@ -201,7 +206,7 @@ func (e *endpoint) socket(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	e.conn.Sink(func(raw []byte) {
-		if e.fromBrowser(c, raw) && ctx.Err() == nil {
+		if e.fromBrowser(base, c, raw) && ctx.Err() == nil {
 			push(raw)
 		}
 	})
@@ -251,6 +256,13 @@ func (e *endpoint) socket(w http.ResponseWriter, r *http.Request) {
 			refused++
 			push(refusal(m, why))
 			continue
+		}
+		if m.Method == "Target.attachToTarget" {
+			if why := e.attachable(ctx, m); why != "" {
+				refused++
+				push(refusal(m, why))
+				continue
+			}
 		}
 		if why := e.toBrowser(c, m); why != "" {
 			refused++
@@ -318,6 +330,10 @@ type browserMessage struct {
 	Params    struct {
 		SessionID          string `json:"sessionId"`
 		WaitingForDebugger bool   `json:"waitingForDebugger"`
+		TargetInfo         struct {
+			Type string `json:"type"`
+			URL  string `json:"url"`
+		} `json:"targetInfo"`
 	} `json:"params"`
 	Result struct {
 		SessionID string `json:"sessionId"`
@@ -326,12 +342,15 @@ type browserMessage struct {
 
 // fromBrowser tracks the sessions and replies of a message from the browser and reports whether
 // it may reach the connection: a reply to a call an ended connection made never does.
-func (e *endpoint) fromBrowser(c *client, raw []byte) bool {
+func (e *endpoint) fromBrowser(ctx context.Context, c *client, raw []byte) bool {
 	var m browserMessage
 	// Chrome's output is well formed; whatever a type mismatch leaves unread is not tracked.
 	_ = json.Unmarshal(raw, &m)
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if e.hidden[m.SessionID] {
+		return false
+	}
 	if m.ID != nil {
 		key := callKey{m.SessionID, *m.ID}
 		method, mine := c.inFlight[key]
@@ -350,8 +369,16 @@ func (e *endpoint) fromBrowser(c *client, raw []byte) bool {
 	}
 	switch m.Method {
 	case "Target.attachedToTarget":
+		if !cdppolicy.WebTarget(m.Params.TargetInfo.Type, m.Params.TargetInfo.URL) {
+			e.hide(ctx, c, m.Params.SessionID, m.SessionID, m.Params.WaitingForDebugger)
+			return false
+		}
 		c.attached(m.Params.SessionID, m.SessionID, m.Params.WaitingForDebugger)
 	case "Target.detachedFromTarget":
+		if e.hidden[m.Params.SessionID] {
+			delete(e.hidden, m.Params.SessionID)
+			return false
+		}
 		delete(c.sessions, m.Params.SessionID)
 		delete(c.waiting, m.Params.SessionID)
 		// A detached session's calls are never answered.
@@ -362,6 +389,56 @@ func (e *endpoint) fromBrowser(c *client, raw []byte) bool {
 		}
 	}
 	return true
+}
+
+// attachable asks the browser what a target is, so an agent attaches only to web content: never
+// the browser target, whose session is Berth's, nor Chrome's own pages.
+func (e *endpoint) attachable(ctx context.Context, m cdppolicy.Message) string {
+	var p struct {
+		TargetID string `json:"targetId"`
+	}
+	_ = json.Unmarshal(m.Params, &p)
+	params, _ := json.Marshal(p)
+	ctx, cancel := context.WithTimeout(ctx, e.resetWait)
+	defer cancel()
+	raw, err := e.conn.Call(ctx, "", "Target.getTargetInfo", params)
+	if err != nil {
+		return "the target is not known"
+	}
+	var info struct {
+		TargetInfo struct {
+			Type string `json:"type"`
+			URL  string `json:"url"`
+		} `json:"targetInfo"`
+	}
+	if json.Unmarshal(raw, &info) != nil || !cdppolicy.WebTarget(info.TargetInfo.Type, info.TargetInfo.URL) {
+		return "only web content can be attached to"
+	}
+	return ""
+}
+
+// hide keeps a session auto attach opened to a target that is not web content from every
+// connection and detaches it, resuming it first if it waits for the debugger. It runs on the
+// pipe's reader, which the calls need, so they run beside it. Past the limit the connection is
+// dropped.
+func (e *endpoint) hide(ctx context.Context, c *client, session, parent string, waiting bool) {
+	if session == "" {
+		return
+	}
+	if len(e.hidden) >= maxTracked {
+		c.drop()
+		return
+	}
+	e.hidden[session] = true
+	go func() {
+		ctx, cancel := context.WithTimeout(ctx, e.resetWait)
+		defer cancel()
+		if waiting {
+			_, _ = e.conn.Call(ctx, session, "Runtime.runIfWaitingForDebugger", nil)
+		}
+		p, _ := json.Marshal(map[string]string{"sessionId": session})
+		_, _ = e.conn.Call(ctx, parent, "Target.detachFromTarget", p)
+	}()
 }
 
 // attached records a session the connection was handed; past the limit the connection is
