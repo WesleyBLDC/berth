@@ -293,7 +293,7 @@ func reportError(w io.Writer, err error, name, target string) int {
 		fmt.Fprintf(w, "secret %s is busy: another request waits for the person; try again when it finishes\n", name)
 		return ExitBusy
 	case berthv1.ErrorReason_ERROR_REASON_BAD_PROXY_TARGET:
-		line = fmt.Sprintf("berthd will not proxy to %s: use a DNS host name, not an IP address or localhost", target)
+		line = fmt.Sprintf("berthd will not proxy to %s: use a DNS host name, not an IP address or localhost, and a placeholder variable berth run does not set itself", target)
 	case berthv1.ErrorReason_ERROR_REASON_GRANT_NOT_FOUND:
 		line = fmt.Sprintf("no grant has id %s; berth secret ls lists the grants", target)
 	case berthv1.ErrorReason_ERROR_REASON_NOT_AGENT_METHOD:

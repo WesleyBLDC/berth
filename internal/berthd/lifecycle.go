@@ -13,12 +13,18 @@ import (
 	"berth/internal/core/ports"
 	"berth/internal/core/proxysession"
 	"berth/internal/core/secret"
+	"berth/internal/proxyctl"
 )
 
 func (s *secrets) GrantProxy(ctx context.Context, req *berthv1.GrantProxyRequest, peer ports.Peer) (*berthv1.GrantProxyResponse, error) {
 	name := req.GetName()
 	target := targetOf(req.GetTarget())
 	if !s.AllowLocalTargets && hostpolicy.Local(target.Host) {
+		return nil, api.ErrBadProxyTarget
+	}
+	// berth run sets these itself and berth-proxy refuses such a target, so the grant could
+	// never be used; refuse it before it reaches Touch ID.
+	if slices.Contains(proxyctl.BerthOwned, target.PlaceholderEnv) {
 		return nil, api.ErrBadProxyTarget
 	}
 	if err := s.requireStored(ctx, name); err != nil {

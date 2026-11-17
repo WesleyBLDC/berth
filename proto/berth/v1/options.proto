@@ -37,7 +37,7 @@ enum ErrorReason {
   // grants waits for Touch ID.
   ERROR_REASON_BUSY = 10;
   // BAD_PROXY_TARGET refuses a proxy target berthd will not grant, such as an IP literal or
-  // localhost outside e2e builds.
+  // localhost outside e2e builds, or a placeholder variable berth run sets itself.
   ERROR_REASON_BAD_PROXY_TARGET = 11;
   // GRANT_NOT_FOUND means no grant has that id.
   ERROR_REASON_GRANT_NOT_FOUND = 12;

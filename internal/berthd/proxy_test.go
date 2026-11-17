@@ -116,6 +116,12 @@ func TestGrantProxyTargets(t *testing.T) {
 			t.Fatalf("%s: %v", host, err)
 		}
 	}
+	for _, env := range []string{"HTTPS_PROXY", "SSL_CERT_FILE", "NODE_USE_ENV_PROXY"} {
+		req := &berthv1.GrantProxyRequest{Name: "gh-token", Target: &berthv1.ProxyTarget{Host: proxyHost, Port: 443, HeaderName: "Authorization", PlaceholderEnv: env}}
+		if _, err := f.s.GrantProxy(t.Context(), req, peerOf(berthPID)); !errors.Is(err, api.ErrBadProxyTarget) {
+			t.Fatalf("placeholder %s: %v", env, err)
+		}
+	}
 	if len(f.approver.PowerPrompts()) != 0 {
 		t.Fatal("a refused target reached Touch ID")
 	}

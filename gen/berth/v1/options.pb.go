@@ -50,7 +50,7 @@ const (
 	// grants waits for Touch ID.
 	ErrorReason_ERROR_REASON_BUSY ErrorReason = 10
 	// BAD_PROXY_TARGET refuses a proxy target berthd will not grant, such as an IP literal or
-	// localhost outside e2e builds.
+	// localhost outside e2e builds, or a placeholder variable berth run sets itself.
 	ErrorReason_ERROR_REASON_BAD_PROXY_TARGET ErrorReason = 11
 	// GRANT_NOT_FOUND means no grant has that id.
 	ErrorReason_ERROR_REASON_GRANT_NOT_FOUND ErrorReason = 12
