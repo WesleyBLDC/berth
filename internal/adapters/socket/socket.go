@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+	"unsafe"
 
 	"golang.org/x/sys/unix"
 )
@@ -34,6 +35,52 @@ func KernelPeerUID(c *net.UnixConn) (uint32, error) {
 		return 0, credErr
 	}
 	return cred.Uid, nil
+}
+
+// KernelPeerPID asks the kernel (LOCAL_PEERPID) which process connected, so handlers can learn
+// about the caller without trusting anything it sends.
+func KernelPeerPID(c *net.UnixConn) (int, error) {
+	raw, err := c.SyscallConn()
+	if err != nil {
+		return 0, err
+	}
+	var pid int
+	var pidErr error
+	if err := raw.Control(func(fd uintptr) {
+		pid, pidErr = unix.GetsockoptInt(int(fd), unix.SOL_LOCAL, unix.LOCAL_PEERPID)
+	}); err != nil {
+		return 0, err
+	}
+	if pidErr != nil {
+		return 0, pidErr
+	}
+	return pid, nil
+}
+
+// KernelPeerToken asks the kernel (LOCAL_PEERTOKEN) for the connecting process's audit token,
+// which names that process instance and cannot be reused by another.
+func KernelPeerToken(c *net.UnixConn) ([32]byte, error) {
+	raw, err := c.SyscallConn()
+	if err != nil {
+		return [32]byte{}, err
+	}
+	var token [32]byte
+	var tokenErr error
+	if err := raw.Control(func(fd uintptr) {
+		size := uint32(len(token))
+		// x/sys/unix has no byte-buffer getsockopt that keeps zero bytes; token and size outlive the call.
+		//nolint:gosec,staticcheck // see above
+		_, _, errno := unix.Syscall6(unix.SYS_GETSOCKOPT, fd, unix.SOL_LOCAL, unix.LOCAL_PEERTOKEN,
+			uintptr(unsafe.Pointer(&token[0])), uintptr(unsafe.Pointer(&size)), 0)
+		if errno != 0 {
+			tokenErr = errno
+		} else if size != uint32(len(token)) {
+			tokenErr = fmt.Errorf("audit token is %d bytes", size)
+		}
+	}); err != nil {
+		return [32]byte{}, err
+	}
+	return token, tokenErr
 }
 
 // ErrAlreadyRunning means another daemon answers on the socket.

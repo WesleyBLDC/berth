@@ -57,19 +57,12 @@ func askForValue(_ text: DialogText) -> DialogAnswer {
     // A command line process needs a window server connection and a policy that may show
     // windows without a Dock icon.
     app.setActivationPolicy(.accessory)
-    let alert = NSAlert()
-    alert.messageText = text.title
-    alert.informativeText = text.body
-    alert.addButton(withTitle: "Save")
-    alert.addButton(withTitle: "Cancel")
-    let field = NSSecureTextField(frame: NSRect(x: 0, y: 0, width: 360, height: 24))
-    field.placeholderString = "Paste the value"
-    alert.accessoryView = field
-    alert.window.initialFirstResponder = field
+    let dialog = StorePanel(text)
+    let field = dialog.field
     app.activate()
-    let response = alert.runModal()
+    let confirmed = dialog.run()
     defer { field.stringValue = "" }
-    guard response == .alertFirstButtonReturn else { return .cancelled }
+    guard confirmed else { return .cancelled }
     guard let value = SecretBuffer(copying: field.stringValue) else { return .empty }
     return .entered(value)
 }

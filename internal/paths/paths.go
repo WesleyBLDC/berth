@@ -20,3 +20,17 @@ func Home() (string, error) {
 
 func Socket(home string) string   { return filepath.Join(home, "berthd.sock") }
 func Database(home string) string { return filepath.Join(home, "berth.db") }
+
+// Beside returns name in the folder of the running executable, with symlinks resolved, so a
+// helper installed next to berthd or berth is found wherever the pair was put.
+func Beside(name string) (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	exe, err = filepath.EvalSymlinks(exe)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Join(filepath.Dir(exe), name), nil
+}

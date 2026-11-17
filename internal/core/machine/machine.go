@@ -51,6 +51,7 @@ type Actor[S ~string, E Event, F any] struct {
 	clock      ports.Clock
 	inbox      chan E
 	rejected   func(error)
+	applied    func(ports.TransitionRecord)
 }
 
 // Config wires an actor to its machine and the outside world.
@@ -64,6 +65,9 @@ type Config[S ~string, E Event, F any] struct {
 	Clock      ports.Clock
 	// Rejected is told about illegal events; they never stop the actor.
 	Rejected func(error)
+	// Applied is told about each transition once it is saved and its effects have run, so a
+	// shell answering a request can wait for the outcome it needs. It must not block.
+	Applied func(ports.TransitionRecord)
 }
 
 // NewActor loads the entity's persisted state, or starts it at Initial.
@@ -78,6 +82,7 @@ func NewActor[S ~string, E Event, F any](ctx context.Context, cfg Config[S, E, F
 		clock:      cfg.Clock,
 		inbox:      make(chan E, 64),
 		rejected:   cfg.Rejected,
+		applied:    cfg.Applied,
 	}
 	saved, found, err := cfg.Store.LoadState(ctx, cfg.Entity)
 	if err != nil {
@@ -159,6 +164,9 @@ func (a *Actor[S, E, F]) apply(ctx context.Context, event E) error {
 				return err
 			}
 		}
+	}
+	if a.applied != nil {
+		a.applied(rec)
 	}
 	return nil
 }

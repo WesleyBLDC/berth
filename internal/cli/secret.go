@@ -115,6 +115,9 @@ func secretGrant(ctx context.Context, args []string, env Env) int {
 	fs := newFlags("secret grant", env)
 	exe := fs.String("exe", "", "the executable to pin, by path or name on PATH")
 	glob := fs.String("args", "", "limit the arguments it may run with; empty allows any")
+	interpreter := fs.Bool("allow-interpreter", false, "grant an interpreter (a shell, python, a #! script), which could print the secret")
+	var passEnv stringList
+	fs.Var(&passEnv, "pass-env", "an environment variable berth run may also pass to it; repeat for more")
 	name, ok := parseNamed(fs, args)
 	if !ok || *exe == "" {
 		fmt.Fprint(env.Stderr, usage)
@@ -129,7 +132,9 @@ func secretGrant(ctx context.Context, args []string, env Env) int {
 	if !ok {
 		return ExitError
 	}
-	resp, err := c.Secrets.GrantSecret(ctx, &berthv1.GrantSecretRequest{RequestId: requestID(), Name: name, ExePath: path, ArgsGlob: *glob})
+	resp, err := c.Secrets.GrantSecret(ctx, &berthv1.GrantSecretRequest{
+		RequestId: requestID(), Name: name, ExePath: path, ArgsGlob: *glob, AllowInterpreter: *interpreter, PassEnv: passEnv,
+	})
 	if err != nil {
 		return reportError(env.Stderr, err, name, path)
 	}
@@ -141,6 +146,9 @@ func secretGrant(ctx context.Context, args []string, env Env) int {
 		fmt.Fprintf(w, "  sha256\t%s\n", shortHash(cons.GetSha256()))
 		fmt.Fprintf(w, "  team\t%s\n", teamOf(cons))
 		fmt.Fprintf(w, "  args\t%s\n", argsOf(cons.GetArgsGlob()))
+		if len(cons.GetPassEnv()) > 0 {
+			fmt.Fprintf(w, "  env\t%s\n", strings.Join(cons.GetPassEnv(), ", "))
+		}
 		_ = w.Flush()
 		return ExitOK
 	case berthv1.GrantOutcome_GRANT_OUTCOME_DENIED:
@@ -188,4 +196,13 @@ func lastUsed(ts *timestamppb.Timestamp) string {
 		return "never"
 	}
 	return ts.AsTime().Local().Format(time.DateTime)
+}
+
+type stringList []string
+
+func (l *stringList) String() string { return strings.Join(*l, ",") }
+
+func (l *stringList) Set(s string) error {
+	*l = append(*l, s)
+	return nil
 }

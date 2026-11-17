@@ -120,3 +120,64 @@ func TestTamperedSignedBinaryLosesSignature(t *testing.T) {
 		t.Fatalf("a tampered binary kept its signature facts: %+v", got)
 	}
 }
+
+func TestSatisfiesChecksTheRequirement(t *testing.T) {
+	id := New(DefaultCodesign)
+	if ok, err := id.Satisfies(t.Context(), "/bin/ls", "anchor apple"); err != nil || !ok {
+		t.Fatalf("/bin/ls against anchor apple: %v, %v", ok, err)
+	}
+	if ok, err := id.Satisfies(t.Context(), "/bin/ls", `anchor apple generic and certificate leaf[subject.OU] = "XPJ7XA42J4"`); err != nil || ok {
+		t.Fatalf("/bin/ls against another team: %v, %v", ok, err)
+	}
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The Go linker signs ad hoc, which no anchor accepts.
+	if ok, err := id.Satisfies(t.Context(), self, "anchor apple generic"); err != nil || ok {
+		t.Fatalf("ad hoc test binary: %v, %v", ok, err)
+	}
+}
+
+func TestShebangAndCDHash(t *testing.T) {
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := filepath.Join(dir, "deploy")
+	if err := os.WriteFile(script, []byte("#!/bin/sh\necho hi\n"), 0o700); err != nil { //nolint:gosec // an executable fixture
+		t.Fatal(err)
+	}
+	id := New(DefaultCodesign)
+	if exe, err := id.Identify(t.Context(), script); err != nil || !exe.Shebang {
+		t.Fatalf("script: %+v, %v", exe, err)
+	}
+	if exe, err := id.Identify(t.Context(), "/bin/ls"); err != nil || exe.Shebang {
+		t.Fatalf("/bin/ls: %+v, %v", exe, err)
+	}
+	h, err := id.CDHash(t.Context(), "/bin/ls")
+	if err != nil || h == ([20]byte{}) {
+		t.Fatalf("cdhash %x, %v", h, err)
+	}
+	if _, err := id.CDHash(t.Context(), script); err == nil {
+		t.Fatal("an unsigned script has a cdhash")
+	}
+}
+
+func TestPinSignedReadsAPrivateCopy(t *testing.T) {
+	id := New(DefaultCodesign)
+	want, err := id.CDHash(t.Context(), "/bin/ls")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum, ok, err := id.PinSigned(t.Context(), "/bin/ls", "anchor apple")
+	if err != nil || !ok || sum != want {
+		t.Fatalf("pin %x %v %v, want %x", sum, ok, err, want)
+	}
+	if _, ok, _ := id.PinSigned(t.Context(), "/bin/ls", `anchor apple generic and certificate leaf[subject.OU] = "XPJ7XA42J4"`); ok {
+		t.Fatal("pinned against another team's requirement")
+	}
+	if got, err := id.PinAny(t.Context(), "/bin/ls"); err != nil || got != want {
+		t.Fatalf("pin any %x %v", got, err)
+	}
+}

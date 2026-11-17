@@ -28,7 +28,7 @@ func run() int {
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	code, err := berthd.Run(ctx, berthd.Config{Home: home, Version: version, Log: log})
+	code, err := berthd.Run(ctx, berthd.Config{Home: home, Version: version, Log: log, Pinner: testPinner()})
 	if err != nil {
 		log.Error("berthd failed", "err", err)
 	}

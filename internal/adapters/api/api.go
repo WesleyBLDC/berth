@@ -33,20 +33,29 @@ type Deps struct {
 	Clock     ports.Clock
 	// RequestStop asks the daemon machine to stop; it must not block.
 	RequestStop func(ctx context.Context) error
+	// Secrets runs SecretsService; nil leaves it unimplemented.
+	Secrets Secrets
 }
 
 type handlers struct {
 	berthv1connect.UnimplementedDaemonServiceHandler
 	berthv1connect.UnimplementedDebugServiceHandler
-	d        Deps
-	mutating sync.Mutex
+	berthv1connect.UnimplementedSecretsServiceHandler
+	d Deps
+	// inFlight holds the request IDs being served, so a retry waits for the first call while
+	// calls with other IDs (a store dialog can stay open for minutes) carry on.
+	mu       sync.Mutex
+	inFlight map[string]chan struct{}
 }
 
 // Register mounts every service on server.
 func Register(server *connect.Server, d Deps) {
-	h := &handlers{d: d}
+	h := &handlers{d: d, inFlight: map[string]chan struct{}{}}
 	berthv1connect.RegisterDaemonServiceHandler(server, h)
 	berthv1connect.RegisterDebugServiceHandler(server, h)
+	if d.Secrets != nil {
+		berthv1connect.RegisterSecretsServiceHandler(server, h)
+	}
 }
 
 func (h *handlers) Handshake(_ context.Context, req *berthv1.HandshakeRequest) (*berthv1.HandshakeResponse, error) {
@@ -119,9 +128,18 @@ func (h *handlers) GetState(ctx context.Context, req *berthv1.GetStateRequest) (
 
 // once runs do at most once per request ID and replays the stored response on a retry.
 func once[T proto.Message](ctx context.Context, h *handlers, method, requestID string, empty T, do func() (T, error)) (T, error) {
-	h.mutating.Lock()
-	defer h.mutating.Unlock()
+	return onceKeeping(ctx, h, method, requestID, empty, do, func(resp T) T { return resp })
+}
+
+// onceKeeping is once, but records keep(response) instead of the response, for a reply that
+// carries something which must never be written down (a use ticket).
+func onceKeeping[T proto.Message](ctx context.Context, h *handlers, method, requestID string, empty T, do func() (T, error), keep func(T) T) (T, error) {
 	var zero T
+	release, err := h.claim(ctx, requestID)
+	if err != nil {
+		return zero, connect.NewError(connect.CodeCanceled, "gave up waiting for an earlier call with this request id")
+	}
+	defer release()
 	storedMethod, stored, found, err := h.d.Requests.Recall(ctx, requestID)
 	if err != nil {
 		return zero, connect.NewError(connect.CodeInternal, "could not read the request log")
@@ -140,7 +158,7 @@ func once[T proto.Message](ctx context.Context, h *handlers, method, requestID s
 	if err != nil {
 		return zero, err
 	}
-	raw, err := proto.Marshal(resp)
+	raw, err := proto.Marshal(keep(resp))
 	if err != nil {
 		return zero, connect.NewError(connect.CodeInternal, "could not encode response")
 	}
@@ -148,6 +166,31 @@ func once[T proto.Message](ctx context.Context, h *handlers, method, requestID s
 		return zero, connect.NewError(connect.CodeInternal, "could not record the request")
 	}
 	return resp, nil
+}
+
+// claim waits until no other call holds requestID, then holds it until release.
+func (h *handlers) claim(ctx context.Context, requestID string) (release func(), err error) {
+	for {
+		h.mu.Lock()
+		busy, held := h.inFlight[requestID]
+		if !held {
+			done := make(chan struct{})
+			h.inFlight[requestID] = done
+			h.mu.Unlock()
+			return func() {
+				h.mu.Lock()
+				delete(h.inFlight, requestID)
+				h.mu.Unlock()
+				close(done)
+			}, nil
+		}
+		h.mu.Unlock()
+		select {
+		case <-busy:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	}
 }
 
 func validate(msg proto.Message) error {

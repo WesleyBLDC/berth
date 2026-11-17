@@ -5,7 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	berthv1 "berth/gen/berth/v1"
 )
@@ -65,5 +67,84 @@ func TestRunRefusalDoesNotStartTheChild(t *testing.T) {
 				t.Fatalf("the child ran: %v", err)
 			}
 		})
+	}
+}
+
+// TestRunForwardsSIGTERMButNotSIGINT signals berth alone (not its process group): SIGTERM must
+// reach the child, SIGINT must not, because a terminal Ctrl-C reaches the child directly.
+func TestRunForwardsSIGTERMButNotSIGINT(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "signals")
+	script := `trap 'echo INT >> "$1"' INT; trap 'echo TERM >> "$1"; exit 0' TERM; echo ready >> "$1"; while :; do sleep 0.05; done`
+	var stdout, stderr strings.Builder
+	env := Env{Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr}
+	done := make(chan int, 1)
+	go func() {
+		done <- startChild(t.Context(), "/bin/sh", []string{"-c", script, "sh", log}, []string{"PATH=/bin:/usr/bin"}, nil, nil, env)
+	}()
+	waitFor := func(want string) string {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			b, _ := os.ReadFile(log)
+			if strings.Contains(string(b), want) {
+				return string(b)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		b, _ := os.ReadFile(log)
+		t.Fatalf("child never logged %q; log %q", want, b)
+		return ""
+	}
+	waitFor("ready")
+	if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	got := waitFor("TERM")
+	if code := <-done; code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr.String())
+	}
+	if strings.Contains(got, "INT") {
+		t.Fatalf("SIGINT was forwarded to the child; log %q", got)
+	}
+}
+
+func TestRunFromAnUnsignedBerthSaysToBuild(t *testing.T) {
+	fake := &fakeSecrets{useErr: reasonError(t, berthv1.ErrorReason_ERROR_REASON_PEER_NOT_TRUSTED)}
+	read := func(context.Context, []byte) ([]byte, error) {
+		t.Error("a refused run read a value")
+		return nil, nil
+	}
+	r := invoke(t, fake, read, "run", "--env", "KEY=gh-token", "--", "/bin/sh", "-c", "true")
+	if r.code != ExitError || !strings.Contains(r.stderr, "run make build") {
+		t.Fatalf("code %d, stderr %q", r.code, r.stderr)
+	}
+}
+
+// TestRunPassesOnlyTheAllowlistAndGrantedNames sets variables that steer tools (NODE_OPTIONS,
+// GIT_CONFIG_*) on berth's own environment; only the allowlist and the grant's names reach the child.
+func TestRunPassesOnlyTheAllowlistAndGrantedNames(t *testing.T) {
+	t.Setenv("NODE_OPTIONS", "--require /tmp/evil.js")
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("E2E_GRANTED", "yes")
+	t.Setenv("E2E_NOT_GRANTED", "no")
+	fake := &fakeSecrets{use: berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED, passEnv: []string{"E2E_GRANTED", "NODE_OPTIONS"}}
+	read := func(context.Context, []byte) ([]byte, error) { return []byte("v"), nil }
+	r := invoke(t, fake, read, "run", "--env", "KEY=gh-token", "--", "/usr/bin/env")
+	if r.code != 0 {
+		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+	}
+	for _, banned := range []string{"NODE_OPTIONS", "GIT_CONFIG_COUNT", "E2E_NOT_GRANTED"} {
+		if strings.Contains(r.stdout, banned+"=") {
+			t.Fatalf("%s reached the child:\n%s", banned, r.stdout)
+		}
+	}
+	for _, want := range []string{"E2E_GRANTED=yes", "KEY=****", "PATH="} {
+		if !strings.Contains(r.stdout, want) {
+			t.Fatalf("child env missing %s:\n%s", want, r.stdout)
+		}
 	}
 }

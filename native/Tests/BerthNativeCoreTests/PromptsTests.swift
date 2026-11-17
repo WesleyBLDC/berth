@@ -70,3 +70,28 @@ let requester = Requester(
             == "let /usr/local/bin/tool (sha256 abababababab, any arguments) use secret k, requested by /opt/agents/claude"
     )
 }
+
+@Test func confirmReasonWarnsAboutAnInterpreter() {
+    let request = ConfirmRequest(
+        action: "grant", secret: "k",
+        consumer: Consumer(path: "/bin/sh", sha256: hash64, teamID: "", signingID: ""),
+        argsGlob: "", interpreter: true, requester: requester)
+    #expect(confirmTouchIDReason(request).hasPrefix("/bin/sh is an interpreter and can print this secret. let /bin/sh"))
+}
+
+@Test func parentRequirementPinsTheSignedCLI() {
+    #expect(berthCLIRequirement.contains(#"leaf[subject.OU] = "XPJ7XA42J4""#))
+    #expect(berthCLIRequirement.contains(#"identifier "com.wesleybldc.berth.cli""#))
+    #expect(berthCLIRequirement.hasPrefix("anchor apple generic"))
+}
+
+@Test func confirmReasonListsPassedEnvironment() {
+    let request = ConfirmRequest(
+        action: "grant", secret: "k",
+        consumer: Consumer(path: "/usr/local/bin/tool", sha256: hash64, teamID: "", signingID: ""),
+        argsGlob: "", passEnv: ["GH_HOST", "AWS_REGION"], requester: requester)
+    #expect(
+        confirmTouchIDReason(request)
+            == "let /usr/local/bin/tool (sha256 abababababab, any arguments, also environment GH_HOST AWS_REGION) "
+            + "use secret k, requested by /opt/agents/claude")
+}

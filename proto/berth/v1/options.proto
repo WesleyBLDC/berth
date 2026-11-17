@@ -24,8 +24,12 @@ enum ErrorReason {
   ERROR_REASON_EXECUTABLE_NOT_FOUND = 6;
   // TICKET_INVALID covers unknown, expired and already redeemed tickets alike.
   ERROR_REASON_TICKET_INVALID = 7;
-  // PEER_NOT_TRUSTED means the calling process is not the signed berth-native helper.
+  // PEER_NOT_TRUSTED means the calling process is not the signed Berth binary the method
+  // needs: berth-native for RedeemUseTicket, the berth CLI for an AuthorizeUse ticket.
   ERROR_REASON_PEER_NOT_TRUSTED = 8;
+  // INTERPRETER refuses a grant to an interpreter (a shell, python, a #! script) unless the
+  // request sets allow_interpreter, since anything it runs could print the secret.
+  ERROR_REASON_INTERPRETER = 9;
 }
 
 message ErrorInfo {

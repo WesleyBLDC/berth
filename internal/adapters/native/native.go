@@ -15,6 +15,8 @@ import (
 	"os/exec"
 	"time"
 
+	"golang.org/x/sys/unix"
+
 	"berth/internal/core/ports"
 )
 
@@ -69,11 +71,13 @@ type consumer struct {
 }
 
 type confirmRequest struct {
-	Action    string    `json:"action"`
-	Secret    string    `json:"secret"`
-	Consumer  consumer  `json:"consumer"`
-	ArgsGlob  string    `json:"args_glob"`
-	Requester requester `json:"requester"`
+	Action      string    `json:"action"`
+	Secret      string    `json:"secret"`
+	Consumer    consumer  `json:"consumer"`
+	ArgsGlob    string    `json:"args_glob"`
+	Interpreter bool      `json:"interpreter"`
+	PassEnv     []string  `json:"pass_env"`
+	Requester   requester `json:"requester"`
 }
 
 type outcome struct {
@@ -114,8 +118,10 @@ func (a *Approver) ConfirmPower(ctx context.Context, p ports.PowerPrompt) (ports
 			TeamID:    p.Consumer.TeamID,
 			SigningID: p.Consumer.SigningID,
 		},
-		ArgsGlob:  p.ArgsGlob,
-		Requester: toRequester(p.Requester),
+		ArgsGlob:    p.ArgsGlob,
+		Interpreter: p.Interpreter,
+		PassEnv:     append([]string{}, p.PassEnv...),
+		Requester:   toRequester(p.Requester),
 	}
 	out, err := a.ask(ctx, "confirm", req)
 	if err != nil {
@@ -181,24 +187,38 @@ func parseOutcome(b []byte) (outcome, error) {
 	return out, nil
 }
 
+// ValueFD is the file descriptor on which berth-native read writes the value: one end of a
+// Unix socketpair whose other end berth holds, so the helper can ask the kernel who will
+// receive the value before it writes. stdout stays free and carries nothing.
+const ValueFD = 3
+
 // Read runs `<helper> read` with the ticket and returns the value bytes, which the caller zeroes
-// when done. No error ever includes what the helper wrote to stdout.
+// when done. The value arrives only over the socketpair on ValueFD; no error ever includes
+// anything the helper wrote.
 func Read(ctx context.Context, helper string, ticket ports.Ticket) ([]byte, error) {
 	in := make([]byte, hex.EncodedLen(len(ticket))+1)
 	hex.Encode(in, ticket[:])
 	in[len(in)-1] = '\n'
+	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
+	if err != nil {
+		return nil, fmt.Errorf("native read: socketpair: %w", err)
+	}
+	mine := os.NewFile(uintptr(fds[0]), "berth-value")
+	theirs := os.NewFile(uintptr(fds[1]), "berth-native-value")
+	defer func() { _ = mine.Close() }()
+	unix.CloseOnExec(fds[0])
 	cmd := helperCommand(ctx, helper, "read")
 	cmd.Stdin = bytes.NewReader(in)
 	var stderr bytes.Buffer
 	cmd.Stderr = &limitedWriter{w: &stderr, n: maxStderr}
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return nil, fmt.Errorf("native read: %w", err)
-	}
+	cmd.ExtraFiles = []*os.File{theirs} // becomes ValueFD in the helper
 	if err := cmd.Start(); err != nil {
+		_ = theirs.Close()
 		return nil, fmt.Errorf("native read: start helper: %w", err)
 	}
-	value, readErr := readAllZeroing(stdout, maxValue)
+	// Only the helper may hold the other end, so reading reaches end of file when it exits.
+	_ = theirs.Close()
+	value, readErr := readAllZeroing(mine, maxValue)
 	waitErr := cmd.Wait()
 	switch {
 	case waitErr != nil:

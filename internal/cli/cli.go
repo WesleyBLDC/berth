@@ -39,11 +39,14 @@ const usage = `usage:
   berth secret request <name> --why "<reason>"  ask the person to store a secret; prints only "saved <name>"
   berth secret add <name>                       store a secret yourself through the native dialog
   berth secret ls [--json]                      list secrets and their consumers, never values
-  berth secret grant <name> --exe <path> [--args <glob>]
+  berth secret grant <name> --exe <path> [--args <glob>] [--pass-env NAME ...] [--allow-interpreter]
                                                 let one executable use a secret, after Touch ID
   berth run --env KEY=<name> [--env ...] -- <command> [args...]
                                                 run a command with secrets in its environment,
-                                                masked as **** in its output
+                                                masked as **** in its output; the command gets
+                                                HOME, PATH, TERM, LANG, LC_*, USER, LOGNAME, SHELL,
+                                                TMPDIR, the secrets, and only the variables its
+                                                grant lists with --pass-env
 
 exit codes:
   0  success
@@ -66,6 +69,9 @@ type Env struct {
 	Stdout  io.Writer
 	Stderr  io.Writer
 	Connect func(ctx context.Context) (*client.Client, error)
+	// ConnectTrusted is Connect, refusing any server but the signed berthd; berth run uses it,
+	// since it hands what berthd answers to berth-native.
+	ConnectTrusted func(ctx context.Context) (*client.Client, error)
 	// Read is nil until berth-native is wired in; berth run refuses without it.
 	Read ValueReader
 }
@@ -96,9 +102,13 @@ func Run(ctx context.Context, args []string, env Env) int {
 }
 
 func connectClient(ctx context.Context, env Env) (*client.Client, bool) {
+	return connectWith(ctx, env, env.Connect)
+}
+
+func connectWith(ctx context.Context, env Env, connect func(context.Context) (*client.Client, error)) (*client.Client, bool) {
 	ctx, cancel := context.WithTimeout(ctx, connectTimeout)
 	defer cancel()
-	c, err := env.Connect(ctx)
+	c, err := connect(ctx)
 	if err != nil {
 		fmt.Fprintln(env.Stderr, err)
 		return nil, false
@@ -199,7 +209,9 @@ func reportError(w io.Writer, err error, name, exe string) int {
 	case berthv1.ErrorReason_ERROR_REASON_TICKET_INVALID:
 		line = "the use ticket was invalid, used or expired; run the command again"
 	case berthv1.ErrorReason_ERROR_REASON_PEER_NOT_TRUSTED:
-		line = "berthd does not trust this caller"
+		line = "berthd gives secrets only to the signed berth binary; run make build and use bin/berth beside bin/berthd"
+	case berthv1.ErrorReason_ERROR_REASON_INTERPRETER:
+		line = fmt.Sprintf("%s is an interpreter, so anything it runs could print the secret; add --allow-interpreter only if that is what you want", exe)
 	case berthv1.ErrorReason_ERROR_REASON_UNSPECIFIED:
 		line = err.Error()
 	}

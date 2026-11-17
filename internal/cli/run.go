@@ -8,10 +8,12 @@ import (
 	"os/exec"
 	"os/signal"
 	"regexp"
+	"slices"
 	"strings"
 	"syscall"
 
 	berthv1 "berth/gen/berth/v1"
+	"berth/internal/core/envpolicy"
 )
 
 var envKey = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -54,13 +56,19 @@ func runCommand(ctx context.Context, args []string, env Env) int {
 		return ExitError
 	}
 	argv := fs.Args()[1:]
-	c, ok := connectClient(ctx, env)
+	if env.ConnectTrusted == nil {
+		fmt.Fprintln(env.Stderr, "berth run needs a verified connection to berthd")
+		return ExitError
+	}
+	c, ok := connectWith(ctx, env, env.ConnectTrusted)
 	if !ok {
 		return ExitError
 	}
 
 	// Every grant is checked before any value is read, so a refusal never leaves a value behind.
 	tickets := make([][]byte, len(bindings))
+	// A variable passes only when every grant used here lists it.
+	var passEnv []string
 	for i, b := range bindings {
 		resp, err := c.Secrets.AuthorizeUse(ctx, &berthv1.AuthorizeUseRequest{RequestId: requestID(), Name: b.name, ExePath: exe, Argv: argv})
 		if err != nil {
@@ -69,6 +77,11 @@ func runCommand(ctx context.Context, args []string, env Env) int {
 		switch resp.GetOutcome() {
 		case berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED:
 			tickets[i] = resp.GetTicket()
+			if i == 0 {
+				passEnv = resp.GetPassEnv()
+			} else {
+				passEnv = slices.DeleteFunc(passEnv, func(n string) bool { return !slices.Contains(resp.GetPassEnv(), n) })
+			}
 			continue
 		case berthv1.UseOutcome_USE_OUTCOME_NO_GRANT:
 			fmt.Fprintf(env.Stderr, "no grant lets %s use %s with these arguments; ask the person to run: berth secret grant %s --exe %s\n",
@@ -98,17 +111,19 @@ func runCommand(ctx context.Context, args []string, env Env) int {
 		}
 		values = append(values, v)
 	}
-	return startChild(ctx, exe, argv, bindings, values, env)
+	return startChild(ctx, exe, argv, envpolicy.Child(os.Environ(), passEnv), bindings, values, env)
 }
 
-func startChild(ctx context.Context, exe string, argv []string, bindings envFlags, values [][]byte, env Env) int {
+// startChild runs exe with childEnv plus the secrets; childEnv comes from envpolicy, never the
+// whole environment berth was started with.
+func startChild(ctx context.Context, exe string, argv, childEnv []string, bindings envFlags, values [][]byte, env Env) int {
 	stdout := newMasker(env.Stdout, values)
 	stderr := newMasker(env.Stderr, values)
 	defer func() { _ = stdout.Close(); _ = stderr.Close() }()
 
 	cmd := exec.CommandContext(ctx, exe, argv...) //nolint:gosec // running the person's chosen command is what berth run is for
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = env.Stdin, stdout, stderr
-	cmd.Env = os.Environ()
+	cmd.Env = slices.Clone(childEnv)
 	for i, b := range bindings {
 		cmd.Env = append(cmd.Env, envEntry(b.key, values[i]))
 	}
@@ -132,7 +147,9 @@ func startChild(ctx context.Context, exe string, argv []string, bindings envFlag
 		for {
 			select {
 			case s := <-signals:
-				_ = cmd.Process.Signal(s)
+				if forwarded(s) {
+					_ = cmd.Process.Signal(s)
+				}
 			case <-done:
 				return
 			}
@@ -140,6 +157,12 @@ func startChild(ctx context.Context, exe string, argv []string, bindings envFlag
 	}()
 	return exitCode(cmd.Wait(), env)
 }
+
+// forwarded reports whether berth passes a signal on to its child. The child shares berth's
+// process group (it stays in the terminal's foreground group so it can read the terminal), so
+// a terminal Ctrl-C already reaches it; forwarding SIGINT too would deliver it twice. berth
+// still catches SIGINT so it outlives the child and reports the child's exit.
+func forwarded(s os.Signal) bool { return s == syscall.SIGTERM }
 
 // envEntry is the one place a secret value becomes a Go string: exec.Cmd.Env is a []string and
 // the standard library offers no byte-slice way to hand a child its environment. The string

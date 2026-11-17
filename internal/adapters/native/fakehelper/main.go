@@ -27,9 +27,12 @@
 //	garbage  prints a line that is not JSON and exits 0
 //	hang     sleeps until killed, for timeout tests
 //
-// read redeems for real: it POSTs Connect unary JSON over HTTP/1.1 to $BERTH_HOME/berthd.sock
-// (/berth.v1.SecretsService/RedeemUseTicket) and reads values/<name> for the name berthd returns.
-// Any read failure prints nothing on stdout and exits 3.
+// read checks its receiver first: fd 3 must be a Unix stream socket whose peer is its parent
+// running the signed berth beside it (see openRecipient). It then redeems for real: it POSTs
+// Connect unary JSON over HTTP/1.1 to $BERTH_HOME/berthd.sock
+// (/berth.v1.SecretsService/RedeemUseTicket), reads values/<name> for the name berthd returns,
+// and writes it to fd 3.
+// Any read failure writes nothing to fd 3 and exits 3.
 package main
 
 import (
@@ -43,6 +46,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"os"
@@ -51,6 +55,12 @@ import (
 	"strings"
 	"time"
 
+	"berth/internal/adapters/clock"
+	"berth/internal/adapters/execid"
+	"berth/internal/adapters/peer"
+	"berth/internal/adapters/socket"
+	"berth/internal/codetrust"
+	"berth/internal/core/ports"
 	"berth/internal/paths"
 )
 
@@ -106,7 +116,7 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	case "confirm":
 		return confirm(dir, cfg, line, stdout, stderr)
 	case "read":
-		return read(dir, cfg, line, stdout, stderr)
+		return read(dir, cfg, line, stderr)
 	}
 	fmt.Fprintln(stderr, "fakehelper: unknown command", command)
 	return exitCrash
@@ -245,7 +255,7 @@ func confirm(dir string, cfg config, line []byte, stdout, stderr io.Writer) int 
 	return reply(stdout, "approved", "")
 }
 
-func read(dir string, cfg config, line []byte, stdout, stderr io.Writer) int {
+func read(dir string, cfg config, line []byte, stderr io.Writer) int {
 	ticket, err := hex.DecodeString(strings.TrimSuffix(string(line), "\n"))
 	if err != nil || len(ticket) != 32 {
 		fmt.Fprintln(stderr, "fakehelper: bad ticket")
@@ -258,6 +268,14 @@ func read(dir string, cfg config, line []byte, stdout, stderr io.Writer) int {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
+	// Like berth-native: the receiver is checked before the ticket is redeemed.
+	out, err := recipient(ctx)
+	if err != nil {
+		_ = record(dir, "read", map[string]bool{"redeemed": false})
+		fmt.Fprintln(stderr, "fakehelper: value channel:", err)
+		return exitRefused
+	}
+	defer func() { _ = out.Close() }()
 	name, err := redeem(ctx, ticket)
 	_ = record(dir, "read", map[string]bool{"redeemed": err == nil})
 	if err != nil {
@@ -274,10 +292,74 @@ func read(dir string, cfg config, line []byte, stdout, stderr io.Writer) int {
 		return exitRefused
 	}
 	defer clear(value)
-	if _, err := stdout.Write(value); err != nil {
+	if _, err := out.Write(value); err != nil {
 		return exitRefused
 	}
 	return 0
+}
+
+// recipient opens the value channel; tests replace it.
+var recipient = openRecipient
+
+// openRecipient applies berth-native's receiver rule to fd 3: it must be a connected Unix
+// stream socket whose peer, by the kernel's audit token, is this process's parent and is
+// running the signed berth CLI beside the helper. The fake pins berth the way the e2e build of
+// berthd does (identifier only, no Apple chain); the live check still needs the hardened runtime.
+func openRecipient(ctx context.Context) (io.WriteCloser, error) {
+	f := os.NewFile(3, "berth-value")
+	if f == nil {
+		return nil, errors.New("no value channel on fd 3")
+	}
+	info, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("no value channel: %w", err)
+	}
+	if info.Mode()&os.ModeSocket == 0 {
+		_ = f.Close()
+		return nil, errors.New("the value channel is not a socket")
+	}
+	conn, err := net.FileConn(f)
+	_ = f.Close()
+	if err != nil {
+		return nil, err
+	}
+	uc, ok := conn.(*net.UnixConn)
+	if !ok || uc.LocalAddr().Network() != "unix" {
+		_ = conn.Close()
+		return nil, errors.New("the value channel is not a Unix stream socket")
+	}
+	if err := checkRecipient(ctx, uc, os.Getppid()); err != nil {
+		_ = uc.Close()
+		return nil, err
+	}
+	return uc, nil
+}
+
+func checkRecipient(ctx context.Context, uc *net.UnixConn, parent int) error {
+	pid, err := socket.KernelPeerPID(uc)
+	if err != nil {
+		return err
+	}
+	token, err := socket.KernelPeerToken(uc)
+	if err != nil {
+		return err
+	}
+	if pid != parent {
+		return fmt.Errorf("the value channel's peer %d is not the parent %d", pid, parent)
+	}
+	cli, err := paths.Beside("berth")
+	if err != nil {
+		return err
+	}
+	x := execid.New(execid.DefaultCodesign)
+	pin := func(ctx context.Context, path, identifier string) (ports.CDHash, bool, error) {
+		return x.PinSigned(ctx, path, `identifier "`+identifier+`"`)
+	}
+	trusted := codetrust.New(ctx, cli, codetrust.CLISigningID, pin, peer.NewCode(), clock.System{}, slog.New(slog.DiscardHandler))
+	if !trusted.Runs(ctx, ports.Peer{PID: pid, AuditToken: token}) {
+		return errors.New("the value channel's peer is not the signed berth")
+	}
+	return nil
 }
 
 // redeem is the same Connect unary JSON call the Swift helper makes, with no generated code.

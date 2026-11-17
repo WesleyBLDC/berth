@@ -3,6 +3,7 @@ package machine_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -119,5 +120,25 @@ func TestActorResumesFromPersistedState(t *testing.T) {
 	second := newActor(t, store, func(context.Context, blink) ([]press, error) { return nil, nil }, nil)
 	if second.State() != on {
 		t.Fatalf("resumed in %s, want On", second.State())
+	}
+}
+
+func TestAppliedIsToldAfterEffectsRun(t *testing.T) {
+	store := testutil.NewStore()
+	var order []string
+	a, err := machine.NewActor(context.Background(), machine.Config[light, press, blink]{
+		Entity: "lamp", Kind: "light", Initial: off, Transition: lightTransition,
+		Run:   func(context.Context, blink) ([]press, error) { order = append(order, "effect"); return nil, nil },
+		Store: store, Clock: testutil.NewClock(),
+		Applied: func(rec ports.TransitionRecord) { order = append(order, "applied "+rec.Event+" to "+rec.To) },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runFor(t, a, press{"Press"}, press{"Nope"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(order, ", "); got != "effect, applied Press to On" {
+		t.Fatalf("order: %s", got)
 	}
 }

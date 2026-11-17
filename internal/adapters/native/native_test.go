@@ -116,17 +116,19 @@ func TestConfirmPowerSendsConsumerFacts(t *testing.T) {
 	var sum [32]byte
 	sum[0], sum[31] = 0xab, 0x01
 	p := ports.PowerPrompt{
-		Action:    ports.PowerGrant,
-		Secret:    "gh-token",
-		Consumer:  ports.Executable{Path: "/usr/local/bin/gh", SHA256: sum, TeamID: "TEAM123456", SigningID: "com.github.gh"},
-		ArgsGlob:  "pr *",
-		Requester: ports.Requester{PID: 9, Executable: "/x", WorkingDir: "/"},
+		Action:      ports.PowerGrant,
+		Secret:      "gh-token",
+		Consumer:    ports.Executable{Path: "/usr/local/bin/gh", SHA256: sum, TeamID: "TEAM123456", SigningID: "com.github.gh"},
+		ArgsGlob:    "pr *",
+		Interpreter: true,
+		PassEnv:     []string{"GH_HOST"},
+		Requester:   ports.Requester{PID: 9, Executable: "/x", WorkingDir: "/"},
 	}
 	got, err := native.New(helper).ConfirmPower(t.Context(), p)
 	if err != nil || got != ports.PowerApproved {
 		t.Fatalf("got %q, %v; want approved", got, err)
 	}
-	want := `{"action":"grant","args_glob":"pr *","consumer":{"path":"/usr/local/bin/gh","sha256":"ab` + strings.Repeat("0", 60) + `01","signing_id":"com.github.gh","team_id":"TEAM123456"},"requester":{"executable":"/x","pid":9,"tree":[],"working_dir":"/"},"secret":"gh-token"}`
+	want := `{"action":"grant","args_glob":"pr *","consumer":{"path":"/usr/local/bin/gh","sha256":"ab` + strings.Repeat("0", 60) + `01","signing_id":"com.github.gh","team_id":"TEAM123456"},"interpreter":true,"pass_env":["GH_HOST"],"requester":{"executable":"/x","pid":9,"tree":[],"working_dir":"/"},"secret":"gh-token"}`
 	if got := string(requests(t, home)[0].Request); got != want {
 		t.Fatalf("request\n got %s\nwant %s", got, want)
 	}
@@ -199,24 +201,25 @@ func serveRedeem(t *testing.T, home, name string) {
 	t.Cleanup(func() { _ = srv.Close() })
 }
 
-func TestReadReturnsValue(t *testing.T) {
-	home := berthHome(t, "approve")
-	serveRedeem(t, home, "gh-token")
-	values := filepath.Join(home, "fake-native", "values")
-	if err := os.MkdirAll(values, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	canary := bytes.Repeat([]byte("canary-9d"), 200) // longer than the first buffer, to exercise growth
-	if err := os.WriteFile(filepath.Join(values, "gh-token"), canary, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	got, err := native.Read(t.Context(), helper, ports.Ticket{1, 2, 3})
+// TestReadReturnsValueFromTheValueSocket stands in for berth-native with a script that writes
+// to fd 3, the value socket; the fake helper's own peer rule is proven end to end.
+func TestReadReturnsValueFromTheValueSocket(t *testing.T) {
+	berthHome(t, "approve")
+	canary := strings.Repeat("canary-9d", 200) // longer than the first buffer, to exercise growth
+	got, err := native.Read(t.Context(), script(t, "printf '%s' '"+canary+"' >&3; printf noise"), ports.Ticket{1, 2, 3})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer clear(got)
-	if !bytes.Equal(got, canary) {
-		t.Fatalf("value differs from the stored one")
+	if string(got) != canary {
+		t.Fatalf("value differs: %d bytes", len(got))
+	}
+}
+
+func TestReadIgnoresStdout(t *testing.T) {
+	berthHome(t, "approve")
+	if got, err := native.Read(t.Context(), script(t, "printf canary-55e1"), ports.Ticket{}); err == nil || got != nil {
+		t.Fatalf("a value on stdout was accepted: %q, %v", got, err)
 	}
 }
 
@@ -240,7 +243,7 @@ func script(t *testing.T, body string) string {
 
 func TestReadErrorNeverIncludesStdout(t *testing.T) {
 	berthHome(t, "approve")
-	for _, body := range []string{"printf canary-55e1; exit 3", "printf canary-55e1; exit 1", "printf canary-55e1 >&1; kill -9 $$"} {
+	for _, body := range []string{"printf canary-55e1 >&3; exit 3", "printf canary-55e1; exit 1", "printf canary-55e1 >&3; kill -9 $$"} {
 		got, err := native.Read(t.Context(), script(t, body), ports.Ticket{})
 		if err == nil || got != nil {
 			t.Fatalf("%s: want an error and no value", body)
@@ -255,5 +258,30 @@ func TestReadEmptyOutputIsAnError(t *testing.T) {
 	berthHome(t, "approve")
 	if got, err := native.Read(t.Context(), script(t, "exit 0"), ports.Ticket{}); err == nil || got != nil {
 		t.Fatalf("want an error for empty output")
+	}
+}
+
+// TestFakeHelperRefusesAReceiverThatIsNotItsSignedParent runs the fake helper, which applies
+// berth-native's receiver rule, in two ways that must both fail before any redeem: as a shell's
+// child, so the value socket's peer (this test) is not the helper's parent, and directly, where
+// the peer is the parent but is this unsigned test binary rather than the signed berth.
+func TestFakeHelperRefusesAReceiverThatIsNotItsSignedParent(t *testing.T) {
+	underShell := filepath.Join(t.TempDir(), "wrapper")
+	if err := os.WriteFile(underShell, []byte("#!/bin/sh\n\""+helper+"\" \"$@\"\nexit $?\n"), 0o700); err != nil { //nolint:gosec // a stand in wrapper
+		t.Fatal(err)
+	}
+	for name, h := range map[string]string{"peer is not the parent": underShell, "peer is not the signed berth": helper} {
+		t.Run(name, func(t *testing.T) {
+			home := berthHome(t, "approve")
+			serveRedeem(t, home, "gh-token")
+			got, err := native.Read(t.Context(), h, ports.Ticket{1})
+			if err == nil || got != nil {
+				t.Fatalf("want a refusal, got %d bytes, %v", len(got), err)
+			}
+			reqs := requests(t, home)
+			if len(reqs) != 1 || !strings.Contains(string(reqs[0].Request), `"redeemed":false`) {
+				t.Fatalf("the helper redeemed before refusing: %+v", reqs)
+			}
+		})
 	}
 }
