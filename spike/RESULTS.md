@@ -8,6 +8,7 @@ Run on macOS 26.5, Go 1.27.4, Swift 6.3.3, Xcode 26.6, Chrome 157.
 | 2 | Playwright MCP through the token gated CDP proxy | Pass |
 | 3 | Chrome screencast frames shown in SwiftUI | Pass |
 | 4 | Touch ID and a Keychain read from a signed helper | Pass |
+| 5 | ScreenCaptureKit captures a window by process ID | Pass |
 
 ## 1. Swift streaming over the Unix socket
 
@@ -63,3 +64,14 @@ Findings for the real build:
 - Items the helper creates itself trust it without an extra Keychain dialog. Existing items (made by `security` or other apps) will show the macOS "allow access" dialog the first time; Berth should tell the person to choose Always Allow.
 - The data protection keychain needs a keychain access group entitlement and a provisioning profile; the helper uses the login keychain until the paid program at M8.
 - The signing certificate needed Apple's WWDR G3 intermediate in the login keychain (see `docs/setup.md`).
+
+## 5. ScreenCaptureKit captures a window by process ID
+
+- A visible Chrome was launched through the proxy; a signed app bundle found its largest on screen window by `owningApplication.processID` among all shareable windows and captured it with `SCScreenshotManager` (2400x2732, real Chrome toolbar and tab in the image).
+
+Findings for the real build:
+
+- Screen Recording is granted to an app bundle identified by bundle ID and certificate. A command line tool run from a background session gets error -3801 with no prompt, so the permission must live in `Berth.app`.
+- The permission check passed only after the person turned the app on in System Settings; renaming the bundle ID needs a new grant. The real app uses `com.wesleybldc.berth` from now on.
+- A process that uses ScreenCaptureKit must connect to the window server first (`NSApplication.shared`), or CoreGraphics asserts.
+- Size the capture from the window's content rectangle and scale; sizing from `frame` alone left blank space.

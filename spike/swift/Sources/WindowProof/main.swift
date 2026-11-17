@@ -1,4 +1,5 @@
 // Finds the largest on screen window of a process and captures it with ScreenCaptureKit.
+import AppKit
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -10,6 +11,8 @@ guard CommandLine.arguments.count == 3, let pid = pid_t(CommandLine.arguments[1]
     exit(64)
 }
 let out = URL(fileURLWithPath: CommandLine.arguments[2])
+// ScreenCaptureKit needs a window server connection, which AppKit sets up.
+_ = NSApplication.shared
 
 do {
     let content = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
