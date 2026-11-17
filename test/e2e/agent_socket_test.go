@@ -19,7 +19,7 @@ import (
 )
 
 // startWithAgent runs berthd with the agent socket on for agentUID, and returns its path.
-func startWithAgent(t *testing.T, h string, agentUID int) (*daemonProc, string) {
+func startWithAgent(t *testing.T, h string, agentUID int, extra ...string) (*daemonProc, string) {
 	t.Helper()
 	dir, err := os.MkdirTemp("", "berth-agent-")
 	if err != nil {
@@ -39,7 +39,7 @@ func startWithAgent(t *testing.T, h string, agentUID int) (*daemonProc, string) 
 		t.Fatal(err)
 	}
 	sock := filepath.Join(sockDir, "agent.sock")
-	d := start(t, h, "-agent-uid", strconv.Itoa(agentUID), "-agent-gid", strconv.Itoa(os.Getgid()), "-agent-socket", sock)
+	d := start(t, h, append([]string{"-agent-uid", strconv.Itoa(agentUID), "-agent-gid", strconv.Itoa(os.Getgid()), "-agent-socket", sock}, extra...)...)
 	waitServing(t, h)
 	return d, sock
 }

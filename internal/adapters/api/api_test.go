@@ -96,6 +96,8 @@ func TestAgentSurface(t *testing.T) {
 	})
 	slices.Sort(agent)
 	want := []string{
+		"berth.v1.BrowsersService.CloseAgentBrowser",
+		"berth.v1.BrowsersService.OpenAgentBrowser",
 		"berth.v1.DaemonService.Handshake",
 		"berth.v1.SecretsService.AuthorizeProxy",
 		"berth.v1.SecretsService.AuthorizeUse",
@@ -153,6 +155,7 @@ func TestNoFieldCarriesAValue(t *testing.T) {
 		"berth.v1.AuthorizeUseResponse.ticket",
 		"berth.v1.CreateAgentSessionResponse.token",
 		"berth.v1.LaunchBrowserResponse.cdp_token",
+		"berth.v1.OpenAgentBrowserResponse.cdp_token",
 		"berth.v1.ProxyTarget.value_prefix",
 		"berth.v1.ProxyTarget.value_suffix",
 		"berth.v1.ProxyTicket.ticket",

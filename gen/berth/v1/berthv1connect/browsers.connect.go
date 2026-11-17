@@ -33,6 +33,12 @@ const (
 	// BrowsersServiceCloseBrowserProcedure is the procedure name of the BrowsersService's CloseBrowser
 	// RPC.
 	BrowsersServiceCloseBrowserProcedure = "/berth.v1.BrowsersService/CloseBrowser"
+	// BrowsersServiceOpenAgentBrowserProcedure is the procedure name of the BrowsersService's
+	// OpenAgentBrowser RPC.
+	BrowsersServiceOpenAgentBrowserProcedure = "/berth.v1.BrowsersService/OpenAgentBrowser"
+	// BrowsersServiceCloseAgentBrowserProcedure is the procedure name of the BrowsersService's
+	// CloseAgentBrowser RPC.
+	BrowsersServiceCloseAgentBrowserProcedure = "/berth.v1.BrowsersService/CloseAgentBrowser"
 )
 
 var (
@@ -57,6 +63,20 @@ var (
 			Procedure:  BrowsersServiceCloseBrowserProcedure,
 		}
 	})
+	browsersServiceOpenAgentBrowserSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_berth_v1_browsers_proto.Services().ByName("BrowsersService").Methods().ByName("OpenAgentBrowser"),
+			Procedure:  BrowsersServiceOpenAgentBrowserProcedure,
+		}
+	})
+	browsersServiceCloseAgentBrowserSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_berth_v1_browsers_proto.Services().ByName("BrowsersService").Methods().ByName("CloseAgentBrowser"),
+			Procedure:  BrowsersServiceCloseAgentBrowserProcedure,
+		}
+	})
 )
 
 // BrowsersServiceClient is a client for the berth.v1.BrowsersService service.
@@ -70,6 +90,15 @@ type BrowsersServiceClient interface {
 	// seconds, and answers once it is closed or 10 seconds have passed. Closing a closed browser
 	// answers its state.
 	CloseBrowser(context.Context, *v1.CloseBrowserRequest) (*v1.CloseBrowserResponse, error)
+	// OpenAgentBrowser launches a headless browser for the caller's agent session, on a fresh
+	// profile berthd deletes when the browser closes, and answers once it is ready or failed. The
+	// browser closes when CloseAgentBrowser closes it or the agent session ends. One session holds
+	// at most 2 open and opens at most 10 in any rolling hour (RATE_LIMITED). The CDP token is set
+	// only in the first reply; the request log keeps the reply without it.
+	OpenAgentBrowser(context.Context, *v1.OpenAgentBrowserRequest) (*v1.OpenAgentBrowserResponse, error)
+	// CloseAgentBrowser closes one of the caller's agent session's browsers, as CloseBrowser does.
+	// Any other id, another session's or the owner's browser included, answers BROWSER_NOT_FOUND.
+	CloseAgentBrowser(context.Context, *v1.CloseAgentBrowserRequest) (*v1.CloseAgentBrowserResponse, error)
 }
 
 // NewBrowsersServiceClient constructs a client for the berth.v1.BrowsersService service. Multiple
@@ -89,6 +118,15 @@ type BrowsersServiceHandler interface {
 	// seconds, and answers once it is closed or 10 seconds have passed. Closing a closed browser
 	// answers its state.
 	CloseBrowser(context.Context, *v1.CloseBrowserRequest) (*v1.CloseBrowserResponse, error)
+	// OpenAgentBrowser launches a headless browser for the caller's agent session, on a fresh
+	// profile berthd deletes when the browser closes, and answers once it is ready or failed. The
+	// browser closes when CloseAgentBrowser closes it or the agent session ends. One session holds
+	// at most 2 open and opens at most 10 in any rolling hour (RATE_LIMITED). The CDP token is set
+	// only in the first reply; the request log keeps the reply without it.
+	OpenAgentBrowser(context.Context, *v1.OpenAgentBrowserRequest) (*v1.OpenAgentBrowserResponse, error)
+	// CloseAgentBrowser closes one of the caller's agent session's browsers, as CloseBrowser does.
+	// Any other id, another session's or the owner's browser included, answers BROWSER_NOT_FOUND.
+	CloseAgentBrowser(context.Context, *v1.CloseAgentBrowserRequest) (*v1.CloseAgentBrowserResponse, error)
 }
 
 // RegisterBrowsersServiceHandler registers svc as the berth.v1.BrowsersService implementation on
@@ -99,6 +137,8 @@ func RegisterBrowsersServiceHandler(server *connect.Server, svc BrowsersServiceH
 		connect.Method{Spec: browsersServiceLaunchBrowserSpec(), Handler: adapter.launchBrowser},
 		connect.Method{Spec: browsersServiceListBrowsersSpec(), Handler: adapter.listBrowsers},
 		connect.Method{Spec: browsersServiceCloseBrowserSpec(), Handler: adapter.closeBrowser},
+		connect.Method{Spec: browsersServiceOpenAgentBrowserSpec(), Handler: adapter.openAgentBrowser},
+		connect.Method{Spec: browsersServiceCloseAgentBrowserSpec(), Handler: adapter.closeAgentBrowser},
 	)
 }
 
@@ -115,6 +155,14 @@ func (UnimplementedBrowsersServiceHandler) ListBrowsers(context.Context, *v1.Lis
 
 func (UnimplementedBrowsersServiceHandler) CloseBrowser(context.Context, *v1.CloseBrowserRequest) (*v1.CloseBrowserResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "berth.v1.BrowsersService.CloseBrowser is not implemented")
+}
+
+func (UnimplementedBrowsersServiceHandler) OpenAgentBrowser(context.Context, *v1.OpenAgentBrowserRequest) (*v1.OpenAgentBrowserResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "berth.v1.BrowsersService.OpenAgentBrowser is not implemented")
+}
+
+func (UnimplementedBrowsersServiceHandler) CloseAgentBrowser(context.Context, *v1.CloseAgentBrowserRequest) (*v1.CloseAgentBrowserResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "berth.v1.BrowsersService.CloseAgentBrowser is not implemented")
 }
 
 type browsersServiceClient struct {
@@ -140,6 +188,22 @@ func (c *browsersServiceClient) ListBrowsers(ctx context.Context, req *v1.ListBr
 func (c *browsersServiceClient) CloseBrowser(ctx context.Context, req *v1.CloseBrowserRequest) (*v1.CloseBrowserResponse, error) {
 	var res v1.CloseBrowserResponse
 	if err := c.client.CallUnary(ctx, browsersServiceCloseBrowserSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *browsersServiceClient) OpenAgentBrowser(ctx context.Context, req *v1.OpenAgentBrowserRequest) (*v1.OpenAgentBrowserResponse, error) {
+	var res v1.OpenAgentBrowserResponse
+	if err := c.client.CallUnary(ctx, browsersServiceOpenAgentBrowserSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *browsersServiceClient) CloseAgentBrowser(ctx context.Context, req *v1.CloseAgentBrowserRequest) (*v1.CloseAgentBrowserResponse, error) {
+	var res v1.CloseAgentBrowserResponse
+	if err := c.client.CallUnary(ctx, browsersServiceCloseAgentBrowserSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -177,6 +241,30 @@ func (h browsersServiceHandler) closeBrowser(ctx context.Context, _ connect.Spec
 		return err
 	}
 	res, err := h.svc.CloseBrowser(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h browsersServiceHandler) openAgentBrowser(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.OpenAgentBrowserRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.OpenAgentBrowser(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h browsersServiceHandler) closeAgentBrowser(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.CloseAgentBrowserRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.CloseAgentBrowser(ctx, &req)
 	if err != nil {
 		return err
 	}

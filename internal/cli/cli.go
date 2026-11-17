@@ -84,8 +84,13 @@ const usage = `usage:
                                                 start Chromium over a private pipe on a Berth
                                                 profile; prints its CDP proxy endpoint and the
                                                 token, which goes in the X-Berth-Token header
-  berth browser ls [--all] [--json]             list the browsers Berth launched
+  berth browser ls [--all] [--json]             list the browsers Berth launched, with the agent
+                                                session of each agent browser
   berth browser close <browser id>              close one: Browser.close, then SIGKILL after 5 s
+  berth browser open [--token-file <path>]      agent mode: open a headless browser for this agent
+                                                session on a fresh profile; prints its endpoint and
+                                                token once; at most 2 open and 10 an hour; it
+                                                closes with berth browser close or the session
 
 agent mode: with BERTH_AGENT_SOCKET set, berth talks to that agent socket and sends the token
 read from the file BERTH_AGENT_TOKEN_FILE names (only its owner may read it); the token is never
@@ -305,7 +310,7 @@ func reportError(w io.Writer, err error, name, target string) int {
 	case berthv1.ErrorReason_ERROR_REASON_AGENT_TOKEN_INVALID:
 		line = "berthd refused the agent token: it is missing, unknown, expired or revoked, or this process is outside the session's process tree; ask the person for a new session"
 	case berthv1.ErrorReason_ERROR_REASON_RATE_LIMITED:
-		line = "this agent session has too many store requests waiting for the person, or made 10 in the last hour; wait, then try again"
+		line = "this agent session is over one of its limits (store requests, browsers or proxies, at once or in the last hour); wait, or close what it has open, then try again"
 	case berthv1.ErrorReason_ERROR_REASON_AGENT_SESSION_NOT_FOUND:
 		line = fmt.Sprintf("no agent session has id %s; berth agent session ls lists them", target)
 	case berthv1.ErrorReason_ERROR_REASON_PROFILE_BUSY:

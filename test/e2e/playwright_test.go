@@ -113,25 +113,36 @@ func runDriver(t *testing.T, module, script, want string, strict bool) {
 	start(t, h)
 	waitServing(t, h)
 	l := launchBrowser(t, h, chrome, "driver")
+	driveBrowser(t, h, module, script, want, l.endpoint, l.token)
+	berth(t, h, "browser", "close", l.id)
+	if strict {
+		requireNoRefusals(t, h, filepath.Base(module))
+	}
+}
+
+// driveBrowser runs script under node with the endpoint and the token in its environment, and
+// fails unless it printed TITLE=want.
+func driveBrowser(t *testing.T, h, module, script, want, endpoint, token string) {
+	t.Helper()
 	cmd := exec.CommandContext(t.Context(), "node", "-e", script)
-	cmd.Env = append(os.Environ(), "PW_MODULE="+module, "CDP_ENDPOINT="+l.endpoint, "CDP_TOKEN="+l.token)
+	cmd.Env = append(os.Environ(), "PW_MODULE="+module, "CDP_ENDPOINT="+endpoint, "CDP_TOKEN="+token, "BERTH_HOME="+h)
 	out, err := cmd.CombinedOutput()
 	if err != nil || !strings.Contains(string(out), "TITLE="+want) {
 		t.Fatalf("%s through the proxy: %v\n%s", filepath.Base(module), err, out)
 	}
 	t.Logf("%s %s drove the managed browser through the proxy", filepath.Base(module), moduleVersion(module))
-	berth(t, h, "browser", "close", l.id)
-	if !strict {
-		return
-	}
-	// Every method the library sent passed or was answered by the proxy: a refusal it tolerated
-	// today is an allowlist gap tomorrow.
+}
+
+// requireNoRefusals waits for berthd's log of the first CDP connection's end and fails if the
+// proxy refused anything: a refusal the library tolerated today is an allowlist gap tomorrow.
+func requireNoRefusals(t *testing.T, h, library string) {
+	t.Helper()
 	for deadline := time.Now().Add(5 * time.Second); ; {
 		log := readFile(t, filepath.Join(h, "berthd.log"))
 		if i := strings.Index(log, `msg="CDP connection ended"`); i >= 0 {
 			line, _, _ := strings.Cut(log[i:], "\n")
 			if !strings.Contains(line, " refused=0 ") {
-				t.Fatalf("the proxy refused methods %s sent: %s", filepath.Base(module), line)
+				t.Fatalf("the proxy refused methods %s sent: %s", library, line)
 			}
 			return
 		}

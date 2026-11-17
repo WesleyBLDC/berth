@@ -62,6 +62,9 @@ type managedDeps struct {
 	Seen    profileSessions
 	Home    string
 	Browser string
+	// AgentLive reports whether an agent session still serves calls; nil treats every session
+	// as live.
+	AgentLive func(ctx context.Context, id string) bool
 }
 
 // managed runs the browsers Berth launches itself. Facts about each live in memory beside its
@@ -83,12 +86,18 @@ type managed struct {
 	// profiles maps a held profile to the browser holding it.
 	profiles map[string]string
 	stopping bool
+	// opened holds when each agent session opened its browsers in the last hour, and seq the
+	// number of its last profile.
+	opened map[string][]time.Time
+	seq    map[string]int
 }
 
 type managedBrowser struct {
 	id, profile, executable string
 	headless                bool
 	tokenHash               [32]byte
+	// agent is the agent session an agent browser belongs to; empty for the owner's.
+	agent string
 
 	state     browser.State
 	since     time.Time
@@ -103,6 +112,7 @@ func newManaged(ctx context.Context, d managedDeps) *managed {
 	m := &managed{
 		managedDeps: d, ctx: ctx, grace: closeGrace, launch: launchTimeout,
 		live: map[string]*managedBrowser{}, closed: map[string]*managedBrowser{}, profiles: map[string]string{},
+		opened: map[string][]time.Time{}, seq: map[string]int{},
 	}
 	m.actors = &actors[browser.State, browser.Event, browser.Effect]{
 		ctx: ctx, log: d.Log, store: d.Store, clock: d.Clock,
@@ -133,6 +143,7 @@ func (m *managed) recover(ctx context.Context) error {
 	if n := m.Seen.StopUnder(ctx, m.profilesRoot()); n > 0 {
 		m.Log.Warn("stopping browsers a previous berthd left on Berth profiles", "count", n)
 	}
+	m.removeLeftAgentProfiles()
 	return nil
 }
 
@@ -142,7 +153,17 @@ func (m *managed) saved(rec ports.TransitionRecord) {
 	id := strings.TrimPrefix(rec.Entity, browser.Entity(""))
 	m.mu.Lock()
 	b, ok := m.live[id]
+	m.mu.Unlock()
 	if !ok {
+		return
+	}
+	// An agent profile is gone before its browser reads as closed, so a caller that saw it
+	// closed never finds the profile; the process has exited by then.
+	if browser.State(rec.To) == browser.Closed && b.agent != "" {
+		m.removeProfile(b.profile)
+	}
+	m.mu.Lock()
+	if _, ok := m.live[id]; !ok {
 		m.mu.Unlock()
 		return
 	}
@@ -345,34 +366,58 @@ func findBrowser() string {
 }
 
 func (m *managed) LaunchBrowser(ctx context.Context, req *berthv1.LaunchBrowserRequest) (*berthv1.LaunchBrowserResponse, error) {
+	if strings.HasPrefix(req.GetProfile(), agentProfilePrefix) {
+		return nil, errors.Join(api.ErrBrowserLaunchFailed, errors.New("profile names starting with agent- are kept for agent browsers"))
+	}
 	exe, err := m.executable(req.GetExecutable())
 	if err != nil {
 		return nil, err
 	}
-	dir := filepath.Join(m.profilesRoot(), req.GetProfile())
-	token := randomHex(32)
-	b := &managedBrowser{
-		id: randomHex(8), profile: req.GetProfile(), executable: exe, headless: req.GetHeadless(),
-		tokenHash: sha256.Sum256([]byte(token)), state: browser.Requested, since: m.Clock.Now(),
+	b, token := m.newBrowser(req.GetProfile(), exe, req.GetHeadless(), "")
+	if err := m.start(ctx, b, nil); err != nil {
+		return nil, err
 	}
+	return &berthv1.LaunchBrowserResponse{Browser: m.proto(b), CdpToken: token}, nil
+}
+
+// newBrowser makes a browser's facts and its proxy token, of which berthd keeps only the hash.
+func (m *managed) newBrowser(profile, exe string, headless bool, agent string) (*managedBrowser, string) {
+	token := randomHex(32)
+	return &managedBrowser{
+		id: randomHex(8), profile: profile, executable: exe, headless: headless, agent: agent,
+		tokenHash: sha256.Sum256([]byte(token)), state: browser.Requested, since: m.Clock.Now(),
+	}, token
+}
+
+// start takes b's profile and launches it, answering once it is ready or failed. admit, when set,
+// runs under the same lock that takes the profile, so a limit it checks cannot be raced past.
+func (m *managed) start(ctx context.Context, b *managedBrowser, admit func() error) error {
 	m.mu.Lock()
-	switch {
-	case m.stopping:
+	if m.stopping {
 		m.mu.Unlock()
-		return nil, errors.Join(api.ErrBrowserLaunchFailed, errors.New("berthd is stopping"))
+		return errors.Join(api.ErrBrowserLaunchFailed, errors.New("berthd is stopping"))
+	}
+	if admit != nil {
+		if err := admit(); err != nil {
+			m.mu.Unlock()
+			return err
+		}
+	}
+	dir := filepath.Join(m.profilesRoot(), b.profile)
+	switch {
 	case m.profiles[b.profile] != "":
 		holder := m.profiles[b.profile]
 		m.mu.Unlock()
-		return nil, errors.Join(api.ErrProfileBusy, fmt.Errorf("browser %s already uses profile %s", holder, b.profile))
+		return errors.Join(api.ErrProfileBusy, fmt.Errorf("browser %s already uses profile %s", holder, b.profile))
 	case m.Seen.ProfileInUse(dir):
 		m.mu.Unlock()
-		return nil, errors.Join(api.ErrProfileBusy, fmt.Errorf("a browser started outside Berth uses profile %s", b.profile))
+		return errors.Join(api.ErrProfileBusy, fmt.Errorf("a browser started outside Berth uses profile %s", b.profile))
 	}
 	m.profiles[b.profile], m.live[b.id] = b.id, b
 	m.mu.Unlock()
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		m.release(b)
-		return nil, err
+		return err
 	}
 	rec, _, err := step(ctx, m.actors, browser.Entity(b.id), browser.Event{Kind: browser.Launch}, nil,
 		browser.Started, browser.LaunchFailed, browser.Exited)
@@ -380,16 +425,14 @@ func (m *managed) LaunchBrowser(ctx context.Context, req *berthv1.LaunchBrowserR
 		if m.state(b.id) == browser.Requested {
 			m.release(b)
 		}
-		return nil, err
+		return err
 	}
 	// The waiter hears of a transition just before the saved hook runs, so record it here too.
 	m.saved(rec)
-	resp := &berthv1.LaunchBrowserResponse{Browser: m.proto(b)}
-	if resp.GetBrowser().GetState() != berthv1.BrowserState_BROWSER_STATE_READY {
-		return nil, errors.Join(api.ErrBrowserLaunchFailed, errors.New(resp.GetBrowser().GetCloseReason()))
+	if pb := m.proto(b); pb.GetState() != berthv1.BrowserState_BROWSER_STATE_READY {
+		return errors.Join(api.ErrBrowserLaunchFailed, errors.New(pb.GetCloseReason()))
 	}
-	resp.CdpToken = token
-	return resp, nil
+	return nil
 }
 
 // release lets go of a browser that never got a stored row.
@@ -412,34 +455,48 @@ func (m *managed) state(id string) browser.State {
 }
 
 func (m *managed) CloseBrowser(ctx context.Context, req *berthv1.CloseBrowserRequest) (*berthv1.CloseBrowserResponse, error) {
-	id := req.GetId()
+	b, err := m.closeAndWait(ctx, m.find(req.GetId()))
+	if err != nil {
+		return nil, err
+	}
+	return &berthv1.CloseBrowserResponse{Browser: m.proto(b)}, nil
+}
+
+// find returns the live or recently closed browser with this id, or nil.
+func (m *managed) find(id string) *managedBrowser {
 	m.mu.Lock()
-	b, live := m.live[id]
-	cb, closed := m.closed[id]
-	m.mu.Unlock()
-	if !live {
-		if closed {
-			return &berthv1.CloseBrowserResponse{Browser: m.proto(cb)}, nil
-		}
+	defer m.mu.Unlock()
+	if b, ok := m.live[id]; ok {
+		return b
+	}
+	return m.closed[id]
+}
+
+// closeAndWait asks b to close and waits up to closeWait for it to be closed; a closed browser
+// answers as it is.
+func (m *managed) closeAndWait(ctx context.Context, b *managedBrowser) (*managedBrowser, error) {
+	if b == nil {
 		return nil, api.ErrBrowserNotFound
 	}
-	if m.state(id) != browser.Closing {
-		m.send(ctx, id, browser.Event{Kind: browser.CloseRequested})
+	if st := m.state(b.id); st == browser.Closed {
+		return b, nil
+	} else if st != browser.Closing {
+		m.send(ctx, b.id, browser.Event{Kind: browser.CloseRequested})
 	}
 	deadline := time.NewTimer(closeWait)
 	defer deadline.Stop()
 	poll := time.NewTicker(50 * time.Millisecond)
 	defer poll.Stop()
-	for m.state(id) != browser.Closed {
+	for m.state(b.id) != browser.Closed {
 		select {
 		case <-poll.C:
 		case <-deadline.C:
-			return &berthv1.CloseBrowserResponse{Browser: m.proto(b)}, nil
+			return b, nil
 		case <-ctx.Done():
 			return nil, ctx.Err()
 		}
 	}
-	return &berthv1.CloseBrowserResponse{Browser: m.proto(b)}, nil
+	return b, nil
 }
 
 func (m *managed) ListBrowsers(_ context.Context, req *berthv1.ListBrowsersRequest) (*berthv1.ListBrowsersResponse, error) {
@@ -517,7 +574,7 @@ func (m *managed) proto(b *managedBrowser) *berthv1.ManagedBrowser {
 	pb := &berthv1.ManagedBrowser{
 		Id: b.id, Profile: b.profile, State: browserStateProto(b.state), Executable: b.executable,
 		Headless: b.headless, Product: b.product, CdpEndpoint: b.endpoint, StateSince: timestamppb.New(b.since),
-		CloseReason: b.reason,
+		CloseReason: b.reason, AgentSessionId: b.agent,
 	}
 	if b.conn != nil {
 		pb.SessionId = discovery.ID(b.conn.Process())

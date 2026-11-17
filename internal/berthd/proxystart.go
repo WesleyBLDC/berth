@@ -8,6 +8,7 @@ import (
 
 	berthv1 "berth/gen/berth/v1"
 	"berth/internal/adapters/api"
+	"berth/internal/core/agentsession"
 	"berth/internal/proxyproc"
 )
 
@@ -128,21 +129,14 @@ func (s *secrets) reserveStart(agent string) bool {
 	if agent == "" {
 		return true
 	}
-	now := s.Clock.Now()
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	recent := s.startTimes[agent][:0]
-	for _, at := range s.startTimes[agent] {
-		if now.Sub(at) < time.Hour {
-			recent = append(recent, at)
-		}
-	}
-	s.startTimes[agent] = recent
-	if s.starting[agent] >= maxStartedProxies || len(recent) >= maxStartsPerHour {
+	ok, kept := agentsession.Limit{Open: maxStartedProxies, PerHour: maxStartsPerHour}.Admit(s.starting[agent], s.startTimes[agent], s.Clock.Now())
+	s.startTimes[agent] = kept
+	if !ok {
 		return false
 	}
 	s.starting[agent]++
-	s.startTimes[agent] = append(recent, now)
 	return true
 }
 

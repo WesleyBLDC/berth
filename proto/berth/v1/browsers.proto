@@ -2,14 +2,17 @@ syntax = "proto3";
 
 package berth.v1;
 
+import "berth/v1/options.proto";
 import "buf/validate/validate.proto";
 import "google/protobuf/timestamp.proto";
 
 // BrowsersService launches and closes the browsers Berth manages itself: Chromium started by
 // berthd over a private CDP pipe, on a profile folder under $BERTH_HOME/profiles, with no
 // debugging port. Each ready browser has a loopback CDP proxy that needs the browser's token in
-// the X-Berth-Token header and refuses methods outside the agent's own session. No method is on
-// the agent surface: these name any profile and see or close every managed browser.
+// the X-Berth-Token header and refuses methods outside the agent's own session. LaunchBrowser,
+// ListBrowsers and CloseBrowser are the owner's: they name any profile and see or close every
+// managed browser. OpenAgentBrowser and CloseAgentBrowser are on the agent surface and reach only
+// the caller's own agent session's browsers.
 service BrowsersService {
   // LaunchBrowser starts a browser on the named profile and answers once it is ready or failed.
   // One live browser per profile: a held profile answers PROFILE_BUSY. The CDP token is set only
@@ -20,6 +23,19 @@ service BrowsersService {
   // seconds, and answers once it is closed or 10 seconds have passed. Closing a closed browser
   // answers its state.
   rpc CloseBrowser(CloseBrowserRequest) returns (CloseBrowserResponse);
+  // OpenAgentBrowser launches a headless browser for the caller's agent session, on a fresh
+  // profile berthd deletes when the browser closes, and answers once it is ready or failed. The
+  // browser closes when CloseAgentBrowser closes it or the agent session ends. One session holds
+  // at most 2 open and opens at most 10 in any rolling hour (RATE_LIMITED). The CDP token is set
+  // only in the first reply; the request log keeps the reply without it.
+  rpc OpenAgentBrowser(OpenAgentBrowserRequest) returns (OpenAgentBrowserResponse) {
+    option (berth.v1.agent) = true;
+  }
+  // CloseAgentBrowser closes one of the caller's agent session's browsers, as CloseBrowser does.
+  // Any other id, another session's or the owner's browser included, answers BROWSER_NOT_FOUND.
+  rpc CloseAgentBrowser(CloseAgentBrowserRequest) returns (CloseAgentBrowserResponse) {
+    option (berth.v1.agent) = true;
+  }
 }
 
 // BrowserState mirrors the browser machine's states.
@@ -49,6 +65,23 @@ message ManagedBrowser {
   google.protobuf.Timestamp state_since = 9;
   // close_reason is a fixed phrase saying why a closed browser closed.
   string close_reason = 10;
+  // agent_session_id is the agent session an agent browser belongs to; empty for the owner's.
+  string agent_session_id = 11;
+}
+
+// AgentBrowser is what an agent learns about its own browser: no profile path, executable or
+// process, since those name the owner's files.
+message AgentBrowser {
+  // id is 16 lowercase hex characters.
+  string id = 1;
+  BrowserState state = 2;
+  // product is what the browser answered to Browser.getVersion.
+  string product = 3;
+  // cdp_endpoint is the proxy's http://127.0.0.1:<port>, set while the browser is ready.
+  string cdp_endpoint = 4;
+  google.protobuf.Timestamp state_since = 5;
+  // close_reason is a fixed phrase saying why a closed browser closed.
+  string close_reason = 6;
 }
 
 message LaunchBrowserRequest {
@@ -92,4 +125,29 @@ message CloseBrowserRequest {
 
 message CloseBrowserResponse {
   ManagedBrowser browser = 1;
+}
+
+message OpenAgentBrowserRequest {
+  string request_id = 1 [(buf.validate.field).string = {
+    min_len: 8
+    max_len: 128
+  }];
+}
+
+message OpenAgentBrowserResponse {
+  AgentBrowser browser = 1;
+  // cdp_token is the proxy's token, set only in the first reply; berthd keeps only its hash.
+  string cdp_token = 2;
+}
+
+message CloseAgentBrowserRequest {
+  string request_id = 1 [(buf.validate.field).string = {
+    min_len: 8
+    max_len: 128
+  }];
+  string id = 2 [(buf.validate.field).string.pattern = "^[0-9a-f]{16}$"];
+}
+
+message CloseAgentBrowserResponse {
+  AgentBrowser browser = 1;
 }

@@ -97,9 +97,11 @@ type ManagedBrowser struct {
 	CdpEndpoint string                 `protobuf:"bytes,8,opt,name=cdp_endpoint,json=cdpEndpoint,proto3" json:"cdp_endpoint,omitempty"`
 	StateSince  *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=state_since,json=stateSince,proto3" json:"state_since,omitempty"`
 	// close_reason is a fixed phrase saying why a closed browser closed.
-	CloseReason   string `protobuf:"bytes,10,opt,name=close_reason,json=closeReason,proto3" json:"close_reason,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	CloseReason string `protobuf:"bytes,10,opt,name=close_reason,json=closeReason,proto3" json:"close_reason,omitempty"`
+	// agent_session_id is the agent session an agent browser belongs to; empty for the owner's.
+	AgentSessionId string `protobuf:"bytes,11,opt,name=agent_session_id,json=agentSessionId,proto3" json:"agent_session_id,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *ManagedBrowser) Reset() {
@@ -202,6 +204,103 @@ func (x *ManagedBrowser) GetCloseReason() string {
 	return ""
 }
 
+func (x *ManagedBrowser) GetAgentSessionId() string {
+	if x != nil {
+		return x.AgentSessionId
+	}
+	return ""
+}
+
+// AgentBrowser is what an agent learns about its own browser: no profile path, executable or
+// process, since those name the owner's files.
+type AgentBrowser struct {
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// id is 16 lowercase hex characters.
+	Id    string       `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	State BrowserState `protobuf:"varint,2,opt,name=state,proto3,enum=berth.v1.BrowserState" json:"state,omitempty"`
+	// product is what the browser answered to Browser.getVersion.
+	Product string `protobuf:"bytes,3,opt,name=product,proto3" json:"product,omitempty"`
+	// cdp_endpoint is the proxy's http://127.0.0.1:<port>, set while the browser is ready.
+	CdpEndpoint string                 `protobuf:"bytes,4,opt,name=cdp_endpoint,json=cdpEndpoint,proto3" json:"cdp_endpoint,omitempty"`
+	StateSince  *timestamppb.Timestamp `protobuf:"bytes,5,opt,name=state_since,json=stateSince,proto3" json:"state_since,omitempty"`
+	// close_reason is a fixed phrase saying why a closed browser closed.
+	CloseReason   string `protobuf:"bytes,6,opt,name=close_reason,json=closeReason,proto3" json:"close_reason,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AgentBrowser) Reset() {
+	*x = AgentBrowser{}
+	mi := &file_berth_v1_browsers_proto_msgTypes[1]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AgentBrowser) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AgentBrowser) ProtoMessage() {}
+
+func (x *AgentBrowser) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_browsers_proto_msgTypes[1]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AgentBrowser.ProtoReflect.Descriptor instead.
+func (*AgentBrowser) Descriptor() ([]byte, []int) {
+	return file_berth_v1_browsers_proto_rawDescGZIP(), []int{1}
+}
+
+func (x *AgentBrowser) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+func (x *AgentBrowser) GetState() BrowserState {
+	if x != nil {
+		return x.State
+	}
+	return BrowserState_BROWSER_STATE_UNSPECIFIED
+}
+
+func (x *AgentBrowser) GetProduct() string {
+	if x != nil {
+		return x.Product
+	}
+	return ""
+}
+
+func (x *AgentBrowser) GetCdpEndpoint() string {
+	if x != nil {
+		return x.CdpEndpoint
+	}
+	return ""
+}
+
+func (x *AgentBrowser) GetStateSince() *timestamppb.Timestamp {
+	if x != nil {
+		return x.StateSince
+	}
+	return nil
+}
+
+func (x *AgentBrowser) GetCloseReason() string {
+	if x != nil {
+		return x.CloseReason
+	}
+	return ""
+}
+
 type LaunchBrowserRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// request_id makes the call idempotent: a retry with the same id returns the first result.
@@ -217,7 +316,7 @@ type LaunchBrowserRequest struct {
 
 func (x *LaunchBrowserRequest) Reset() {
 	*x = LaunchBrowserRequest{}
-	mi := &file_berth_v1_browsers_proto_msgTypes[1]
+	mi := &file_berth_v1_browsers_proto_msgTypes[2]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -229,7 +328,7 @@ func (x *LaunchBrowserRequest) String() string {
 func (*LaunchBrowserRequest) ProtoMessage() {}
 
 func (x *LaunchBrowserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_berth_v1_browsers_proto_msgTypes[1]
+	mi := &file_berth_v1_browsers_proto_msgTypes[2]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -242,7 +341,7 @@ func (x *LaunchBrowserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LaunchBrowserRequest.ProtoReflect.Descriptor instead.
 func (*LaunchBrowserRequest) Descriptor() ([]byte, []int) {
-	return file_berth_v1_browsers_proto_rawDescGZIP(), []int{1}
+	return file_berth_v1_browsers_proto_rawDescGZIP(), []int{2}
 }
 
 func (x *LaunchBrowserRequest) GetRequestId() string {
@@ -284,7 +383,7 @@ type LaunchBrowserResponse struct {
 
 func (x *LaunchBrowserResponse) Reset() {
 	*x = LaunchBrowserResponse{}
-	mi := &file_berth_v1_browsers_proto_msgTypes[2]
+	mi := &file_berth_v1_browsers_proto_msgTypes[3]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -296,7 +395,7 @@ func (x *LaunchBrowserResponse) String() string {
 func (*LaunchBrowserResponse) ProtoMessage() {}
 
 func (x *LaunchBrowserResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_berth_v1_browsers_proto_msgTypes[2]
+	mi := &file_berth_v1_browsers_proto_msgTypes[3]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -309,7 +408,7 @@ func (x *LaunchBrowserResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use LaunchBrowserResponse.ProtoReflect.Descriptor instead.
 func (*LaunchBrowserResponse) Descriptor() ([]byte, []int) {
-	return file_berth_v1_browsers_proto_rawDescGZIP(), []int{2}
+	return file_berth_v1_browsers_proto_rawDescGZIP(), []int{3}
 }
 
 func (x *LaunchBrowserResponse) GetBrowser() *ManagedBrowser {
@@ -336,7 +435,7 @@ type ListBrowsersRequest struct {
 
 func (x *ListBrowsersRequest) Reset() {
 	*x = ListBrowsersRequest{}
-	mi := &file_berth_v1_browsers_proto_msgTypes[3]
+	mi := &file_berth_v1_browsers_proto_msgTypes[4]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -348,7 +447,7 @@ func (x *ListBrowsersRequest) String() string {
 func (*ListBrowsersRequest) ProtoMessage() {}
 
 func (x *ListBrowsersRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_berth_v1_browsers_proto_msgTypes[3]
+	mi := &file_berth_v1_browsers_proto_msgTypes[4]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -361,7 +460,7 @@ func (x *ListBrowsersRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBrowsersRequest.ProtoReflect.Descriptor instead.
 func (*ListBrowsersRequest) Descriptor() ([]byte, []int) {
-	return file_berth_v1_browsers_proto_rawDescGZIP(), []int{3}
+	return file_berth_v1_browsers_proto_rawDescGZIP(), []int{4}
 }
 
 func (x *ListBrowsersRequest) GetIncludeClosed() bool {
@@ -380,7 +479,7 @@ type ListBrowsersResponse struct {
 
 func (x *ListBrowsersResponse) Reset() {
 	*x = ListBrowsersResponse{}
-	mi := &file_berth_v1_browsers_proto_msgTypes[4]
+	mi := &file_berth_v1_browsers_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -392,7 +491,7 @@ func (x *ListBrowsersResponse) String() string {
 func (*ListBrowsersResponse) ProtoMessage() {}
 
 func (x *ListBrowsersResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_berth_v1_browsers_proto_msgTypes[4]
+	mi := &file_berth_v1_browsers_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -405,7 +504,7 @@ func (x *ListBrowsersResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ListBrowsersResponse.ProtoReflect.Descriptor instead.
 func (*ListBrowsersResponse) Descriptor() ([]byte, []int) {
-	return file_berth_v1_browsers_proto_rawDescGZIP(), []int{4}
+	return file_berth_v1_browsers_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *ListBrowsersResponse) GetBrowsers() []*ManagedBrowser {
@@ -425,7 +524,7 @@ type CloseBrowserRequest struct {
 
 func (x *CloseBrowserRequest) Reset() {
 	*x = CloseBrowserRequest{}
-	mi := &file_berth_v1_browsers_proto_msgTypes[5]
+	mi := &file_berth_v1_browsers_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -437,7 +536,7 @@ func (x *CloseBrowserRequest) String() string {
 func (*CloseBrowserRequest) ProtoMessage() {}
 
 func (x *CloseBrowserRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_berth_v1_browsers_proto_msgTypes[5]
+	mi := &file_berth_v1_browsers_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -450,7 +549,7 @@ func (x *CloseBrowserRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloseBrowserRequest.ProtoReflect.Descriptor instead.
 func (*CloseBrowserRequest) Descriptor() ([]byte, []int) {
-	return file_berth_v1_browsers_proto_rawDescGZIP(), []int{5}
+	return file_berth_v1_browsers_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *CloseBrowserRequest) GetRequestId() string {
@@ -476,7 +575,7 @@ type CloseBrowserResponse struct {
 
 func (x *CloseBrowserResponse) Reset() {
 	*x = CloseBrowserResponse{}
-	mi := &file_berth_v1_browsers_proto_msgTypes[6]
+	mi := &file_berth_v1_browsers_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -488,7 +587,7 @@ func (x *CloseBrowserResponse) String() string {
 func (*CloseBrowserResponse) ProtoMessage() {}
 
 func (x *CloseBrowserResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_berth_v1_browsers_proto_msgTypes[6]
+	mi := &file_berth_v1_browsers_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -501,10 +600,203 @@ func (x *CloseBrowserResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CloseBrowserResponse.ProtoReflect.Descriptor instead.
 func (*CloseBrowserResponse) Descriptor() ([]byte, []int) {
-	return file_berth_v1_browsers_proto_rawDescGZIP(), []int{6}
+	return file_berth_v1_browsers_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *CloseBrowserResponse) GetBrowser() *ManagedBrowser {
+	if x != nil {
+		return x.Browser
+	}
+	return nil
+}
+
+type OpenAgentBrowserRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OpenAgentBrowserRequest) Reset() {
+	*x = OpenAgentBrowserRequest{}
+	mi := &file_berth_v1_browsers_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OpenAgentBrowserRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OpenAgentBrowserRequest) ProtoMessage() {}
+
+func (x *OpenAgentBrowserRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_browsers_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OpenAgentBrowserRequest.ProtoReflect.Descriptor instead.
+func (*OpenAgentBrowserRequest) Descriptor() ([]byte, []int) {
+	return file_berth_v1_browsers_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *OpenAgentBrowserRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+type OpenAgentBrowserResponse struct {
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Browser *AgentBrowser          `protobuf:"bytes,1,opt,name=browser,proto3" json:"browser,omitempty"`
+	// cdp_token is the proxy's token, set only in the first reply; berthd keeps only its hash.
+	CdpToken      string `protobuf:"bytes,2,opt,name=cdp_token,json=cdpToken,proto3" json:"cdp_token,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *OpenAgentBrowserResponse) Reset() {
+	*x = OpenAgentBrowserResponse{}
+	mi := &file_berth_v1_browsers_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *OpenAgentBrowserResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*OpenAgentBrowserResponse) ProtoMessage() {}
+
+func (x *OpenAgentBrowserResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_browsers_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use OpenAgentBrowserResponse.ProtoReflect.Descriptor instead.
+func (*OpenAgentBrowserResponse) Descriptor() ([]byte, []int) {
+	return file_berth_v1_browsers_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *OpenAgentBrowserResponse) GetBrowser() *AgentBrowser {
+	if x != nil {
+		return x.Browser
+	}
+	return nil
+}
+
+func (x *OpenAgentBrowserResponse) GetCdpToken() string {
+	if x != nil {
+		return x.CdpToken
+	}
+	return ""
+}
+
+type CloseAgentBrowserRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	RequestId     string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
+	Id            string                 `protobuf:"bytes,2,opt,name=id,proto3" json:"id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CloseAgentBrowserRequest) Reset() {
+	*x = CloseAgentBrowserRequest{}
+	mi := &file_berth_v1_browsers_proto_msgTypes[10]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CloseAgentBrowserRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CloseAgentBrowserRequest) ProtoMessage() {}
+
+func (x *CloseAgentBrowserRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_browsers_proto_msgTypes[10]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CloseAgentBrowserRequest.ProtoReflect.Descriptor instead.
+func (*CloseAgentBrowserRequest) Descriptor() ([]byte, []int) {
+	return file_berth_v1_browsers_proto_rawDescGZIP(), []int{10}
+}
+
+func (x *CloseAgentBrowserRequest) GetRequestId() string {
+	if x != nil {
+		return x.RequestId
+	}
+	return ""
+}
+
+func (x *CloseAgentBrowserRequest) GetId() string {
+	if x != nil {
+		return x.Id
+	}
+	return ""
+}
+
+type CloseAgentBrowserResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Browser       *AgentBrowser          `protobuf:"bytes,1,opt,name=browser,proto3" json:"browser,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *CloseAgentBrowserResponse) Reset() {
+	*x = CloseAgentBrowserResponse{}
+	mi := &file_berth_v1_browsers_proto_msgTypes[11]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CloseAgentBrowserResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CloseAgentBrowserResponse) ProtoMessage() {}
+
+func (x *CloseAgentBrowserResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_browsers_proto_msgTypes[11]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CloseAgentBrowserResponse.ProtoReflect.Descriptor instead.
+func (*CloseAgentBrowserResponse) Descriptor() ([]byte, []int) {
+	return file_berth_v1_browsers_proto_rawDescGZIP(), []int{11}
+}
+
+func (x *CloseAgentBrowserResponse) GetBrowser() *AgentBrowser {
 	if x != nil {
 		return x.Browser
 	}
@@ -515,7 +807,7 @@ var File_berth_v1_browsers_proto protoreflect.FileDescriptor
 
 const file_berth_v1_browsers_proto_rawDesc = "" +
 	"\n" +
-	"\x17berth/v1/browsers.proto\x12\bberth.v1\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xe0\x02\n" +
+	"\x17berth/v1/browsers.proto\x12\bberth.v1\x1a\x16berth/v1/options.proto\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\x8a\x03\n" +
 	"\x0eManagedBrowser\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x18\n" +
 	"\aprofile\x18\x02 \x01(\tR\aprofile\x12,\n" +
@@ -531,7 +823,16 @@ const file_berth_v1_browsers_proto_rawDesc = "" +
 	"\vstate_since\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"stateSince\x12!\n" +
 	"\fclose_reason\x18\n" +
-	" \x01(\tR\vcloseReason\"\xcf\x01\n" +
+	" \x01(\tR\vcloseReason\x12(\n" +
+	"\x10agent_session_id\x18\v \x01(\tR\x0eagentSessionId\"\xe9\x01\n" +
+	"\fAgentBrowser\x12\x0e\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12,\n" +
+	"\x05state\x18\x02 \x01(\x0e2\x16.berth.v1.BrowserStateR\x05state\x12\x18\n" +
+	"\aproduct\x18\x03 \x01(\tR\aproduct\x12!\n" +
+	"\fcdp_endpoint\x18\x04 \x01(\tR\vcdpEndpoint\x12;\n" +
+	"\vstate_since\x18\x05 \x01(\v2\x1a.google.protobuf.TimestampR\n" +
+	"stateSince\x12!\n" +
+	"\fclose_reason\x18\x06 \x01(\tR\vcloseReason\"\xcf\x01\n" +
 	"\x14LaunchBrowserRequest\x12)\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tB\n" +
@@ -554,17 +855,33 @@ const file_berth_v1_browsers_proto_rawDesc = "" +
 	"\xbaH\ar\x05\x10\b\x18\x80\x01R\trequestId\x12%\n" +
 	"\x02id\x18\x02 \x01(\tB\x15\xbaH\x12r\x102\x0e^[0-9a-f]{16}$R\x02id\"J\n" +
 	"\x14CloseBrowserResponse\x122\n" +
-	"\abrowser\x18\x01 \x01(\v2\x18.berth.v1.ManagedBrowserR\abrowser*\x98\x01\n" +
+	"\abrowser\x18\x01 \x01(\v2\x18.berth.v1.ManagedBrowserR\abrowser\"D\n" +
+	"\x17OpenAgentBrowserRequest\x12)\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\b\x18\x80\x01R\trequestId\"i\n" +
+	"\x18OpenAgentBrowserResponse\x120\n" +
+	"\abrowser\x18\x01 \x01(\v2\x16.berth.v1.AgentBrowserR\abrowser\x12\x1b\n" +
+	"\tcdp_token\x18\x02 \x01(\tR\bcdpToken\"l\n" +
+	"\x18CloseAgentBrowserRequest\x12)\n" +
+	"\n" +
+	"request_id\x18\x01 \x01(\tB\n" +
+	"\xbaH\ar\x05\x10\b\x18\x80\x01R\trequestId\x12%\n" +
+	"\x02id\x18\x02 \x01(\tB\x15\xbaH\x12r\x102\x0e^[0-9a-f]{16}$R\x02id\"M\n" +
+	"\x19CloseAgentBrowserResponse\x120\n" +
+	"\abrowser\x18\x01 \x01(\v2\x16.berth.v1.AgentBrowserR\abrowser*\x98\x01\n" +
 	"\fBrowserState\x12\x1d\n" +
 	"\x19BROWSER_STATE_UNSPECIFIED\x10\x00\x12\x1b\n" +
 	"\x17BROWSER_STATE_LAUNCHING\x10\x01\x12\x17\n" +
 	"\x13BROWSER_STATE_READY\x10\x02\x12\x19\n" +
 	"\x15BROWSER_STATE_CLOSING\x10\x03\x12\x18\n" +
-	"\x14BROWSER_STATE_CLOSED\x10\x042\x81\x02\n" +
+	"\x14BROWSER_STATE_CLOSED\x10\x042\xc6\x03\n" +
 	"\x0fBrowsersService\x12P\n" +
 	"\rLaunchBrowser\x12\x1e.berth.v1.LaunchBrowserRequest\x1a\x1f.berth.v1.LaunchBrowserResponse\x12M\n" +
 	"\fListBrowsers\x12\x1d.berth.v1.ListBrowsersRequest\x1a\x1e.berth.v1.ListBrowsersResponse\x12M\n" +
-	"\fCloseBrowser\x12\x1d.berth.v1.CloseBrowserRequest\x1a\x1e.berth.v1.CloseBrowserResponseBz\n" +
+	"\fCloseBrowser\x12\x1d.berth.v1.CloseBrowserRequest\x1a\x1e.berth.v1.CloseBrowserResponse\x12_\n" +
+	"\x10OpenAgentBrowser\x12!.berth.v1.OpenAgentBrowserRequest\x1a\".berth.v1.OpenAgentBrowserResponse\"\x04\x88\xb5\x18\x01\x12b\n" +
+	"\x11CloseAgentBrowser\x12\".berth.v1.CloseAgentBrowserRequest\x1a#.berth.v1.CloseAgentBrowserResponse\"\x04\x88\xb5\x18\x01Bz\n" +
 	"\fcom.berth.v1B\rBrowsersProtoP\x01Z\x1aberth/gen/berth/v1;berthv1\xa2\x02\x03BXX\xaa\x02\bBerth.V1\xca\x02\bBerth\\V1\xe2\x02\x14Berth\\V1\\GPBMetadata\xea\x02\tBerth::V1b\x06proto3"
 
 var (
@@ -580,35 +897,48 @@ func file_berth_v1_browsers_proto_rawDescGZIP() []byte {
 }
 
 var file_berth_v1_browsers_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_berth_v1_browsers_proto_msgTypes = make([]protoimpl.MessageInfo, 7)
+var file_berth_v1_browsers_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
 var file_berth_v1_browsers_proto_goTypes = []any{
-	(BrowserState)(0),             // 0: berth.v1.BrowserState
-	(*ManagedBrowser)(nil),        // 1: berth.v1.ManagedBrowser
-	(*LaunchBrowserRequest)(nil),  // 2: berth.v1.LaunchBrowserRequest
-	(*LaunchBrowserResponse)(nil), // 3: berth.v1.LaunchBrowserResponse
-	(*ListBrowsersRequest)(nil),   // 4: berth.v1.ListBrowsersRequest
-	(*ListBrowsersResponse)(nil),  // 5: berth.v1.ListBrowsersResponse
-	(*CloseBrowserRequest)(nil),   // 6: berth.v1.CloseBrowserRequest
-	(*CloseBrowserResponse)(nil),  // 7: berth.v1.CloseBrowserResponse
-	(*timestamppb.Timestamp)(nil), // 8: google.protobuf.Timestamp
+	(BrowserState)(0),                 // 0: berth.v1.BrowserState
+	(*ManagedBrowser)(nil),            // 1: berth.v1.ManagedBrowser
+	(*AgentBrowser)(nil),              // 2: berth.v1.AgentBrowser
+	(*LaunchBrowserRequest)(nil),      // 3: berth.v1.LaunchBrowserRequest
+	(*LaunchBrowserResponse)(nil),     // 4: berth.v1.LaunchBrowserResponse
+	(*ListBrowsersRequest)(nil),       // 5: berth.v1.ListBrowsersRequest
+	(*ListBrowsersResponse)(nil),      // 6: berth.v1.ListBrowsersResponse
+	(*CloseBrowserRequest)(nil),       // 7: berth.v1.CloseBrowserRequest
+	(*CloseBrowserResponse)(nil),      // 8: berth.v1.CloseBrowserResponse
+	(*OpenAgentBrowserRequest)(nil),   // 9: berth.v1.OpenAgentBrowserRequest
+	(*OpenAgentBrowserResponse)(nil),  // 10: berth.v1.OpenAgentBrowserResponse
+	(*CloseAgentBrowserRequest)(nil),  // 11: berth.v1.CloseAgentBrowserRequest
+	(*CloseAgentBrowserResponse)(nil), // 12: berth.v1.CloseAgentBrowserResponse
+	(*timestamppb.Timestamp)(nil),     // 13: google.protobuf.Timestamp
 }
 var file_berth_v1_browsers_proto_depIdxs = []int32{
-	0, // 0: berth.v1.ManagedBrowser.state:type_name -> berth.v1.BrowserState
-	8, // 1: berth.v1.ManagedBrowser.state_since:type_name -> google.protobuf.Timestamp
-	1, // 2: berth.v1.LaunchBrowserResponse.browser:type_name -> berth.v1.ManagedBrowser
-	1, // 3: berth.v1.ListBrowsersResponse.browsers:type_name -> berth.v1.ManagedBrowser
-	1, // 4: berth.v1.CloseBrowserResponse.browser:type_name -> berth.v1.ManagedBrowser
-	2, // 5: berth.v1.BrowsersService.LaunchBrowser:input_type -> berth.v1.LaunchBrowserRequest
-	4, // 6: berth.v1.BrowsersService.ListBrowsers:input_type -> berth.v1.ListBrowsersRequest
-	6, // 7: berth.v1.BrowsersService.CloseBrowser:input_type -> berth.v1.CloseBrowserRequest
-	3, // 8: berth.v1.BrowsersService.LaunchBrowser:output_type -> berth.v1.LaunchBrowserResponse
-	5, // 9: berth.v1.BrowsersService.ListBrowsers:output_type -> berth.v1.ListBrowsersResponse
-	7, // 10: berth.v1.BrowsersService.CloseBrowser:output_type -> berth.v1.CloseBrowserResponse
-	8, // [8:11] is the sub-list for method output_type
-	5, // [5:8] is the sub-list for method input_type
-	5, // [5:5] is the sub-list for extension type_name
-	5, // [5:5] is the sub-list for extension extendee
-	0, // [0:5] is the sub-list for field type_name
+	0,  // 0: berth.v1.ManagedBrowser.state:type_name -> berth.v1.BrowserState
+	13, // 1: berth.v1.ManagedBrowser.state_since:type_name -> google.protobuf.Timestamp
+	0,  // 2: berth.v1.AgentBrowser.state:type_name -> berth.v1.BrowserState
+	13, // 3: berth.v1.AgentBrowser.state_since:type_name -> google.protobuf.Timestamp
+	1,  // 4: berth.v1.LaunchBrowserResponse.browser:type_name -> berth.v1.ManagedBrowser
+	1,  // 5: berth.v1.ListBrowsersResponse.browsers:type_name -> berth.v1.ManagedBrowser
+	1,  // 6: berth.v1.CloseBrowserResponse.browser:type_name -> berth.v1.ManagedBrowser
+	2,  // 7: berth.v1.OpenAgentBrowserResponse.browser:type_name -> berth.v1.AgentBrowser
+	2,  // 8: berth.v1.CloseAgentBrowserResponse.browser:type_name -> berth.v1.AgentBrowser
+	3,  // 9: berth.v1.BrowsersService.LaunchBrowser:input_type -> berth.v1.LaunchBrowserRequest
+	5,  // 10: berth.v1.BrowsersService.ListBrowsers:input_type -> berth.v1.ListBrowsersRequest
+	7,  // 11: berth.v1.BrowsersService.CloseBrowser:input_type -> berth.v1.CloseBrowserRequest
+	9,  // 12: berth.v1.BrowsersService.OpenAgentBrowser:input_type -> berth.v1.OpenAgentBrowserRequest
+	11, // 13: berth.v1.BrowsersService.CloseAgentBrowser:input_type -> berth.v1.CloseAgentBrowserRequest
+	4,  // 14: berth.v1.BrowsersService.LaunchBrowser:output_type -> berth.v1.LaunchBrowserResponse
+	6,  // 15: berth.v1.BrowsersService.ListBrowsers:output_type -> berth.v1.ListBrowsersResponse
+	8,  // 16: berth.v1.BrowsersService.CloseBrowser:output_type -> berth.v1.CloseBrowserResponse
+	10, // 17: berth.v1.BrowsersService.OpenAgentBrowser:output_type -> berth.v1.OpenAgentBrowserResponse
+	12, // 18: berth.v1.BrowsersService.CloseAgentBrowser:output_type -> berth.v1.CloseAgentBrowserResponse
+	14, // [14:19] is the sub-list for method output_type
+	9,  // [9:14] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_berth_v1_browsers_proto_init() }
@@ -616,13 +946,14 @@ func file_berth_v1_browsers_proto_init() {
 	if File_berth_v1_browsers_proto != nil {
 		return
 	}
+	file_berth_v1_options_proto_init()
 	type x struct{}
 	out := protoimpl.TypeBuilder{
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_berth_v1_browsers_proto_rawDesc), len(file_berth_v1_browsers_proto_rawDesc)),
 			NumEnums:      1,
-			NumMessages:   7,
+			NumMessages:   12,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

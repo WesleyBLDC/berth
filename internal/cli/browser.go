@@ -27,6 +27,8 @@ func browserCommand(ctx context.Context, args []string, env Env) int {
 		switch args[0] {
 		case "launch":
 			return browserLaunch(ctx, args[1:], env)
+		case "open":
+			return browserOpen(ctx, args[1:], env)
 		case "ls":
 			return browserList(ctx, args[1:], env)
 		case "close":
@@ -77,6 +79,45 @@ func browserLaunch(ctx context.Context, args []string, env Env) int {
 	return ExitOK
 }
 
+// browserOpen is an agent's browser: headless, on a fresh profile berthd deletes when it closes,
+// and closed when the agent session ends. It prints like launch.
+func browserOpen(ctx context.Context, args []string, env Env) int {
+	fs := newFlags("browser open", env)
+	tokenFile := fs.String("token-file", "", "write the CDP token to this new file (mode 0600) instead of printing it")
+	if err := fs.Parse(args); err != nil || fs.NArg() != 0 {
+		fmt.Fprint(env.Stderr, usage)
+		return ExitUsage
+	}
+	if !env.Agent {
+		fmt.Fprintln(env.Stderr, "berth browser open is for agents, through BERTH_AGENT_SOCKET; the person uses berth browser launch")
+		return ExitUsage
+	}
+	c, ok := connectClient(ctx, env)
+	if !ok {
+		return ExitError
+	}
+	ctx, cancel := context.WithTimeout(ctx, launchTimeout)
+	defer cancel()
+	resp, err := c.Browsers.OpenAgentBrowser(ctx, &berthv1.OpenAgentBrowserRequest{RequestId: requestID()})
+	if err != nil {
+		return reportError(env.Stderr, err, "", "")
+	}
+	b := resp.GetBrowser()
+	fmt.Fprintf(env.Stdout, "browser %s is %s\n", b.GetId(), browserStateName(b.GetState()))
+	fmt.Fprintf(env.Stdout, "endpoint %s\n", b.GetCdpEndpoint())
+	if *tokenFile != "" {
+		if err := writeNewFile(*tokenFile, []byte(resp.GetCdpToken()+"\n")); err != nil {
+			fmt.Fprintf(env.Stderr, "could not write the token file: %v\n", err)
+			return ExitError
+		}
+		fmt.Fprintf(env.Stdout, "token written to %s\n", *tokenFile)
+	} else {
+		fmt.Fprintf(env.Stdout, "token %s\n", resp.GetCdpToken())
+	}
+	fmt.Fprintln(env.Stderr, "the token is shown only now; send it in the X-Berth-Token header; berth browser close <id> ends the browser, and so does the end of this agent session")
+	return ExitOK
+}
+
 // writeNewFile creates path for the person alone: never over an existing file and never
 // through a symlink, so the token cannot be steered into a file someone else can read.
 func writeNewFile(path string, b []byte) error {
@@ -117,14 +158,14 @@ func browserList(ctx context.Context, args []string, env Env) int {
 		return ExitOK
 	}
 	w := tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
-	fmt.Fprintln(w, "ID\tPROFILE\tSTATE\tSESSION\tHEADLESS\tENDPOINT\tPRODUCT")
+	fmt.Fprintln(w, "ID\tPROFILE\tSTATE\tSESSION\tAGENT SESSION\tHEADLESS\tENDPOINT\tPRODUCT")
 	for _, b := range resp.GetBrowsers() {
 		state := browserStateName(b.GetState())
 		if b.GetCloseReason() != "" {
 			state += " (" + shown(b.GetCloseReason()) + ")"
 		}
-		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\n", b.GetId(), b.GetProfile(), state, dash(b.GetSessionId()),
-			yesNo(b.GetHeadless()), dash(b.GetCdpEndpoint()), dash(shown(b.GetProduct())))
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", b.GetId(), b.GetProfile(), state, dash(b.GetSessionId()),
+			dash(b.GetAgentSessionId()), yesNo(b.GetHeadless()), dash(b.GetCdpEndpoint()), dash(shown(b.GetProduct())))
 	}
 	_ = w.Flush()
 	return ExitOK
@@ -141,11 +182,21 @@ func browserClose(ctx context.Context, args []string, env Env) int {
 	}
 	ctx, cancel := context.WithTimeout(ctx, stopTimeout)
 	defer cancel()
-	resp, err := c.Browsers.CloseBrowser(ctx, &berthv1.CloseBrowserRequest{RequestId: requestID(), Id: args[0]})
-	if err != nil {
-		return reportError(env.Stderr, err, "", args[0])
+	var state berthv1.BrowserState
+	if env.Agent {
+		resp, err := c.Browsers.CloseAgentBrowser(ctx, &berthv1.CloseAgentBrowserRequest{RequestId: requestID(), Id: args[0]})
+		if err != nil {
+			return reportError(env.Stderr, err, "", args[0])
+		}
+		state = resp.GetBrowser().GetState()
+	} else {
+		resp, err := c.Browsers.CloseBrowser(ctx, &berthv1.CloseBrowserRequest{RequestId: requestID(), Id: args[0]})
+		if err != nil {
+			return reportError(env.Stderr, err, "", args[0])
+		}
+		state = resp.GetBrowser().GetState()
 	}
-	fmt.Fprintf(env.Stdout, "browser %s is %s\n", args[0], browserStateName(resp.GetBrowser().GetState()))
+	fmt.Fprintf(env.Stdout, "browser %s is %s\n", args[0], browserStateName(state))
 	return ExitOK
 }
 

@@ -136,16 +136,25 @@ const (
 )
 
 // AdmitStore decides whether a session may open one more store dialog, given how many it has
-// open and when it started the ones it was admitted for. It returns the start times still inside
-// the last hour, with now added when admitted.
+// open and when it started the ones it was admitted for.
 func AdmitStore(open int, started []time.Time, now time.Time) (bool, []time.Time) {
+	return Limit{Open: MaxOpenStores, PerHour: MaxStoresPerHour}.Admit(open, started, now)
+}
+
+// Limit bounds what one agent session may have berthd hold for it at once and start in any
+// rolling hour: store dialogs, proxies, browsers.
+type Limit struct{ Open, PerHour int }
+
+// Admit decides whether one more may start, given how many are open and when the admitted ones
+// started. It returns the start times still inside the last hour, with now added when admitted.
+func (l Limit) Admit(open int, started []time.Time, now time.Time) (bool, []time.Time) {
 	kept := make([]time.Time, 0, len(started)+1)
 	for _, t := range started {
 		if now.Sub(t) < time.Hour {
 			kept = append(kept, t)
 		}
 	}
-	if open >= MaxOpenStores || len(kept) >= MaxStoresPerHour {
+	if open >= l.Open || len(kept) >= l.PerHour {
 		return false, kept
 	}
 	return true, append(kept, now)

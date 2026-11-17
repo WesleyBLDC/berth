@@ -43,6 +43,9 @@ type agentsDeps struct {
 	// StopProxies stops the proxy sessions authorized through an agent session that ended. It
 	// runs on berthd's own context, never a caller's.
 	StopProxies func(ctx context.Context, agentSession string)
+	// CloseBrowsers closes the agent browsers of an agent session that ended, on berthd's own
+	// context like StopProxies.
+	CloseBrowsers func(ctx context.Context, agentSession string)
 	// WatchExit returns a channel closed when the process instance exits (kqueue NOTE_EXIT), or
 	// ports.ErrProcessGone when it already has.
 	WatchExit func(ctx context.Context, p ports.ProcessRef) (<-chan struct{}, error)
@@ -109,7 +112,7 @@ func newAgents(ctx context.Context, d agentsDeps) *agents {
 }
 
 // ended frees what a session held once its final state is saved: its timer, its root watch, its
-// store slots and its proxy sessions. A second call finds nothing left and stops nothing new.
+// store slots, its proxy sessions and its browsers. A second call finds nothing left and stops nothing new.
 func (a *agents) ended(id string) {
 	a.mu.Lock()
 	delete(a.stores, id)
@@ -124,6 +127,9 @@ func (a *agents) ended(id string) {
 	}
 	if a.StopProxies != nil {
 		a.StopProxies(a.ctx, id)
+	}
+	if a.CloseBrowsers != nil {
+		a.CloseBrowsers(a.ctx, id)
 	}
 }
 

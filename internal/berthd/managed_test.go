@@ -105,12 +105,12 @@ func (f *managedFixture) events(t *testing.T, id string) []string {
 	return names
 }
 
-func waitBrowserState(t *testing.T, m *managed, id string, want browser.State) {
+func waitBrowserClosed(t *testing.T, m *managed, id string) {
 	t.Helper()
 	deadline := time.Now().Add(5 * time.Second)
-	for m.state(id) != want {
+	for m.state(id) != browser.Closed {
 		if time.Now().After(deadline) {
-			t.Fatalf("browser %s is %s, want %s", id, m.state(id), want)
+			t.Fatalf("browser %s is %s, want Closed", id, m.state(id))
 		}
 		time.Sleep(5 * time.Millisecond)
 	}
@@ -267,7 +267,7 @@ func TestABrowserThatExitsOnItsOwnIsClosed(t *testing.T) {
 	resp, _ := f.launch(t, "work")
 	id := resp.GetBrowser().GetId()
 	f.driver.Launched()[0].Exit()
-	waitBrowserState(t, f.m, id, browser.Closed)
+	waitBrowserClosed(t, f.m, id)
 	list, _ := f.m.ListBrowsers(t.Context(), &berthv1.ListBrowsersRequest{IncludeClosed: true})
 	if b := list.GetBrowsers()[0]; b.GetCloseReason() != "exited" || b.GetCdpEndpoint() != "" {
 		t.Fatalf("browser = %v", b)
@@ -308,7 +308,7 @@ func TestShutdownClosesEveryBrowser(t *testing.T) {
 	b, _ := f.launch(t, "b")
 	f.m.stop(t.Context(), 300*time.Millisecond)
 	for _, id := range []string{a.GetBrowser().GetId(), b.GetBrowser().GetId()} {
-		waitBrowserState(t, f.m, id, browser.Closed)
+		waitBrowserClosed(t, f.m, id)
 	}
 	if !f.driver.Launched()[1].Killed() {
 		t.Fatal("a browser ignoring Browser.close must be killed at shutdown")

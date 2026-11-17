@@ -147,6 +147,8 @@ func Run(ctx context.Context, cfg Config) (int, error) {
 	s.agents = newAgents(machineCtx, agentsDeps{
 		Log: cfg.Log, Store: store, Records: store, Clock: clock.System{}, Lineage: procs, Code: peer.NewCode(), AgentUID: agentUID,
 		StopProxies: s.secrets.stopAgentSessions, WatchExit: procs.WatchExit,
+		// s.managed is made below; the hook runs only once sessions can end, after boot started.
+		CloseBrowsers: func(ctx context.Context, id string) { s.managed.closeAgent(ctx, id) },
 	})
 	s.secrets.AgentLive = s.agents.live
 	s.browsers = newBrowsers(machineCtx, browsersDeps{
@@ -156,7 +158,7 @@ func Run(ctx context.Context, cfg Config) (int, error) {
 	s.managed = newManaged(machineCtx, managedDeps{
 		Log: cfg.Log, Store: store, List: store, Clock: clock.System{}, Driver: cdppipe.Driver{},
 		Proxy: &cdpproxy.Proxy{Log: cfg.Log},
-		Seen:  s.browsers, Home: cfg.Home, Browser: cfg.Browser,
+		Seen:  s.browsers, Home: cfg.Home, Browser: cfg.Browser, AgentLive: s.agents.live,
 	})
 	s.actor, err = machine.NewActor(ctx, machine.Config[daemon.State, daemon.Event, daemon.Effect]{
 		Entity: daemon.Entity, Kind: daemon.Kind, Initial: daemon.Starting,
