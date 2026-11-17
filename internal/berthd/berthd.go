@@ -14,8 +14,12 @@ import (
 
 	"berth/internal/adapters/api"
 	"berth/internal/adapters/clock"
+	"berth/internal/adapters/execid"
+	"berth/internal/adapters/native"
+	"berth/internal/adapters/peer"
 	"berth/internal/adapters/socket"
 	"berth/internal/adapters/sqlite"
+	"berth/internal/adapters/ticket"
 	"berth/internal/core/daemon"
 	"berth/internal/core/machine"
 	"berth/internal/paths"
@@ -29,6 +33,11 @@ type Config struct {
 	Home    string
 	Version string
 	Log     *slog.Logger
+	// Helper is the berth-native path; empty means berth-native beside the berthd executable.
+	Helper string
+	// TrustHelper decides which peer may redeem use tickets. Nil means the signed release
+	// helper (SignedHelper); only Go test code sets anything else, never the environment.
+	TrustHelper TrustHelper
 }
 
 type shell struct {
@@ -43,6 +52,7 @@ type shell struct {
 	start  time.Time
 	// machineCtx outlives the signal context so background sends can still reach the actor.
 	machineCtx context.Context
+	secrets    *secrets
 }
 
 // Run blocks until the daemon machine reaches Stopped, and returns its exit code.
@@ -67,6 +77,9 @@ func Run(ctx context.Context, cfg Config) (int, error) {
 	s := &shell{
 		cfg: cfg, log: cfg.Log, store: store, sock: paths.Socket(cfg.Home),
 		exit: make(chan int, 1), start: clock.System{}.Now(), machineCtx: machineCtx,
+	}
+	if s.secrets, err = newSecretsFor(machineCtx, cfg, store); err != nil {
+		return 1, err
 	}
 	s.actor, err = machine.NewActor(ctx, machine.Config[daemon.State, daemon.Event, daemon.Effect]{
 		Entity: daemon.Entity, Kind: daemon.Kind, Initial: daemon.Starting,
@@ -133,6 +146,25 @@ func (s *shell) run(ctx context.Context, effect daemon.Effect) ([]daemon.Event, 
 	return nil, fmt.Errorf("unknown effect %q", effect.Kind)
 }
 
+func newSecretsFor(ctx context.Context, cfg Config, store *sqlite.Store) (*secrets, error) {
+	helper := cfg.Helper
+	if helper == "" {
+		var err error
+		if helper, err = paths.Beside("berth-native"); err != nil {
+			return nil, fmt.Errorf("find berth-native: %w", err)
+		}
+	}
+	execs := execid.New(execid.DefaultCodesign)
+	trust := cfg.TrustHelper
+	if trust == nil {
+		trust = SignedHelper(execs)
+	}
+	return newSecrets(ctx, secretsDeps{
+		Log: cfg.Log, Store: store, Records: store, Clock: clock.System{},
+		Approver: native.New(helper), Execs: execs, Peers: peer.New(), Tickets: ticket.New(), Trust: trust,
+	}), nil
+}
+
 func (s *shell) serve(ctx context.Context) error {
 	ln, err := socket.Listen(ctx, s.sock, uint32(os.Getuid()), socket.KernelPeerUID, s.log) //nolint:gosec // user IDs fit in 32 bits
 	if err != nil {
@@ -145,13 +177,24 @@ func (s *shell) serve(ctx context.Context) error {
 		RequestStop: func(ctx context.Context) error {
 			return s.actor.Send(ctx, daemon.Event{Kind: daemon.StopRequested, Note: "Shutdown call"})
 		},
+		Secrets: s.secrets,
 	})
 	mux := http.NewServeMux()
 	connecthttp.Mount(mux, server, connecthttp.WithGRPC(), connecthttp.WithProtoJSON())
 	protocols := new(http.Protocols)
 	protocols.SetUnencryptedHTTP2(true)
 	protocols.SetHTTP1(true)
-	s.server = &http.Server{Handler: mux, Protocols: protocols, ReadHeaderTimeout: 5 * time.Second}
+	s.server = &http.Server{
+		Handler: mux, Protocols: protocols, ReadHeaderTimeout: 5 * time.Second,
+		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
+			if uc, ok := c.(*net.UnixConn); ok {
+				if pid, err := socket.KernelPeerPID(uc); err == nil {
+					return api.WithPeerPID(ctx, pid)
+				}
+			}
+			return ctx
+		},
+	}
 	s.ln = ln
 	go func() {
 		if err := s.server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {

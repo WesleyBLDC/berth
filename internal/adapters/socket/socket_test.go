@@ -80,3 +80,40 @@ func TestSecondDaemonOnLiveSocketFails(t *testing.T) {
 		t.Fatalf("want ErrAlreadyRunning, got %v", err)
 	}
 }
+
+func TestKernelPeerPIDIsTheConnectingProcess(t *testing.T) {
+	dir, err := os.MkdirTemp("", "berth-sock-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	path := filepath.Join(dir, "berthd.sock")
+	ln, err := socket.Listen(t.Context(), path, uid(), socket.KernelPeerUID, slog.New(slog.DiscardHandler))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = ln.Close() })
+	got := make(chan int, 1)
+	go func() {
+		conn, err := ln.Accept()
+		if err != nil {
+			got <- -1
+			return
+		}
+		defer func() { _ = conn.Close() }()
+		pid, err := socket.KernelPeerPID(conn.(*net.UnixConn))
+		if err != nil {
+			pid = -1
+		}
+		got <- pid
+	}()
+	var d net.Dialer
+	c, err := d.DialContext(t.Context(), "unix", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = c.Close() }()
+	if pid := <-got; pid != os.Getpid() {
+		t.Fatalf("peer pid %d, want %d", pid, os.Getpid())
+	}
+}

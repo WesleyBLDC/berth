@@ -132,7 +132,9 @@ func startChild(ctx context.Context, exe string, argv []string, bindings envFlag
 		for {
 			select {
 			case s := <-signals:
-				_ = cmd.Process.Signal(s)
+				if forwarded(s) {
+					_ = cmd.Process.Signal(s)
+				}
 			case <-done:
 				return
 			}
@@ -140,6 +142,12 @@ func startChild(ctx context.Context, exe string, argv []string, bindings envFlag
 	}()
 	return exitCode(cmd.Wait(), env)
 }
+
+// forwarded reports whether berth passes a signal on to its child. The child shares berth's
+// process group (it stays in the terminal's foreground group so it can read the terminal), so
+// a terminal Ctrl-C already reaches it; forwarding SIGINT too would deliver it twice. berth
+// still catches SIGINT so it outlives the child and reports the child's exit.
+func forwarded(s os.Signal) bool { return s == syscall.SIGTERM }
 
 // envEntry is the one place a secret value becomes a Go string: exec.Cmd.Env is a []string and
 // the standard library offers no byte-slice way to hand a child its environment. The string

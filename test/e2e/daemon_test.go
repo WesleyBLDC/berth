@@ -24,10 +24,17 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	build := exec.CommandContext(context.Background(), "go", "build", "-o", dir+"/", "berth/cmd/berthd", "berth/cmd/berth")
-	build.Stderr = os.Stderr
-	if err := build.Run(); err != nil {
-		panic(err)
+	// berth_e2e compiles in the one test trust rule: berthd trusts the unsigned fake helper,
+	// built here as berth-native beside it, to redeem tickets. Release builds lack the tag.
+	for _, args := range [][]string{
+		{"build", "-tags", "berth_e2e", "-o", dir + "/", "berth/cmd/berthd", "berth/cmd/berth"},
+		{"build", "-o", filepath.Join(dir, "berth-native"), "berth/internal/adapters/native/fakehelper"},
+	} {
+		build := exec.CommandContext(context.Background(), "go", args...)
+		build.Stderr = os.Stderr
+		if err := build.Run(); err != nil {
+			panic(err)
+		}
 	}
 	binDir = dir
 	code := m.Run()

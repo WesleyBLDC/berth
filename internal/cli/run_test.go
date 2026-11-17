@@ -5,7 +5,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
+	"time"
 
 	berthv1 "berth/gen/berth/v1"
 )
@@ -65,5 +67,45 @@ func TestRunRefusalDoesNotStartTheChild(t *testing.T) {
 				t.Fatalf("the child ran: %v", err)
 			}
 		})
+	}
+}
+
+// TestRunForwardsSIGTERMButNotSIGINT signals berth alone (not its process group): SIGTERM must
+// reach the child, SIGINT must not, because a terminal Ctrl-C reaches the child directly.
+func TestRunForwardsSIGTERMButNotSIGINT(t *testing.T) {
+	log := filepath.Join(t.TempDir(), "signals")
+	script := `trap 'echo INT >> "$1"' INT; trap 'echo TERM >> "$1"; exit 0' TERM; echo ready >> "$1"; while :; do sleep 0.05; done`
+	var stdout, stderr strings.Builder
+	env := Env{Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr}
+	done := make(chan int, 1)
+	go func() { done <- startChild(t.Context(), "/bin/sh", []string{"-c", script, "sh", log}, nil, nil, env) }()
+	waitFor := func(want string) string {
+		t.Helper()
+		deadline := time.Now().Add(5 * time.Second)
+		for time.Now().Before(deadline) {
+			b, _ := os.ReadFile(log)
+			if strings.Contains(string(b), want) {
+				return string(b)
+			}
+			time.Sleep(20 * time.Millisecond)
+		}
+		b, _ := os.ReadFile(log)
+		t.Fatalf("child never logged %q; log %q", want, b)
+		return ""
+	}
+	waitFor("ready")
+	if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(300 * time.Millisecond)
+	if err := syscall.Kill(os.Getpid(), syscall.SIGTERM); err != nil {
+		t.Fatal(err)
+	}
+	got := waitFor("TERM")
+	if code := <-done; code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr.String())
+	}
+	if strings.Contains(got, "INT") {
+		t.Fatalf("SIGINT was forwarded to the child; log %q", got)
 	}
 }

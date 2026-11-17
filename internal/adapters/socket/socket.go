@@ -36,6 +36,26 @@ func KernelPeerUID(c *net.UnixConn) (uint32, error) {
 	return cred.Uid, nil
 }
 
+// KernelPeerPID asks the kernel (LOCAL_PEERPID) which process connected, so handlers can learn
+// about the caller without trusting anything it sends.
+func KernelPeerPID(c *net.UnixConn) (int, error) {
+	raw, err := c.SyscallConn()
+	if err != nil {
+		return 0, err
+	}
+	var pid int
+	var pidErr error
+	if err := raw.Control(func(fd uintptr) {
+		pid, pidErr = unix.GetsockoptInt(int(fd), unix.SOL_LOCAL, unix.LOCAL_PEERPID)
+	}); err != nil {
+		return 0, err
+	}
+	if pidErr != nil {
+		return 0, pidErr
+	}
+	return pid, nil
+}
+
 // ErrAlreadyRunning means another daemon answers on the socket.
 var ErrAlreadyRunning = errors.New("another berthd is already serving this socket")
 

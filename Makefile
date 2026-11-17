@@ -1,15 +1,21 @@
 export DEVELOPER_DIR ?= /Applications/Xcode.app/Contents/Developer
 
-.PHONY: build gen test e2e lint fmt vuln verify breaking check hooks
+.PHONY: build native gen test test-native e2e lint fmt vuln verify breaking check hooks
 
 build: ## Build berthd and berth into bin/
 	go build -o bin/ ./cmd/...
+
+native: ## Build and sign bin/berth-native with the Personal Team identity
+	scripts/build-native.sh
 
 gen: ## Regenerate code from proto/
 	buf generate
 
 test: ## Unit tests with the race detector
 	go test -race ./internal/...
+
+test-native: ## Swift unit tests for berth-native's core
+	swift test --package-path native
 
 e2e: ## End to end tests with the real binaries
 	go test -count=1 ./test/e2e/...
@@ -34,7 +40,7 @@ verify: ## Dependencies match go.sum
 breaking: ## Schema changes that would break existing clients
 	@if git rev-parse --verify -q main >/dev/null && git cat-file -e main:buf.yaml 2>/dev/null; then buf breaking --against '.git#branch=main'; else echo "no schema on main yet"; fi
 
-check: lint verify breaking test e2e vuln ## Everything that must pass before a commit
+check: lint verify breaking test test-native e2e vuln ## Everything that must pass before a commit
 	@echo "check: PASS"
 
 hooks: ## Install the git hooks and prepare their environments

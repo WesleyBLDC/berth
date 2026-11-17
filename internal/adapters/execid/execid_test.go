@@ -120,3 +120,21 @@ func TestTamperedSignedBinaryLosesSignature(t *testing.T) {
 		t.Fatalf("a tampered binary kept its signature facts: %+v", got)
 	}
 }
+
+func TestSatisfiesChecksTheRequirement(t *testing.T) {
+	id := New(DefaultCodesign)
+	if ok, err := id.Satisfies(t.Context(), "/bin/ls", "anchor apple"); err != nil || !ok {
+		t.Fatalf("/bin/ls against anchor apple: %v, %v", ok, err)
+	}
+	if ok, err := id.Satisfies(t.Context(), "/bin/ls", `anchor apple generic and certificate leaf[subject.OU] = "XPJ7XA42J4"`); err != nil || ok {
+		t.Fatalf("/bin/ls against another team: %v, %v", ok, err)
+	}
+	self, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The Go linker signs ad hoc, which no anchor accepts.
+	if ok, err := id.Satisfies(t.Context(), self, "anchor apple generic"); err != nil || ok {
+		t.Fatalf("ad hoc test binary: %v, %v", ok, err)
+	}
+}

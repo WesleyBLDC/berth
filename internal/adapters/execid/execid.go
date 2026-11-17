@@ -99,6 +99,20 @@ func (x *Identity) signature(ctx context.Context, path string) (team, signing st
 	return team, signing, nil
 }
 
+// Satisfies reports whether the file at path verifies against a code requirement, for example
+// one that pins Apple's certificate chain and a team, which a self signed copy cannot fake the
+// way it can fake the TeamIdentifier that codesign -d prints.
+func (x *Identity) Satisfies(ctx context.Context, path, requirement string) (bool, error) {
+	cmd := exec.CommandContext(ctx, x.codesign, "--verify", "--strict", "-R="+requirement, path) //nolint:gosec // fixed tool and requirement, path is an argument
+	if err := cmd.Run(); err != nil {
+		if unsigned(ctx, err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("codesign requirement: %w", err)
+	}
+	return true, nil
+}
+
 // unsigned reports whether codesign ran and said no; a cancelled context or a missing tool is a
 // real error, so a broken environment never makes a signed binary look unsigned.
 func unsigned(ctx context.Context, err error) bool {
