@@ -14,8 +14,6 @@ import (
 	"log/slog"
 	"net"
 	"os"
-	"path/filepath"
-	"regexp"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -37,15 +35,12 @@ const (
 )
 
 const (
-	// readyTimeout is how long berthd has to answer SERVING; berthd itself gives up after 30 seconds.
-	readyTimeout = 30 * time.Second
-	// berth kills the proxy 5 seconds after closing its stdin, so closing and ending fit in that.
+	// Its starter kills the proxy proxyctl.StopTimeout after closing its stdin, so closing and
+	// ending fit in that.
 	endTimeout = 2 * time.Second
 	closeWait  = 2 * time.Second
 	maxRequest = 64 << 10
 )
-
-var namePattern = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,127}$`)
 
 // Deps is everything Run touches outside the process, so tests can replace all of it.
 type Deps struct {
@@ -136,26 +131,12 @@ func run(ctx context.Context, d Deps) (int, []*Grant) {
 	if err != nil {
 		return fail(ExitError, "cannot make the run CA", err), grants
 	}
-	system, err := os.ReadFile(d.SystemBundle)
+	dir, caFile, bundleFile, err := proxyctl.WriteTrustFiles(d.TempDir, d.SystemBundle, ca.PEM())
+	if dir != "" {
+		defer func() { _ = os.RemoveAll(dir) }()
+	}
 	if err != nil {
-		return fail(ExitError, "cannot read the system trust bundle", err), grants
-	}
-	dir, err := os.MkdirTemp(d.TempDir, "berth-proxy-")
-	if err != nil {
-		return fail(ExitError, "cannot make the run folder", err), grants
-	}
-	defer func() { _ = os.RemoveAll(dir) }()
-	// berth accepts only absolute paths, and TMPDIR may be relative.
-	if dir, err = filepath.Abs(dir); err != nil {
-		return fail(ExitError, "cannot resolve the run folder", err), grants
-	}
-	caFile, bundleFile := filepath.Join(dir, "ca.pem"), filepath.Join(dir, "bundle.pem")
-	bundle := append(append(system, '\n'), ca.PEM()...)
-	if err := os.WriteFile(caFile, ca.PEM(), 0o600); err != nil {
-		return fail(ExitError, "cannot write ca.pem", err), grants
-	}
-	if err := os.WriteFile(bundleFile, bundle, 0o600); err != nil { //nolint:gosec // bundleFile is inside the folder MkdirTemp just made
-		return fail(ExitError, "cannot write bundle.pem", err), grants
+		return fail(ExitError, "cannot write the trust files", err), grants
 	}
 
 	var lc net.ListenConfig
@@ -180,7 +161,7 @@ func run(ctx context.Context, d Deps) (int, []*Grant) {
 			_ = ln.Close()
 			return fail(ExitStopped, "berthd did not let the session serve", ev.err), grants
 		}
-	case <-time.After(readyTimeout):
+	case <-time.After(proxyctl.ReadyTimeout):
 		_ = ln.Close()
 		return fail(ExitError, "berthd did not answer SERVING in time", nil), grants
 	case <-ctx.Done():
@@ -273,12 +254,12 @@ func readRequest(in *bufio.Reader) ([]string, error) {
 	if err := dec.Decode(&req); err != nil {
 		return nil, errors.New(`expected one line {"secrets":[...]}`)
 	}
-	if len(req.Secrets) == 0 || len(req.Secrets) > 16 {
-		return nil, errors.New("name between 1 and 16 secrets")
+	if len(req.Secrets) == 0 || len(req.Secrets) > proxyctl.MaxNames {
+		return nil, fmt.Errorf("name between 1 and %d secrets", proxyctl.MaxNames)
 	}
 	seen := map[string]bool{}
 	for _, n := range req.Secrets {
-		if !namePattern.MatchString(n) || seen[n] {
+		if !proxyctl.NamePattern.MatchString(n) || seen[n] {
 			return nil, fmt.Errorf("bad or repeated secret name %q", n)
 		}
 		seen[n] = true

@@ -14,6 +14,7 @@ import (
 	"berth/internal/core/ports"
 	"berth/internal/peertrust"
 	"berth/internal/proxy"
+	"berth/internal/proxyctl"
 )
 
 func main() {
@@ -28,7 +29,7 @@ func main() {
 		Read:         read,
 		Roots:        roots(),
 		AllowLocal:   allowLocal,
-		SystemBundle: "/etc/ssl/cert.pem",
+		SystemBundle: proxyctl.SystemBundle,
 	})
 	stop()
 	os.Exit(code)

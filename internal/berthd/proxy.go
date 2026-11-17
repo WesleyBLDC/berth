@@ -23,8 +23,6 @@ import (
 )
 
 const (
-	// proxyReadyTimeout is how long a proxy has from AuthorizeProxy to WatchProxySession.
-	proxyReadyTimeout = 30 * time.Second
 	// endGrace is how long a dropped watch stream waits for the EndProxySession a proxy sends
 	// as it exits, before the session counts as Lost.
 	endGrace = 2 * time.Second

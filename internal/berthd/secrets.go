@@ -24,6 +24,7 @@ import (
 	"berth/internal/core/ports"
 	"berth/internal/core/proxysession"
 	"berth/internal/core/secret"
+	"berth/internal/proxyctl"
 	"berth/internal/proxyproc"
 )
 
@@ -104,7 +105,8 @@ type secrets struct {
 	secrets  *actors[secret.State, secret.Event, secret.Effect]
 	grants   *actors[grant.State, grant.Event, grant.Effect]
 	sessions *actors[proxysession.State, proxysession.Event, proxysession.Effect]
-	// readyTimeout is how long a proxy has to open its watch stream before its session is Lost.
+	// readyTimeout is how long a proxy has from AuthorizeProxy to opening its watch stream before
+	// its session is Lost.
 	readyTimeout time.Duration
 
 	mu      sync.Mutex
@@ -177,10 +179,10 @@ var _ api.Secrets = (*secrets)(nil)
 
 func newSecrets(ctx context.Context, d secretsDeps) *secrets {
 	s := &secrets{
-		secretsDeps: d, ctx: ctx, stopping: make(chan struct{}), readyTimeout: proxyReadyTimeout,
+		secretsDeps: d, ctx: ctx, stopping: make(chan struct{}), readyTimeout: proxyctl.ReadyTimeout,
 		flights: map[string]*flight{}, live: map[ports.Ticket]liveTicket{}, running: map[string]*proxySession{},
 		started: map[int]*startRecord{}, starting: map[string]int{}, startTimes: map[string][]time.Time{},
-		stopWait: startedStopWait,
+		stopWait: proxyctl.StopTimeout,
 	}
 	s.secrets = &actors[secret.State, secret.Event, secret.Effect]{
 		ctx: ctx, log: d.Log, store: d.Store, clock: d.Clock,

@@ -41,7 +41,7 @@ Build tag: `berth_e2e` compiles the test only pin rule, the test root of `berth-
 | `internal/berthd/` | The daemon shell: wires adapters, runs machines, performs effects | everything |
 | `internal/client/` | The Go client every Go tool uses to reach the daemon | gen, api |
 | `internal/cli/` | The `berth` command logic and the `berth top` TUI, testable against an in process server | client, gen, api |
-| `internal/proxy/`, `internal/proxyctl/`, `internal/proxyproc/` | The `berth-proxy` logic; the two JSON lines it exchanges with its starter; the starter `berth` and `berthd` share | gen, api, adapters; never a UI module |
+| `internal/proxy/`, `internal/proxyctl/`, `internal/proxyproc/` | The `berth-proxy` logic; the two JSON lines it exchanges with its starter and the rules every end checks (standard library only); the starter `berth` and `berthd` share | gen, api, adapters; never a UI module |
 | `internal/peertrust/`, `internal/codetrust/`, `internal/spawn/`, `internal/mask/`, `internal/paths/`, `internal/logging/` | Trust in signed Berth peers, the suspended start for `berth run --env`, output masking, default paths, the redacting log handler | |
 | `internal/testutil/` | Fakes for ports (in memory store, fake clock, scriptable secrets, process table and browser driver) | ports |
 | `internal/mcp/` | `berth-mcp`: MCP over stdio for agents without a shell; its tools are fixed text in `tools.json`, and its test maps every agent method to a tool or a reason | client, gen; never a UI module |
@@ -105,7 +105,7 @@ What the parallel workers and their reviews learned; the skills carry the detail
 - **A pid is not a process.** Name a process by pid and start time or by its audit token, watch exits with kqueue `NOTE_EXIT`, and reap a child only after everything keyed by its pid is gone.
 - **Parsers must agree.** When Berth filters a message another program then parses (CDP JSON, HTTP, `procargs2`), refuse anything the two could read differently instead of guessing.
 - **Text a process or agent chose goes through `shown`** (`internal/cli/sessions.go`) before it reaches a terminal, in the CLI and the TUI alike, and is clipped before it is kept.
-- **`berth-proxy` links no UI module.** `TestBerthProxyLinksNoUIModules` runs `go list -deps` and fails on any TUI dependency, which is why the control lines live in `internal/proxyctl`.
+- **`berth-proxy` links no UI module.** `TestBerthProxyLinksNoUIModules` runs `go list -deps` and fails on any TUI dependency, which is why the control lines and the shared rules (names, placeholders, owned variables, timeouts, trust files) live in `internal/proxyctl`, which imports only the standard library.
 - **Docs say what the code does.** A limit, a count or a status in `ARCHITECTURE.md` or a plan that the code does not meet is a review blocker.
 
 ## Lint and hooks

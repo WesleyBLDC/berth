@@ -19,10 +19,7 @@ const (
 	// maxStartsPerHour bounds how many proxies one agent session can have berthd start in any
 	// rolling hour, so a session cannot churn owner processes within the concurrent limit.
 	maxStartsPerHour = 30
-	// startedStopWait is how long a proxy has to end its session after its stream closed, before
-	// berthd kills it; berth gives its own proxy as long.
-	startedStopWait = 5 * time.Second
-	maxCAFile       = 64 << 10
+	maxCAFile        = 64 << 10
 )
 
 // StartProxy starts the signed berth-proxy beside berthd, as berthd's user, for the caller, so an
@@ -48,7 +45,7 @@ func (s *secrets) StartProxy(ctx context.Context, req *berthv1.StartProxyRequest
 	if s.StartProxyProcess == nil {
 		return api.ErrProxyNotStarted
 	}
-	// The proxy outlives this call by up to startedStopWait, so it hangs off berthd's context.
+	// The proxy outlives this call by up to stopWait, so it hangs off berthd's context.
 	p, err := s.StartProxyProcess(s.ctx) //nolint:contextcheck // see above
 	if err != nil {
 		s.Log.Error("cannot start berth-proxy", "agent_session", agent, "err", err)

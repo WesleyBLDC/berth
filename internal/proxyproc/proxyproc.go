@@ -33,17 +33,11 @@ type Process struct {
 	Kill   func() error
 }
 
-// envKeep is all berth-proxy may inherit; it refuses to start with anything more.
-var envKeep = []string{"HOME", "PATH", "BERTH_HOME", "TMPDIR"}
-
-var (
-	placeholderKey = regexp.MustCompile(`^[A-Z_][A-Z0-9_]{0,63}$`)
-	credentialHex  = regexp.MustCompile(`^[0-9a-f]{32}$`)
-)
+var credentialHex = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 const maxControlLine = 64 << 10
 
-// Start runs the berth-proxy at path with only the variables it accepts, in its own process
+// Start runs the berth-proxy at path with only the variables it accepts (proxyctl.Env), in its own process
 // group, so a terminal Ctrl-C reaches neither it nor its session before its owner closes stdin.
 func Start(ctx context.Context, path string, stderr io.Writer) (*Process, error) {
 	cmd := exec.CommandContext(ctx, path) //nolint:gosec // path is the berth-proxy beside the caller
@@ -82,7 +76,7 @@ func keepEnv(environ []string) []string {
 	var out []string
 	for _, kv := range environ {
 		k, _, _ := strings.Cut(kv, "=")
-		if slices.Contains(envKeep, k) {
+		if slices.Contains(proxyctl.Env, k) {
 			out = append(out, kv)
 		}
 	}
@@ -149,7 +143,7 @@ func Check(ctl proxyctl.Control) error {
 		return errors.New("its control line has no absolute CA and bundle paths")
 	}
 	for k, v := range ctl.Placeholders {
-		if !placeholderKey.MatchString(k) || v == "" || strings.ContainsRune(v, 0) {
+		if !proxyctl.PlaceholderPattern.MatchString(k) || v == "" || strings.ContainsRune(v, 0) {
 			return fmt.Errorf("its control line has an invalid placeholder %s", k)
 		}
 	}

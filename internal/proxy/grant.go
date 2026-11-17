@@ -13,6 +13,7 @@ import (
 
 	berthv1 "berth/gen/berth/v1"
 	"berth/internal/core/hostpolicy"
+	"berth/internal/proxyctl"
 )
 
 // The same rules proto validation applies to ProxyTarget; berth-proxy checks them again so a
@@ -21,20 +22,12 @@ var (
 	hostPattern   = regexp.MustCompile(`^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?[.])*[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 	headerPattern = regexp.MustCompile("^[!#$%&'*+.^_`|~0-9A-Za-z-]{1,64}$")
 	methodPattern = regexp.MustCompile(`^[A-Z]{1,16}$`)
-	envPattern    = regexp.MustCompile(`^([A-Z_][A-Z0-9_]{0,63})?$`)
 	affixPattern  = regexp.MustCompile(`^[\x20-\x7E]{0,128}$`)
 	globPattern   = regexp.MustCompile(`^[\x21-\x7E]*$`)
 )
 
 // ungrantable frame or route a request, or talk to the proxy itself.
 var ungrantable = []string{"host", "content-length", "transfer-encoding", "connection", "upgrade", "te", "trailer"}
-
-// berthOwned mirrors the variables berth run sets itself (internal/cli), which a placeholder must
-// never name or berth refuses the control line.
-var berthOwned = []string{
-	"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy",
-	"SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "NODE_USE_ENV_PROXY",
-}
 
 // Placeholder is what berth run puts in a grant's placeholder variable, for tools that refuse
 // to start without a key. It is a fixed public string, never a value.
@@ -80,7 +73,8 @@ func newGrant(name string, t *berthv1.ProxyTarget, allowLocal bool) (*Grant, err
 		return nil, fmt.Errorf("grant %s: value prefix and suffix must be printable ASCII", name)
 	case !globPattern.MatchString(t.GetPathGlob()) || len(t.GetPathGlob()) > 1024:
 		return nil, fmt.Errorf("grant %s: malformed path glob", name)
-	case !envPattern.MatchString(t.GetPlaceholderEnv()) || slices.Contains(berthOwned, t.GetPlaceholderEnv()):
+	case t.GetPlaceholderEnv() != "" && !proxyctl.PlaceholderPattern.MatchString(t.GetPlaceholderEnv()),
+		slices.Contains(proxyctl.BerthOwned, t.GetPlaceholderEnv()):
 		return nil, fmt.Errorf("grant %s: malformed placeholder variable", name)
 	case len(t.GetMethods()) > 16:
 		return nil, fmt.Errorf("grant %s: too many methods", name)

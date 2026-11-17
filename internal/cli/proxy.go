@@ -7,8 +7,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
-	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -24,22 +22,9 @@ type ProxyProcess = proxyproc.Process
 // ProxyStarter starts the berth-proxy beside berth with the scrubbed environment ExecProxy builds.
 type ProxyStarter func(ctx context.Context) (*ProxyProcess, error)
 
-// berthOwned are removed from the caller's environment in proxy mode, so a caller's proxy or
-// trust setting can neither bypass the proxy nor trust another CA.
-var berthOwned = []string{
-	"HTTPS_PROXY", "https_proxy", "HTTP_PROXY", "http_proxy", "ALL_PROXY", "all_proxy", "NO_PROXY", "no_proxy",
-	"SSL_CERT_FILE", "REQUESTS_CA_BUNDLE", "CURL_CA_BUNDLE", "NODE_EXTRA_CA_CERTS", "NODE_USE_ENV_PROXY",
-}
-
-const maxProxyNames = 16
-
 var (
-	secretName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]{0,127}$`)
-	// proxyReadyTimeout matches berthd's: a session not Serving within 30 seconds is Lost.
-	proxyReadyTimeout = 30 * time.Second
-	proxyStopTimeout  = 5 * time.Second
-	// systemBundle is the trust store bundle.pem starts with, as berth-proxy's own.
-	systemBundle = "/etc/ssl/cert.pem"
+	proxyStopTimeout = proxyctl.StopTimeout
+	systemBundle     = proxyctl.SystemBundle
 )
 
 type proxyNames []string
@@ -47,14 +32,14 @@ type proxyNames []string
 func (p *proxyNames) String() string { return strings.Join(*p, ",") }
 
 func (p *proxyNames) Set(s string) error {
-	if !secretName.MatchString(s) {
+	if !proxyctl.NamePattern.MatchString(s) {
 		return fmt.Errorf("%q is not a secret name", s)
 	}
 	if slices.Contains(*p, s) {
 		return fmt.Errorf("%s is set twice", s)
 	}
-	if len(*p) == maxProxyNames {
-		return fmt.Errorf("at most %d proxies per run", maxProxyNames)
+	if len(*p) == proxyctl.MaxNames {
+		return fmt.Errorf("at most %d proxies per run", proxyctl.MaxNames)
 	}
 	*p = append(*p, s)
 	return nil
@@ -80,7 +65,7 @@ func runProxied(ctx context.Context, names []string, exe string, argv []string, 
 		fmt.Fprintf(env.Stderr, "berth-proxy did not start: %v; the command did not start\n", err)
 		return ExitProxyFailed
 	}
-	ctl, err := proxyproc.Handshake(p, names, proxyReadyTimeout)
+	ctl, err := proxyproc.Handshake(p, names, proxyctl.ReadyTimeout)
 	if err == nil {
 		err = checkControl(ctl)
 	}
@@ -107,7 +92,7 @@ func runProxiedByBerthd(ctx context.Context, names []string, exe string, argv []
 	streamCtx, stop := context.WithCancel(ctx)
 	defer stop()
 	// berthd gives a proxy 30 seconds to serve and then answers, so this only guards a stuck berthd.
-	timer := time.AfterFunc(proxyReadyTimeout+connectTimeout, stop)
+	timer := time.AfterFunc(proxyctl.ReadyTimeout+connectTimeout, stop)
 	stream, err := c.Secrets.StartProxy(streamCtx, &berthv1.StartProxyRequest{RequestId: requestID(), Names: names})
 	var resp *berthv1.StartProxyResponse
 	if err == nil {
@@ -145,31 +130,14 @@ func writeCAFiles(resp *berthv1.StartProxyResponse) (string, proxyctl.Control, e
 	if block, _ := pem.Decode(ca); block == nil || block.Type != "CERTIFICATE" {
 		return "", proxyctl.Control{}, errors.New("no CA certificate")
 	}
-	system, err := os.ReadFile(systemBundle)
-	if err != nil {
-		return "", proxyctl.Control{}, fmt.Errorf("cannot read the system trust bundle: %w", err)
-	}
-	dir, err := os.MkdirTemp("", "berth-proxy-")
-	if err != nil {
-		return "", proxyctl.Control{}, err
-	}
-	// The child gets absolute paths, and TMPDIR may be relative.
-	abs, err := filepath.Abs(dir)
+	dir, caFile, bundleFile, err := proxyctl.WriteTrustFiles("", systemBundle, ca)
 	if err != nil {
 		return dir, proxyctl.Control{}, err
 	}
-	ctl := proxyctl.Control{
+	return dir, proxyctl.Control{
 		Port: int(resp.GetPort()), Credential: resp.GetCredential(), Placeholders: resp.GetPlaceholders(),
-		CAFile: filepath.Join(abs, "ca.pem"), BundleFile: filepath.Join(abs, "bundle.pem"),
-	}
-	if err := os.WriteFile(ctl.CAFile, ca, 0o600); err != nil {
-		return dir, proxyctl.Control{}, err
-	}
-	bundle := append(append(system, '\n'), ca...)
-	if err := os.WriteFile(ctl.BundleFile, bundle, 0o600); err != nil { //nolint:gosec // inside the folder MkdirTemp just made
-		return dir, proxyctl.Control{}, err
-	}
-	return dir, ctl, nil
+		CAFile: caFile, BundleFile: bundleFile,
+	}, nil
 }
 
 // checkControl refuses control facts the child must not get; the placeholders may not name a
@@ -179,7 +147,7 @@ func checkControl(ctl proxyctl.Control) error {
 		return err
 	}
 	for k := range ctl.Placeholders {
-		if slices.Contains(berthOwned, k) {
+		if slices.Contains(proxyctl.BerthOwned, k) {
 			return fmt.Errorf("its control line has an invalid placeholder %s", k)
 		}
 	}
@@ -191,7 +159,7 @@ func checkControl(ctl proxyctl.Control) error {
 func proxyChildEnv(environ []string, ctl proxyctl.Control) []string {
 	owned := func(k string) bool {
 		_, placeholder := ctl.Placeholders[k]
-		return placeholder || slices.Contains(berthOwned, k)
+		return placeholder || slices.Contains(proxyctl.BerthOwned, k)
 	}
 	var out []string
 	for _, kv := range environ {

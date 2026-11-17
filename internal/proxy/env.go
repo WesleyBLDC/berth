@@ -8,22 +8,20 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"berth/internal/proxyctl"
 )
 
-// allowedEnv is the whole environment berth-proxy accepts. Anything else (GODEBUG, SSL_CERT_FILE,
-// HTTPS_PROXY, GOTRACEBACK, DYLD_*) could change how TLS is verified, where it dials, or what a
-// crash prints, so the proxy refuses to start rather than guess which variables are harmless.
-var allowedEnv = []string{"HOME", "PATH", "BERTH_HOME", "TMPDIR"}
-
-// CheckEnv refuses an environment holding any variable beyond allowedEnv and extra (extra is
-// only ever set by binaries built for the end to end tests).
+// CheckEnv refuses an environment holding any variable beyond proxyctl.Env and extra (extra is
+// only ever set by binaries built for the end to end tests), rather than guess which variables
+// are harmless.
 func CheckEnv(environ, extra []string) error {
 	for _, kv := range environ {
 		k, _, ok := strings.Cut(kv, "=")
 		if !ok || k == "" {
 			return fmt.Errorf("refusing to start: the environment holds a malformed entry")
 		}
-		if !slices.Contains(allowedEnv, k) && !slices.Contains(extra, k) {
+		if !slices.Contains(proxyctl.Env, k) && !slices.Contains(extra, k) {
 			return fmt.Errorf("refusing to start: the environment holds %s; berth-proxy accepts only HOME, PATH, BERTH_HOME and TMPDIR", k)
 		}
 	}
