@@ -525,11 +525,15 @@ type Session struct {
 	ProcessCount uint32          `protobuf:"varint,11,opt,name=process_count,json=processCount,proto3" json:"process_count,omitempty"`
 	// other_user marks a browser run by another user: unmanaged, its arguments unreadable, so
 	// driver, headless, cdp and user_data_dir are unknown, and it is never stopped.
-	OtherUser     bool                   `protobuf:"varint,12,opt,name=other_user,json=otherUser,proto3" json:"other_user,omitempty"`
-	Uid           uint32                 `protobuf:"varint,13,opt,name=uid,proto3" json:"uid,omitempty"`
-	StateSince    *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=state_since,json=stateSince,proto3" json:"state_since,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	OtherUser  bool                   `protobuf:"varint,12,opt,name=other_user,json=otherUser,proto3" json:"other_user,omitempty"`
+	Uid        uint32                 `protobuf:"varint,13,opt,name=uid,proto3" json:"uid,omitempty"`
+	StateSince *timestamppb.Timestamp `protobuf:"bytes,14,opt,name=state_since,json=stateSince,proto3" json:"state_since,omitempty"`
+	// args_unreadable marks one of the owner's browsers whose arguments the kernel gave but berthd
+	// could not parse safely (an unexpected layout, or more arguments than it reads), so driver,
+	// headless, cdp and user_data_dir are unknown rather than guessed.
+	ArgsUnreadable bool `protobuf:"varint,15,opt,name=args_unreadable,json=argsUnreadable,proto3" json:"args_unreadable,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
 }
 
 func (x *Session) Reset() {
@@ -658,6 +662,13 @@ func (x *Session) GetStateSince() *timestamppb.Timestamp {
 		return x.StateSince
 	}
 	return nil
+}
+
+func (x *Session) GetArgsUnreadable() bool {
+	if x != nil {
+		return x.ArgsUnreadable
+	}
+	return false
 }
 
 type ListSessionsRequest struct {
@@ -1002,7 +1013,7 @@ const file_berth_v1_sessions_proto_rawDesc = "" +
 	"\fSessionOwner\x12'\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x13.berth.v1.OwnerKindR\x04kind\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x122\n" +
-	"\aprocess\x18\x03 \x01(\v2\x18.berth.v1.SessionProcessR\aprocess\"\x91\x04\n" +
+	"\aprocess\x18\x03 \x01(\v2\x18.berth.v1.SessionProcessR\aprocess\"\xba\x04\n" +
 	"\aSession\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12,\n" +
 	"\x05state\x18\x02 \x01(\x0e2\x16.berth.v1.SessionStateR\x05state\x12)\n" +
@@ -1020,7 +1031,8 @@ const file_berth_v1_sessions_proto_rawDesc = "" +
 	"other_user\x18\f \x01(\bR\totherUser\x12\x10\n" +
 	"\x03uid\x18\r \x01(\rR\x03uid\x12;\n" +
 	"\vstate_since\x18\x0e \x01(\v2\x1a.google.protobuf.TimestampR\n" +
-	"stateSince\"\x81\x01\n" +
+	"stateSince\x12'\n" +
+	"\x0fargs_unreadable\x18\x0f \x01(\bR\x0eargsUnreadable\"\x81\x01\n" +
 	"\x13ListSessionsRequest\x12A\n" +
 	"\x06states\x18\x01 \x03(\x0e2\x16.berth.v1.SessionStateB\x11\xbaH\x0e\x92\x01\v\x10\x06\"\a\x82\x01\x04\x10\x01 \x00R\x06states\x12'\n" +
 	"\x0finclude_stopped\x18\x02 \x01(\bR\x0eincludeStopped\"E\n" +

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 	"time"
+	"unicode/utf8"
 
 	"berth/internal/core/browsersig"
 	"berth/internal/core/discovery"
@@ -183,5 +184,40 @@ func TestArgumentsStayInside(t *testing.T) {
 		if s := fmt.Sprintf("%+v", field); strings.Contains(s, "canary") {
 			t.Fatalf("an argument leaked into %s", s)
 		}
+	}
+}
+
+// A CDP port alone is no evidence of a driver: a person can open their own browser with one, so
+// under launchd it stays the person's and never becomes a leftover.
+func TestPersonsBrowserWithADebugPortIsNotALeftover(t *testing.T) {
+	rows := table()
+	rows[7].Args = []string{chrom, "--remote-debugging-port=9222"}
+	o := scan(t, rows)[200]
+	if o.Owner.Kind != ownerchain.Person || o.Signature.CDP != browsersig.CDPPort {
+		t.Fatalf("owner %+v, signature %+v", o.Owner, o.Signature)
+	}
+	tr := step(t, discovery.Tracked{State: session.Discovered}, &o, 0)
+	step(t, tr, &o, 2*time.Second)
+	rows[7].Args = []string{chrom, "--remote-debugging-pipe"}
+	if o := scan(t, rows)[200]; o.Owner.Kind != ownerchain.None {
+		t.Fatalf("a CDP pipe under launchd should be a leftover, owner %+v", o.Owner)
+	}
+}
+
+// One process must not make berthd keep megabytes: every kept string is clipped.
+func TestKeptTextIsClipped(t *testing.T) {
+	rows := table()
+	huge := "/tmp/playwright_chromiumdev_profile-" + strings.Repeat("é", 1<<19)
+	rows[4].Args = []string{shell, "--headless", "--user-data-dir=" + huge}
+	o := scan(t, rows)[100]
+	got := o.Signature.UserDataDir
+	if len(got) > discovery.MaxText || !strings.HasSuffix(got, discovery.Truncated) || !utf8.ValidString(got) {
+		t.Fatalf("user data dir kept %d bytes, valid %v, ends %q", len(got), utf8.ValidString(got), got[max(0, len(got)-20):])
+	}
+	if o.Signature.Driver != browsersig.Playwright {
+		t.Fatalf("classified on the clipped text: %v", o.Signature.Driver)
+	}
+	if discovery.Clip("/short") != "/short" {
+		t.Fatal("a short string changed")
 	}
 }

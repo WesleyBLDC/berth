@@ -120,6 +120,10 @@ message Session {
   bool other_user = 12;
   uint32 uid = 13;
   google.protobuf.Timestamp state_since = 14;
+  // args_unreadable marks one of the owner's browsers whose arguments the kernel gave but berthd
+  // could not parse safely (an unexpected layout, or more arguments than it reads), so driver,
+  // headless, cdp and user_data_dir are unknown rather than guessed.
+  bool args_unreadable = 15;
 }
 
 message ListSessionsRequest {

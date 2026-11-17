@@ -7,7 +7,9 @@ package discovery
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"berth/internal/core/browsersig"
 	"berth/internal/core/ownerchain"
@@ -137,12 +139,50 @@ func observe(ctx context.Context, src ports.ProcessSource, root candidate, byPID
 		pid = p.PPID
 	}
 	o.Owner = ownerchain.Find(chain, automated(root.sig))
-	return o
+	return clipped(o)
 }
 
+// automated is real evidence of a driver: a Playwright or Puppeteer install or profile, headless,
+// or a CDP pipe. A CDP port alone is not: a person can open their own browser with one.
 func automated(s browsersig.Signature) bool {
-	return (s.Driver != browsersig.DriverNone && s.Driver != browsersig.DriverUnknown) ||
-		s.Headless || s.CDP == browsersig.CDPPipe || s.CDP == browsersig.CDPPort
+	return s.Driver == browsersig.Playwright || s.Driver == browsersig.Puppeteer || s.Headless || s.CDP == browsersig.CDPPipe
+}
+
+// MaxText bounds every string berthd keeps about a session. Paths, profile folders and names are
+// chosen by whoever started the process, so one process must not make berthd hold megabytes.
+const MaxText = 1024
+
+// Truncated marks a string MaxText cut short.
+const Truncated = "...(truncated)"
+
+// Clip cuts s to MaxText bytes, the mark included, on a UTF-8 boundary.
+func Clip(s string) string {
+	if len(s) <= MaxText {
+		return s
+	}
+	cut := MaxText - len(Truncated)
+	for cut > 0 && !utf8.RuneStart(s[cut]) {
+		cut--
+	}
+	return strings.Clone(s[:cut]) + Truncated
+}
+
+func clipped(o Observed) Observed {
+	info := func(p ports.ProcessInfo) ports.ProcessInfo {
+		p.Executable = Clip(p.Executable)
+		return p
+	}
+	o.Root = info(o.Root)
+	o.Signature.UserDataDir = Clip(o.Signature.UserDataDir)
+	o.Owner.Name = Clip(o.Owner.Name)
+	o.Owner.Process = info(o.Owner.Process)
+	for i := range o.Members {
+		o.Members[i].ProcessInfo = info(o.Members[i].ProcessInfo)
+	}
+	for i := range o.Chain {
+		o.Chain[i] = info(o.Chain[i])
+	}
+	return o
 }
 
 // Tracked is what the shell remembers about a live session between scans: facts, never a

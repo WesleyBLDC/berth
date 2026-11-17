@@ -410,6 +410,7 @@ func sessionProto(t *tracked) *berthv1.Session {
 		s.Owner.Process = processProto(o.Owner.Process, berthv1.ProcessRole_PROCESS_ROLE_ANCESTOR)
 	}
 	if o.OtherUser || !sig.ArgsKnown {
+		s.ArgsUnreadable = !o.OtherUser
 		return s
 	}
 	s.Driver, s.Cdp, s.UserDataDir = driverProto[sig.Driver], cdpProto[sig.CDP], sig.UserDataDir
