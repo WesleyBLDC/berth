@@ -118,6 +118,7 @@ func (s *Scanner) Scan(ctx context.Context) ([]Observed, error) {
 		if !hit {
 			a, known := read(p)
 			c.sig, c.ok = browsersig.Classify(p.Executable, a, known)
+			c.sig.UserDataDir = Clip(c.sig.UserDataDir)
 		}
 		sigs[k] = c
 		if c.ok {
@@ -132,6 +133,10 @@ func (s *Scanner) Scan(ctx context.Context) ([]Observed, error) {
 		a, hit := s.args[k]
 		if !hit {
 			a, _ = read(p)
+			a = ownerchain.KeptArgs(a)
+			for i := range a {
+				a[i] = Clip(a[i])
+			}
 		}
 		args[k] = a
 		return a
@@ -208,8 +213,11 @@ const MaxText = 1024
 // Truncated marks a string MaxText cut short.
 const Truncated = "...(truncated)"
 
-// Clip cuts s to MaxText bytes, the mark included, on a UTF-8 boundary.
+// Clip makes text a process chose fit to keep and to send: invalid UTF-8 becomes U+FFFD, since
+// a protobuf string must be valid and the reader should see that something was there, and the
+// result is cut to MaxText bytes, the mark included, on a rune boundary.
 func Clip(s string) string {
+	s = strings.ToValidUTF8(s, string(utf8.RuneError))
 	if len(s) <= MaxText {
 		return s
 	}

@@ -283,3 +283,19 @@ func TestScannerReadsArgumentsOncePerProcess(t *testing.T) {
 		t.Fatalf("an exec read arguments %d times, signature %+v", src.reads, got[200].Signature)
 	}
 }
+
+// One invalid UTF-8 byte in a path or a profile folder must not reach berthd: protobuf refuses to
+// marshal it, which would break every listing. It shows as U+FFFD instead.
+func TestKeptTextIsValidUTF8(t *testing.T) {
+	rows := table()
+	odd := "/Users/\xff/Library/Caches/ms-playwright/chromium_headless_shell-1248/chrome-headless-shell-mac-arm64/chrome-headless-shell"
+	rows[4].Executable = odd
+	rows[4].Args = []string{odd, "--headless", "--user-data-dir=/tmp/\xff"}
+	o := scan(t, rows)[100]
+	if o.Signature.UserDataDir != "/tmp/�" || !utf8.ValidString(o.Root.Executable) || !strings.Contains(o.Root.Executable, "�") {
+		t.Fatalf("profile %q, executable %q", o.Signature.UserDataDir, o.Root.Executable)
+	}
+	if !utf8.ValidString(o.Members[0].Executable) {
+		t.Fatalf("member executable %q", o.Members[0].Executable)
+	}
+}

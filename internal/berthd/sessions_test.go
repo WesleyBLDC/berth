@@ -10,6 +10,8 @@ import (
 	"testing"
 	"time"
 
+	"google.golang.org/protobuf/proto"
+
 	berthv1 "berth/gen/berth/v1"
 	"berth/internal/adapters/api"
 	"berth/internal/core/discovery"
@@ -548,5 +550,22 @@ func TestProfileInUseResolvesSymlinks(t *testing.T) {
 	f.set(t, append(slices.Clone(f.rows), row(400, 1, testUID, shellPath, shellPath, "--remote-debugging-pipe", "--user-data-dir="+dir))...)
 	if !f.b.ProfileInUse(real) {
 		t.Fatalf("ProfileInUse(%s) must match a browser using %s", real, dir)
+	}
+}
+
+// A browser with an invalid UTF-8 profile path must not break the listing for everyone.
+func TestInvalidUTF8DoesNotBreakListing(t *testing.T) {
+	f := newBrowsersFixture(t)
+	f.set(t, append(slices.Clone(f.rows), row(120, 80, testUID, shellPath, shellPath, "--headless", "--user-data-dir=/tmp/\xff"))...)
+	resp, err := f.b.ListSessions(t.Context(), &berthv1.ListSessionsRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := proto.Marshal(resp); err != nil {
+		t.Fatalf("ListSessions cannot be sent: %v", err)
+	}
+	s := f.watch(t, 0)
+	if _, err := proto.Marshal(s.next(t)); err != nil {
+		t.Fatalf("the snapshot cannot be sent: %v", err)
 	}
 }
