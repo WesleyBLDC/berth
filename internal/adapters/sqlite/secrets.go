@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 
 	"berth/internal/core/ports"
@@ -39,8 +40,9 @@ func (s *Store) Secrets(ctx context.Context) ([]ports.SecretRecord, error) {
 
 func (s *Store) AddGrant(ctx context.Context, g ports.GrantRecord) (int64, error) {
 	res, err := s.db.ExecContext(ctx,
-		`INSERT INTO grants (secret_name, exe_path, sha256, team_id, signing_id, args_glob, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)`,
-		g.Secret, g.Exe.Path, hex.EncodeToString(g.Exe.SHA256[:]), g.Exe.TeamID, g.Exe.SigningID, g.ArgsGlob, g.CreatedAt.UnixMicro())
+		`INSERT INTO grants (secret_name, exe_path, sha256, team_id, signing_id, args_glob, pass_env, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+		g.Secret, g.Exe.Path, hex.EncodeToString(g.Exe.SHA256[:]), g.Exe.TeamID, g.Exe.SigningID, g.ArgsGlob,
+		strings.Join(g.PassEnv, ","), g.CreatedAt.UnixMicro())
 	if err != nil {
 		return 0, err
 	}
@@ -49,7 +51,7 @@ func (s *Store) AddGrant(ctx context.Context, g ports.GrantRecord) (int64, error
 
 func (s *Store) Grants(ctx context.Context, secret string) ([]ports.GrantRecord, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT id, exe_path, sha256, team_id, signing_id, args_glob, created_at, last_used_at, use_count
+		`SELECT id, exe_path, sha256, team_id, signing_id, args_glob, pass_env, created_at, last_used_at, use_count
 		 FROM grants WHERE secret_name = ? ORDER BY id DESC`, secret)
 	if err != nil {
 		return nil, err
@@ -58,10 +60,10 @@ func (s *Store) Grants(ctx context.Context, secret string) ([]ports.GrantRecord,
 	var out []ports.GrantRecord
 	for rows.Next() {
 		g := ports.GrantRecord{Secret: secret}
-		var sum string
+		var sum, passEnv string
 		var created int64
 		var lastUsed sql.NullInt64
-		if err := rows.Scan(&g.ID, &g.Exe.Path, &sum, &g.Exe.TeamID, &g.Exe.SigningID, &g.ArgsGlob, &created, &lastUsed, &g.UseCount); err != nil {
+		if err := rows.Scan(&g.ID, &g.Exe.Path, &sum, &g.Exe.TeamID, &g.Exe.SigningID, &g.ArgsGlob, &passEnv, &created, &lastUsed, &g.UseCount); err != nil {
 			return nil, err
 		}
 		raw, err := hex.DecodeString(sum)
@@ -69,6 +71,9 @@ func (s *Store) Grants(ctx context.Context, secret string) ([]ports.GrantRecord,
 			return nil, fmt.Errorf("grant %d has a malformed sha256", g.ID)
 		}
 		copy(g.Exe.SHA256[:], raw)
+		if passEnv != "" {
+			g.PassEnv = strings.Split(passEnv, ",")
+		}
 		g.CreatedAt = time.UnixMicro(created).UTC()
 		if lastUsed.Valid {
 			g.LastUsedAt = time.UnixMicro(lastUsed.Int64).UTC()

@@ -74,6 +74,7 @@ type confirmRequest struct {
 	Consumer    consumer  `json:"consumer"`
 	ArgsGlob    string    `json:"args_glob"`
 	Interpreter bool      `json:"interpreter"`
+	PassEnv     []string  `json:"pass_env"`
 	Requester   requester `json:"requester"`
 }
 
@@ -117,6 +118,7 @@ func (a *Approver) ConfirmPower(ctx context.Context, p ports.PowerPrompt) (ports
 		},
 		ArgsGlob:    p.ArgsGlob,
 		Interpreter: p.Interpreter,
+		PassEnv:     append([]string{}, p.PassEnv...),
 		Requester:   toRequester(p.Requester),
 	}
 	out, err := a.ask(ctx, "confirm", req)

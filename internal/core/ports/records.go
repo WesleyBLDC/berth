@@ -13,10 +13,12 @@ type SecretRecord struct {
 
 // GrantRecord is the pinned consumer behind one grant entity; its state lives in the grant machine.
 type GrantRecord struct {
-	ID        int64
-	Secret    string
-	Exe       Executable
-	ArgsGlob  string
+	ID       int64
+	Secret   string
+	Exe      Executable
+	ArgsGlob string
+	// PassEnv names the environment variables berth run may pass beyond the allowlist.
+	PassEnv   []string
 	CreatedAt time.Time
 	// LastUsedAt is zero when the grant was never used.
 	LastUsedAt time.Time

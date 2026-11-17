@@ -82,7 +82,9 @@ type PowerPrompt struct {
 	ArgsGlob string
 	// Interpreter warns that the consumer runs other code, so it could print the secret.
 	Interpreter bool
-	Requester   Requester
+	// PassEnv names the environment variables the consumer will also receive.
+	PassEnv   []string
+	Requester Requester
 }
 
 // Approver asks the person, through berth-native. A non nil error comes with the Failed

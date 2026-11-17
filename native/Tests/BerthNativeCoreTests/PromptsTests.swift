@@ -84,3 +84,14 @@ let requester = Requester(
     #expect(berthCLIRequirement.contains(#"identifier "com.wesleybldc.berth.cli""#))
     #expect(berthCLIRequirement.hasPrefix("anchor apple generic"))
 }
+
+@Test func confirmReasonListsPassedEnvironment() {
+    let request = ConfirmRequest(
+        action: "grant", secret: "k",
+        consumer: Consumer(path: "/usr/local/bin/tool", sha256: hash64, teamID: "", signingID: ""),
+        argsGlob: "", passEnv: ["GH_HOST", "AWS_REGION"], requester: requester)
+    #expect(
+        confirmTouchIDReason(request)
+            == "let /usr/local/bin/tool (sha256 abababababab, any arguments, also environment GH_HOST AWS_REGION) "
+            + "use secret k, requested by /opt/agents/claude")
+}

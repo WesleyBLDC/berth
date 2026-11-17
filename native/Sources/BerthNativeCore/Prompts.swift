@@ -37,6 +37,9 @@ public func confirmTouchIDReason(_ request: ConfirmRequest) -> String {
     var facts = ["sha256 \(consumer.sha256.prefix(12))"]
     if !consumer.teamID.isEmpty { facts.insert("team \(oneLine(consumer.teamID))", at: 0) }
     facts.append(request.argsGlob.isEmpty ? "any arguments" : "arguments \(quoted(request.argsGlob))")
+    if !request.passEnv.isEmpty {
+        facts.append("also environment \(request.passEnv.map { oneLine($0, limit: 64) }.joined(separator: " "))")
+    }
     let grant =
         "let \(oneLine(consumer.path)) (\(facts.joined(separator: ", "))) use secret \(request.secret), "
         + "requested by \(oneLine(request.requester.executable))"

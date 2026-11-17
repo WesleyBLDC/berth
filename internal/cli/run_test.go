@@ -78,7 +78,9 @@ func TestRunForwardsSIGTERMButNotSIGINT(t *testing.T) {
 	var stdout, stderr strings.Builder
 	env := Env{Stdin: strings.NewReader(""), Stdout: &stdout, Stderr: &stderr}
 	done := make(chan int, 1)
-	go func() { done <- startChild(t.Context(), "/bin/sh", []string{"-c", script, "sh", log}, nil, nil, env) }()
+	go func() {
+		done <- startChild(t.Context(), "/bin/sh", []string{"-c", script, "sh", log}, []string{"PATH=/bin:/usr/bin"}, nil, nil, env)
+	}()
 	waitFor := func(want string) string {
 		t.Helper()
 		deadline := time.Now().Add(5 * time.Second)
@@ -119,5 +121,30 @@ func TestRunFromAnUnsignedBerthSaysToBuild(t *testing.T) {
 	r := invoke(t, fake, read, "run", "--env", "KEY=gh-token", "--", "/bin/sh", "-c", "true")
 	if r.code != ExitError || !strings.Contains(r.stderr, "run make build") {
 		t.Fatalf("code %d, stderr %q", r.code, r.stderr)
+	}
+}
+
+// TestRunPassesOnlyTheAllowlistAndGrantedNames sets variables that steer tools (NODE_OPTIONS,
+// GIT_CONFIG_*) on berth's own environment; only the allowlist and the grant's names reach the child.
+func TestRunPassesOnlyTheAllowlistAndGrantedNames(t *testing.T) {
+	t.Setenv("NODE_OPTIONS", "--require /tmp/evil.js")
+	t.Setenv("GIT_CONFIG_COUNT", "1")
+	t.Setenv("E2E_GRANTED", "yes")
+	t.Setenv("E2E_NOT_GRANTED", "no")
+	fake := &fakeSecrets{use: berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED, passEnv: []string{"E2E_GRANTED", "NODE_OPTIONS"}}
+	read := func(context.Context, []byte) ([]byte, error) { return []byte("v"), nil }
+	r := invoke(t, fake, read, "run", "--env", "KEY=gh-token", "--", "/usr/bin/env")
+	if r.code != 0 {
+		t.Fatalf("exit %d, stderr %q", r.code, r.stderr)
+	}
+	for _, banned := range []string{"NODE_OPTIONS", "GIT_CONFIG_COUNT", "E2E_NOT_GRANTED"} {
+		if strings.Contains(r.stdout, banned+"=") {
+			t.Fatalf("%s reached the child:\n%s", banned, r.stdout)
+		}
+	}
+	for _, want := range []string{"E2E_GRANTED=yes", "KEY=****", "PATH="} {
+		if !strings.Contains(r.stdout, want) {
+			t.Fatalf("child env missing %s:\n%s", want, r.stdout)
+		}
 	}
 }

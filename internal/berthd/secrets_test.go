@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	berthv1 "berth/gen/berth/v1"
 	"berth/internal/adapters/api"
 	"berth/internal/adapters/sqlite"
+	"berth/internal/codetrust"
 	"berth/internal/core/grant"
 	"berth/internal/core/ports"
 	"berth/internal/testutil"
@@ -107,7 +109,7 @@ func newFixtureWith(t *testing.T, approver ports.Approver, tickets ports.TicketS
 	t.Cleanup(cancel)
 	f := &fixture{
 		store: store, approver: fake, execs: execs, clock: clock, code: code,
-		pins: map[string]ports.CDHash{CLISigningID: cliHash, HelperSigningID: helperHash},
+		pins: map[string]ports.CDHash{codetrust.CLISigningID: cliHash, codetrust.HelperSigningID: helperHash},
 	}
 	pin := func(_ context.Context, _, identifier string) (ports.CDHash, bool, error) {
 		f.pinsMu.Lock()
@@ -116,15 +118,13 @@ func newFixtureWith(t *testing.T, approver ports.Approver, tickets ports.TicketS
 		return h, ok, nil
 	}
 	log := slog.New(slog.DiscardHandler)
-	trusted := func(identifier string) *trustedFile {
-		tf := &trustedFile{path: "/bin/" + identifier, identifier: identifier, pin: pin, code: code, log: log}
-		tf.repin(ctx)
-		return tf
+	trusted := func(identifier string) *codetrust.File {
+		return codetrust.New(ctx, "/bin/"+identifier, identifier, pin, code, clock, log)
 	}
 	f.s = newSecrets(ctx, secretsDeps{
 		Log: log, Store: store, Records: store, Clock: clock,
 		Approver: approver, Execs: execs, Peers: peers, Tickets: tickets,
-		CLI: trusted(CLISigningID), Helper: trusted(HelperSigningID),
+		CLI: trusted(codetrust.CLISigningID), Helper: trusted(codetrust.HelperSigningID),
 	})
 	return f
 }
@@ -414,8 +414,9 @@ func TestRebuiltCLIIsPinnedAgain(t *testing.T) {
 		t.Fatalf("before the file changed: %v", err)
 	}
 	f.pinsMu.Lock()
-	f.pins[CLISigningID] = rebuilt
+	f.pins[codetrust.CLISigningID] = rebuilt
 	f.pinsMu.Unlock()
+	f.clock.Advance(codetrust.RepinInterval)
 	if got := f.use(t).GetOutcome(); got != berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED {
 		t.Fatalf("after make build: %v", got)
 	}
@@ -449,7 +450,8 @@ func TestInterpreterGrantsNeedTheFlag(t *testing.T) {
 func TestIsInterpreter(t *testing.T) {
 	for path, want := range map[string]bool{
 		"/bin/zsh": true, "/usr/bin/python3.12": true, "/usr/bin/env": true, "/opt/homebrew/bin/node": true,
-		"/usr/bin/osascript": true, "/usr/local/bin/gh": false, "/usr/bin/curl": false,
+		"/usr/bin/osascript": true, "/usr/bin/git": true, "/usr/bin/ssh": true, "/usr/bin/awk": true, "/usr/bin/find": true,
+		"/usr/local/bin/gh": false, "/usr/bin/curl": false,
 	} {
 		if got := isInterpreter(ports.Executable{Path: path}); got != want {
 			t.Errorf("%s: %v", path, got)
@@ -588,26 +590,19 @@ func TestBootEndsStoresAPreviousRunLeftPending(t *testing.T) {
 	}
 }
 
-type codeFiles struct {
-	ok   bool
-	hash ports.CDHash
-}
-
-func (c codeFiles) Satisfies(_ context.Context, _, requirement string) (bool, error) {
-	return c.ok && requirement == Requirement(CLISigningID), nil
-}
-
-func (c codeFiles) CDHash(context.Context, string) (ports.CDHash, error) { return c.hash, nil }
-
-func TestSignedPinnerNeedsTheRequirement(t *testing.T) {
-	if h, ok, err := SignedPinner(codeFiles{ok: true, hash: cliHash})(t.Context(), "/b/berth", CLISigningID); err != nil || !ok || h != cliHash {
-		t.Fatalf("signed: %x %v %v", h, ok, err)
+func TestPassEnvIsStoredPromptedAndReturnedWithoutLoaderVariables(t *testing.T) {
+	f := newFixture(t, &testutil.Approver{})
+	f.request(t)
+	resp, err := f.s.GrantSecret(t.Context(), &berthv1.GrantSecretRequest{
+		Name: "gh-token", ExePath: tool, PassEnv: []string{"GH_HOST", "NODE_OPTIONS", "DYLD_INSERT_LIBRARIES"},
+	}, peerOf(berthPID))
+	if err != nil || strings.Join(resp.GetConsumer().GetPassEnv(), ",") != "GH_HOST" {
+		t.Fatalf("grant %v, %v", resp, err)
 	}
-	if _, ok, _ := SignedPinner(codeFiles{ok: false, hash: cliHash})(t.Context(), "/b/berth", CLISigningID); ok {
-		t.Fatal("a file failing the requirement was pinned")
+	if p := f.approver.PowerPrompts(); strings.Join(p[0].PassEnv, ",") != "GH_HOST" {
+		t.Fatalf("prompt listed %v", p[0].PassEnv)
 	}
-	want := `anchor apple generic and certificate leaf[subject.OU] = "XPJ7XA42J4" and identifier "com.wesleybldc.berth.cli"`
-	if got := Requirement(CLISigningID); got != want {
-		t.Fatalf("requirement %s", got)
+	if got := f.use(t).GetPassEnv(); strings.Join(got, ",") != "GH_HOST" {
+		t.Fatalf("authorize returned %v", got)
 	}
 }

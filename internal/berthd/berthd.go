@@ -20,6 +20,7 @@ import (
 	"berth/internal/adapters/socket"
 	"berth/internal/adapters/sqlite"
 	"berth/internal/adapters/ticket"
+	"berth/internal/codetrust"
 	"berth/internal/core/daemon"
 	"berth/internal/core/machine"
 	"berth/internal/core/ports"
@@ -38,9 +39,9 @@ type Config struct {
 	Helper string
 	CLI    string
 	// Pinner decides which files berthd trusts as the berth CLI and berth-native. Nil means
-	// SignedPinner (Apple's chain, Berth's team and identifier); only Go test code sets
+	// codetrust.SignedPinner (Apple's chain, Berth's team and identifier); only Go test code sets
 	// anything else, never the environment.
-	Pinner Pinner
+	Pinner codetrust.Pinner
 }
 
 type shell struct {
@@ -175,18 +176,16 @@ func newSecretsFor(ctx context.Context, cfg Config, store *sqlite.Store) (*secre
 	execs := execid.New(execid.DefaultCodesign)
 	pin := cfg.Pinner
 	if pin == nil {
-		pin = SignedPinner(execs)
+		pin = codetrust.SignedPinner(execs)
 	}
 	code := peer.NewCode()
-	trusted := func(path, identifier string) *trustedFile {
-		f := &trustedFile{path: path, identifier: identifier, pin: pin, code: code, log: cfg.Log}
-		f.repin(ctx)
-		return f
+	trusted := func(path, identifier string) *codetrust.File {
+		return codetrust.New(ctx, path, identifier, pin, code, clock.System{}, cfg.Log)
 	}
 	return newSecrets(ctx, secretsDeps{
 		Log: cfg.Log, Store: store, Records: store, Clock: clock.System{},
 		Approver: native.New(helper), Execs: execs, Peers: peer.New(), Tickets: ticket.New(),
-		CLI: trusted(cli, CLISigningID), Helper: trusted(helper, HelperSigningID),
+		CLI: trusted(cli, codetrust.CLISigningID), Helper: trusted(helper, codetrust.HelperSigningID),
 	}), nil
 }
 

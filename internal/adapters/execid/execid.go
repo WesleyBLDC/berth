@@ -176,3 +176,56 @@ func parseDisplay(out []byte) (team, signing string) {
 	}
 	return team, signing
 }
+
+// PinSigned copies the file at path into a private folder, checks the copy against
+// requirement and reads the copy's cdhash, so the file cannot be swapped between the check and
+// the hash. ok is false when the copy does not satisfy the requirement.
+func (x *Identity) PinSigned(ctx context.Context, path, requirement string) (sum ports.CDHash, ok bool, err error) {
+	err = x.withPrivateCopy(path, func(cp string) error {
+		if ok, err = x.Satisfies(ctx, cp, requirement); err != nil || !ok {
+			return err
+		}
+		sum, err = x.CDHash(ctx, cp)
+		return err
+	})
+	return sum, ok && err == nil, err
+}
+
+// PinAny reads the cdhash of a private copy without any requirement. Only test builds use it.
+func (x *Identity) PinAny(ctx context.Context, path string) (ports.CDHash, error) {
+	var sum ports.CDHash
+	err := x.withPrivateCopy(path, func(cp string) error {
+		var err error
+		sum, err = x.CDHash(ctx, cp)
+		return err
+	})
+	return sum, err
+}
+
+// withPrivateCopy copies path to a 0600 file in a fresh 0700 folder only this user can reach,
+// runs do on it, and removes both.
+func (*Identity) withPrivateCopy(path string, do func(cp string) error) error {
+	dir, err := os.MkdirTemp("", "berth-pin-")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.RemoveAll(dir) }()
+	src, err := os.Open(path) //nolint:gosec // the trusted Berth binaries beside the running one
+	if err != nil {
+		return fmt.Errorf("open %s: %w", path, err)
+	}
+	defer func() { _ = src.Close() }()
+	cp := filepath.Join(dir, filepath.Base(path))
+	dst, err := os.OpenFile(cp, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600) //nolint:gosec // a fresh private folder
+	if err != nil {
+		return err
+	}
+	if _, err := io.Copy(dst, src); err != nil {
+		_ = dst.Close()
+		return err
+	}
+	if err := dst.Close(); err != nil {
+		return err
+	}
+	return do(cp)
+}

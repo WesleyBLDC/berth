@@ -163,3 +163,21 @@ func TestShebangAndCDHash(t *testing.T) {
 		t.Fatal("an unsigned script has a cdhash")
 	}
 }
+
+func TestPinSignedReadsAPrivateCopy(t *testing.T) {
+	id := New(DefaultCodesign)
+	want, err := id.CDHash(t.Context(), "/bin/ls")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sum, ok, err := id.PinSigned(t.Context(), "/bin/ls", "anchor apple")
+	if err != nil || !ok || sum != want {
+		t.Fatalf("pin %x %v %v, want %x", sum, ok, err, want)
+	}
+	if _, ok, _ := id.PinSigned(t.Context(), "/bin/ls", `anchor apple generic and certificate leaf[subject.OU] = "XPJ7XA42J4"`); ok {
+		t.Fatal("pinned against another team's requirement")
+	}
+	if got, err := id.PinAny(t.Context(), "/bin/ls"); err != nil || got != want {
+		t.Fatalf("pin any %x %v", got, err)
+	}
+}

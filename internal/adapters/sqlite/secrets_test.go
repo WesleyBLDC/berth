@@ -3,6 +3,7 @@ package sqlite_test
 import (
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -25,7 +26,7 @@ func TestSecretAndGrantRecordsRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 	exe := ports.Executable{Path: "/usr/bin/true", SHA256: [32]byte{0xab, 1}, TeamID: "T", SigningID: "S"}
-	id1, err := s.AddGrant(ctx, ports.GrantRecord{Secret: "gh-token", Exe: exe, ArgsGlob: "-c *", CreatedAt: first})
+	id1, err := s.AddGrant(ctx, ports.GrantRecord{Secret: "gh-token", Exe: exe, ArgsGlob: "-c *", PassEnv: []string{"GH_HOST", "AWS_REGION"}, CreatedAt: first})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -60,7 +61,8 @@ func TestSecretAndGrantRecordsRoundTrip(t *testing.T) {
 		t.Fatalf("newest grant %+v", grants[0])
 	}
 	g := grants[1]
-	if g.ID != id1 || g.Exe != exe || g.ArgsGlob != "-c *" || g.UseCount != 1 || !g.LastUsedAt.Equal(used) {
+	if g.ID != id1 || g.Exe != exe || g.ArgsGlob != "-c *" || g.UseCount != 1 || !g.LastUsedAt.Equal(used) ||
+		strings.Join(g.PassEnv, ",") != "GH_HOST,AWS_REGION" || grants[0].PassEnv != nil {
 		t.Fatalf("used grant %+v", g)
 	}
 }

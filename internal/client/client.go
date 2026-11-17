@@ -23,13 +23,33 @@ type Client struct {
 
 // Connect dials the socket and performs the protocol handshake before returning.
 func Connect(ctx context.Context, socketPath, name string) (*Client, error) {
+	return ConnectVerified(ctx, socketPath, name, nil)
+}
+
+// ConnectVerified is Connect, but verify sees every connection before a byte is sent and can
+// refuse it, so a caller can make sure the real berthd answers rather than whoever listens on
+// the socket.
+func ConnectVerified(ctx context.Context, socketPath, name string, verify func(*net.UnixConn) error) (*Client, error) {
 	protocols := new(http.Protocols)
 	protocols.SetUnencryptedHTTP2(true)
 	transport := &http.Transport{
 		Protocols: protocols,
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			var d net.Dialer
-			return d.DialContext(ctx, "unix", socketPath)
+			conn, err := d.DialContext(ctx, "unix", socketPath)
+			if err != nil || verify == nil {
+				return conn, err
+			}
+			uc, ok := conn.(*net.UnixConn)
+			if !ok {
+				_ = conn.Close()
+				return nil, fmt.Errorf("%s is not a Unix socket", socketPath)
+			}
+			if err := verify(uc); err != nil {
+				_ = conn.Close()
+				return nil, err
+			}
+			return conn, nil
 		},
 	}
 	c := connect.NewClient(connecthttp.NewTransport(&http.Client{Transport: transport}, "http://berthd"))

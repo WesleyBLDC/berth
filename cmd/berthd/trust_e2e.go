@@ -6,7 +6,7 @@ import (
 	"context"
 
 	"berth/internal/adapters/execid"
-	"berth/internal/berthd"
+	"berth/internal/codetrust"
 	"berth/internal/core/ports"
 )
 
@@ -14,10 +14,10 @@ import (
 // the berth and berth-native beside berthd by cdhash without the Apple chain requirement, so
 // the tests can sign them ad hoc (with the hardened runtime, which the live check still
 // demands). No environment variable or flag reaches it, and release builds lack this file.
-func testPinner() berthd.Pinner {
+func testPinner() codetrust.Pinner {
 	x := execid.New(execid.DefaultCodesign)
 	return func(ctx context.Context, path, _ string) (ports.CDHash, bool, error) {
-		h, err := x.CDHash(ctx, path)
+		h, err := x.PinAny(ctx, path)
 		return h, err == nil, err
 	}
 }

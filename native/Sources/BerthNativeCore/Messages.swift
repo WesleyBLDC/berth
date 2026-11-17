@@ -69,22 +69,26 @@ public struct ConfirmRequest: Codable, Equatable, Sendable {
     /// True when berthd found the consumer is an interpreter, which could print the secret.
     /// Absent means false.
     public var interpreter: Bool
+    /// Environment variables the consumer will also receive; absent means none.
+    public var passEnv: [String]
     public var requester: Requester
 
     enum CodingKeys: String, CodingKey {
         case action, secret, consumer, requester, interpreter
         case argsGlob = "args_glob"
+        case passEnv = "pass_env"
     }
 
     public init(
         action: String, secret: String, consumer: Consumer, argsGlob: String, interpreter: Bool = false,
-        requester: Requester
+        passEnv: [String] = [], requester: Requester
     ) {
         self.action = action
         self.secret = secret
         self.consumer = consumer
         self.argsGlob = argsGlob
         self.interpreter = interpreter
+        self.passEnv = passEnv
         self.requester = requester
     }
 
@@ -95,6 +99,7 @@ public struct ConfirmRequest: Codable, Equatable, Sendable {
         consumer = try c.decode(Consumer.self, forKey: .consumer)
         argsGlob = try c.decode(String.self, forKey: .argsGlob)
         interpreter = try c.decodeIfPresent(Bool.self, forKey: .interpreter) ?? false
+        passEnv = try c.decodeIfPresent([String].self, forKey: .passEnv) ?? []
         requester = try c.decode(Requester.self, forKey: .requester)
     }
 }

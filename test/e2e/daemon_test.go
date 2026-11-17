@@ -25,14 +25,15 @@ func TestMain(m *testing.M) {
 	if err != nil {
 		panic(err)
 	}
-	// berth_e2e compiles in the one test trust rule, which release builds lack: berthd pins the
-	// berth and fake berth-native built here by cdhash without Apple's chain, so they are signed
-	// ad hoc, with the hardened runtime the live check still demands.
+	// berth_e2e compiles in the test trust rules, which release builds lack: berthd pins the berth
+	// and fake berth-native built here, and berth pins berthd, by cdhash without Apple's chain,
+	// so all three are signed ad hoc, with the hardened runtime the live checks still demand.
 	for _, args := range [][]string{
 		{"go", "build", "-tags", "berth_e2e", "-o", dir + "/", "berth/cmd/berthd", "berth/cmd/berth"},
 		{"go", "build", "-o", filepath.Join(dir, "berth-native"), "berth/internal/adapters/native/fakehelper"},
 		{"go", "build", "-o", filepath.Join(dir, "consumer"), "berth/test/e2e/consumer"},
 		{"codesign", "--force", "-s", "-", "-o", "runtime", "-i", "com.wesleybldc.berth.cli", filepath.Join(dir, "berth")},
+		{"codesign", "--force", "-s", "-", "-o", "runtime", "-i", "com.wesleybldc.berth.daemon", filepath.Join(dir, "berthd")},
 		{"codesign", "--force", "-s", "-", "-o", "runtime", "-i", "com.wesleybldc.berth.native", filepath.Join(dir, "berth-native")},
 	} {
 		build := exec.CommandContext(context.Background(), args[0], args[1:]...)

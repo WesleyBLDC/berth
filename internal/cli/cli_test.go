@@ -33,6 +33,7 @@ type fakeSecrets struct {
 	useArgv   []string
 	useExe    string
 	useErr    error
+	passEnv   []string
 	authorize int
 }
 
@@ -54,7 +55,7 @@ func (f *fakeSecrets) AuthorizeUse(_ context.Context, req *berthv1.AuthorizeUseR
 	if f.useErr != nil {
 		return nil, f.useErr
 	}
-	resp := &berthv1.AuthorizeUseResponse{Outcome: f.use}
+	resp := &berthv1.AuthorizeUseResponse{Outcome: f.use, PassEnv: f.passEnv}
 	if f.use == berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED {
 		resp.Ticket = bytes.Repeat([]byte{7}, 32)
 	}
@@ -73,11 +74,12 @@ func invoke(t *testing.T, fake *fakeSecrets, read ValueReader, args ...string) r
 	cl := &client.Client{Secrets: berthv1connect.NewSecretsServiceClient(connect.NewClient(connectinprocess.New(server)))}
 	var out, errOut bytes.Buffer
 	code := Run(t.Context(), args, Env{
-		Stdin:   strings.NewReader(""),
-		Stdout:  &out,
-		Stderr:  &errOut,
-		Connect: func(context.Context) (*client.Client, error) { return cl, nil },
-		Read:    read,
+		Stdin:          strings.NewReader(""),
+		Stdout:         &out,
+		Stderr:         &errOut,
+		Connect:        func(context.Context) (*client.Client, error) { return cl, nil },
+		ConnectTrusted: func(context.Context) (*client.Client, error) { return cl, nil },
+		Read:           read,
 	})
 	return result{code: code, stdout: out.String(), stderr: errOut.String()}
 }

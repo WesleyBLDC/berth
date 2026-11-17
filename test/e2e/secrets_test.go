@@ -9,16 +9,25 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"net"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"testing"
 	"time"
 
 	berthv1 "berth/gen/berth/v1"
+	"berth/gen/berth/v1/berthv1connect"
+	"berth/internal/paths"
+
+	"connectrpc.com/connect/v2"
+	"connectrpc.com/connect/v2/connecthttp"
+
 	"berth/internal/adapters/api"
 )
 
@@ -26,8 +35,14 @@ import (
 // output so the test can prove the canary never appeared in one.
 func cliRun(t *testing.T, h string, outputs *[]string, args ...string) (string, int) {
 	t.Helper()
+	return cliRunEnv(t, h, nil, outputs, args...)
+}
+
+// cliRunEnv is cliRun with extra variables on berth's own environment.
+func cliRunEnv(t *testing.T, h string, extra []string, outputs *[]string, args ...string) (string, int) {
+	t.Helper()
 	cmd := exec.CommandContext(t.Context(), filepath.Join(binDir, "berth"), args...)
-	cmd.Env = append(os.Environ(), "BERTH_HOME="+h)
+	cmd.Env = append(append(os.Environ(), "BERTH_HOME="+h), extra...)
 	out, err := cmd.CombinedOutput()
 	*outputs = append(*outputs, string(out))
 	var exit *exec.ExitError
@@ -134,15 +149,20 @@ func TestSecretStoreGrantRunAndRefusals(t *testing.T) {
 	}
 
 	exe := consumerCopy(t)
-	if out, code = cliRun(t, h, &outputs, "secret", "grant", "e2e-token", "--exe", exe); code != 0 || !strings.Contains(out, "granted e2e-token") {
+	out, code = cliRun(t, h, &outputs, "secret", "grant", "e2e-token", "--exe", exe, "--pass-env", "E2E_PASS", "--pass-env", "NODE_OPTIONS")
+	if code != 0 || !strings.Contains(out, "granted e2e-token") || !strings.Contains(out, "env     E2E_PASS\n") {
 		t.Fatalf("grant: %d %q", code, out)
 	}
 
-	// The child sees the exact value (its hash matches) while berth masks the value itself.
+	// The child sees the exact value (its hash matches) while berth masks the value itself. Of
+	// the variables set on berth, only the one the grant lists passes: NODE_OPTIONS is dropped
+	// even though listed, and GIT_CONFIG_COUNT was never granted.
 	sum := sha256.Sum256([]byte(canary))
-	out, code = cliRun(t, h, &outputs, "run", "--env", "K=e2e-token", "--", exe)
-	if code != 0 || out != hex.EncodeToString(sum[:])+"\n****" {
-		t.Fatalf("run: %d %q", code, out)
+	steer := []string{"E2E_PASS=granted", "NODE_OPTIONS=--require /tmp/evil.js", "GIT_CONFIG_COUNT=1"}
+	out, code = cliRunEnv(t, h, steer, &outputs, "run", "--env", "K=e2e-token", "--", exe)
+	want := hex.EncodeToString(sum[:]) + "\nE2E_PASS=granted\nNODE_OPTIONS unset\nGIT_CONFIG_COUNT unset\n****"
+	if code != 0 || out != want {
+		t.Fatalf("run: %d %q\nwant %q", code, out, want)
 	}
 
 	if out, code = cliRun(t, h, &outputs, "run", "--env", "K=e2e-token", "--", "/bin/echo", "hi"); code != 5 || !strings.Contains(out, "no grant") {
@@ -383,5 +403,52 @@ func TestBootEndsAStoreACrashLeftPending(t *testing.T) {
 	start(t, h)
 	if ev := lastSecretEvent(t, h, "e2e-crash"); ev.GetToState() != "Failed" || ev.GetDetail() != "interrupted" {
 		t.Fatalf("last event %v", ev)
+	}
+}
+
+// fakeDaemon is a server an agent could start: it answers the API on a socket in its own
+// BERTH_HOME and would hand out tickets.
+type fakeDaemon struct {
+	berthv1connect.UnimplementedDaemonServiceHandler
+	berthv1connect.UnimplementedSecretsServiceHandler
+	authorized atomic.Int32
+}
+
+func (f *fakeDaemon) Handshake(context.Context, *berthv1.HandshakeRequest) (*berthv1.HandshakeResponse, error) {
+	return &berthv1.HandshakeResponse{ProtocolVersion: api.ProtocolVersion, DaemonVersion: "fake"}, nil
+}
+
+func (f *fakeDaemon) AuthorizeUse(context.Context, *berthv1.AuthorizeUseRequest) (*berthv1.AuthorizeUseResponse, error) {
+	f.authorized.Add(1)
+	return &berthv1.AuthorizeUseResponse{Outcome: berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED, Ticket: make([]byte, 32)}, nil
+}
+
+func TestRunRefusesAServerThatIsNotTheSignedBerthd(t *testing.T) {
+	h := home(t)
+	fake := &fakeDaemon{}
+	server := connect.NewServer()
+	berthv1connect.RegisterDaemonServiceHandler(server, fake)
+	berthv1connect.RegisterSecretsServiceHandler(server, fake)
+	mux := http.NewServeMux()
+	connecthttp.Mount(mux, server, connecthttp.WithProtoJSON())
+	protocols := new(http.Protocols)
+	protocols.SetUnencryptedHTTP2(true)
+	protocols.SetHTTP1(true)
+	var lc net.ListenConfig
+	ln, err := lc.Listen(t.Context(), "unix", paths.Socket(h))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{Handler: mux, Protocols: protocols, ReadHeaderTimeout: 5 * time.Second}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
+
+	var outputs []string
+	out, code := cliRun(t, h, &outputs, "run", "--env", "K=e2e-token", "--", filepath.Join(binDir, "consumer"))
+	if code != 1 || !strings.Contains(out, "not the signed berthd") {
+		t.Fatalf("run against a fake berthd: %d %q", code, out)
+	}
+	if n := fake.authorized.Load(); n != 0 {
+		t.Fatalf("berth asked the fake berthd for %d tickets", n)
 	}
 }

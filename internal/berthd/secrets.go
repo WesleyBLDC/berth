@@ -17,6 +17,8 @@ import (
 
 	berthv1 "berth/gen/berth/v1"
 	"berth/internal/adapters/api"
+	"berth/internal/codetrust"
+	"berth/internal/core/envpolicy"
 	"berth/internal/core/grant"
 	"berth/internal/core/machine"
 	"berth/internal/core/ports"
@@ -33,7 +35,12 @@ const (
 // interpreters are executables that run other code, so a grant to one lets whatever it runs
 // print the secret. Names with versions (python3.12, perl5.34, ruby3.3) match by prefix.
 var (
-	interpreterNames    = []string{"sh", "bash", "zsh", "fish", "dash", "ksh", "csh", "tcsh", "env", "node", "deno", "bun", "osascript", "php", "lua", "tclsh"}
+	interpreterNames = []string{
+		"sh", "bash", "zsh", "fish", "dash", "ksh", "csh", "tcsh", "env", "node", "deno", "bun", "osascript", "php", "lua",
+		"tclsh", "expect", "awk", "gawk", "xargs", "find", "make", "vim", "nvim", "emacs", "java", "swift", "ssh",
+		// git runs hooks, aliases and configured commands.
+		"git",
+	}
 	interpreterPrefixes = []string{"python", "perl", "ruby"}
 )
 
@@ -63,8 +70,8 @@ type secretsDeps struct {
 	Peers    ports.PeerFacts
 	Tickets  ports.TicketSource
 	// CLI and Helper are the signed berth and berth-native beside berthd.
-	CLI    *trustedFile
-	Helper *trustedFile
+	CLI    *codetrust.File
+	Helper *codetrust.File
 }
 
 // secrets runs one actor per secret and per grant and performs their effects. It implements
@@ -333,12 +340,15 @@ func (s *secrets) GrantSecret(ctx context.Context, req *berthv1.GrantSecretReque
 	if err != nil {
 		return nil, err
 	}
-	g := ports.GrantRecord{Secret: name, Exe: exe, ArgsGlob: glob, CreatedAt: s.Clock.Now()}
+	passEnv := envpolicy.Filter(req.GetPassEnv())
+	g := ports.GrantRecord{Secret: name, Exe: exe, ArgsGlob: glob, PassEnv: passEnv, CreatedAt: s.Clock.Now()}
 	if g.ID, err = s.Records.AddGrant(ctx, g); err != nil {
 		return nil, err
 	}
 	entity := grant.Entity(g.ID)
-	prompt := ports.PowerPrompt{Action: ports.PowerGrant, Secret: name, Consumer: exe, ArgsGlob: glob, Interpreter: interpreter, Requester: facts}
+	prompt := ports.PowerPrompt{
+		Action: ports.PowerGrant, Secret: name, Consumer: exe, ArgsGlob: glob, Interpreter: interpreter, PassEnv: passEnv, Requester: facts,
+	}
 	rec, _, err := step(ctx, s.grants, entity, grant.Event{Kind: grant.GrantRequested}, prompt,
 		grant.GrantApproved, grant.GrantDenied, grant.GrantFailed)
 	if err != nil {
@@ -413,7 +423,7 @@ func (s *secrets) AuthorizeUse(ctx context.Context, req *berthv1.AuthorizeUseReq
 	name := req.GetName()
 	// A ticket lets its holder start berth-native and read the value, so only the signed berth
 	// CLI, which puts the value straight into its child, may get one.
-	if !s.CLI.runs(ctx, peer) {
+	if !s.CLI.Runs(ctx, peer) {
 		return nil, api.ErrPeerNotTrusted
 	}
 	if err := s.requireStored(ctx, name); err != nil {
@@ -509,13 +519,14 @@ func (s *secrets) authorize(ctx context.Context, g ports.GrantRecord, exe ports.
 	}
 	return &berthv1.AuthorizeUseResponse{
 		Outcome: berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED, Ticket: got.ticket[:], ExpiresAt: timestamppb.New(got.expires),
+		PassEnv: envpolicy.Filter(g.PassEnv),
 	}, nil
 }
 
 // TrustRedeemer accepts only a peer running the signed berth-native beside berthd, judged by
 // the kernel's live code identity rather than any path.
 func (s *secrets) TrustRedeemer(ctx context.Context, peer ports.Peer) error {
-	if !s.Helper.runs(ctx, peer) {
+	if !s.Helper.Runs(ctx, peer) {
 		return api.ErrPeerNotTrusted
 	}
 	return nil
@@ -606,7 +617,7 @@ func consumer(g ports.GrantRecord, st grant.State) *berthv1.Consumer {
 	c := &berthv1.Consumer{
 		GrantId: g.ID, State: grantState(st), ExePath: g.Exe.Path, Sha256: hex.EncodeToString(g.Exe.SHA256[:]),
 		TeamId: g.Exe.TeamID, SigningId: g.Exe.SigningID, ArgsGlob: g.ArgsGlob,
-		CreatedAt: timestamppb.New(g.CreatedAt), UseCount: g.UseCount,
+		CreatedAt: timestamppb.New(g.CreatedAt), UseCount: g.UseCount, PassEnv: g.PassEnv,
 	}
 	if !g.LastUsedAt.IsZero() {
 		c.LastUsedAt = timestamppb.New(g.LastUsedAt)

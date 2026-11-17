@@ -575,8 +575,11 @@ type Consumer struct {
 	ArgsGlob  string                 `protobuf:"bytes,7,opt,name=args_glob,json=argsGlob,proto3" json:"args_glob,omitempty"`
 	CreatedAt *timestamppb.Timestamp `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	// last_used_at is unset when the grant was never used.
-	LastUsedAt    *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=last_used_at,json=lastUsedAt,proto3" json:"last_used_at,omitempty"`
-	UseCount      int64                  `protobuf:"varint,10,opt,name=use_count,json=useCount,proto3" json:"use_count,omitempty"`
+	LastUsedAt *timestamppb.Timestamp `protobuf:"bytes,9,opt,name=last_used_at,json=lastUsedAt,proto3" json:"last_used_at,omitempty"`
+	UseCount   int64                  `protobuf:"varint,10,opt,name=use_count,json=useCount,proto3" json:"use_count,omitempty"`
+	// pass_env names the environment variables, beyond Berth's fixed allowlist, that berth run
+	// passes from its own environment to this consumer.
+	PassEnv       []string `protobuf:"bytes,11,rep,name=pass_env,json=passEnv,proto3" json:"pass_env,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -681,6 +684,13 @@ func (x *Consumer) GetUseCount() int64 {
 	return 0
 }
 
+func (x *Consumer) GetPassEnv() []string {
+	if x != nil {
+		return x.PassEnv
+	}
+	return nil
+}
+
 type GrantSecretRequest struct {
 	state     protoimpl.MessageState `protogen:"open.v1"`
 	RequestId string                 `protobuf:"bytes,1,opt,name=request_id,json=requestId,proto3" json:"request_id,omitempty"`
@@ -691,8 +701,12 @@ type GrantSecretRequest struct {
 	// allow_interpreter accepts an interpreter executable; the Touch ID text then warns that it
 	// can print the secret.
 	AllowInterpreter bool `protobuf:"varint,5,opt,name=allow_interpreter,json=allowInterpreter,proto3" json:"allow_interpreter,omitempty"`
-	unknownFields    protoimpl.UnknownFields
-	sizeCache        protoimpl.SizeCache
+	// pass_env names environment variables berth run may pass to the consumer beyond Berth's
+	// fixed allowlist. The Touch ID text lists them. DYLD_*, LD_*, *_OPTIONS, *_OPTS and *OPT
+	// are always dropped, because they make a tool load or run other code.
+	PassEnv       []string `protobuf:"bytes,6,rep,name=pass_env,json=passEnv,proto3" json:"pass_env,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *GrantSecretRequest) Reset() {
@@ -758,6 +772,13 @@ func (x *GrantSecretRequest) GetAllowInterpreter() bool {
 		return x.AllowInterpreter
 	}
 	return false
+}
+
+func (x *GrantSecretRequest) GetPassEnv() []string {
+	if x != nil {
+		return x.PassEnv
+	}
+	return nil
 }
 
 type GrantSecretResponse struct {
@@ -888,8 +909,10 @@ type AuthorizeUseResponse struct {
 	Outcome UseOutcome             `protobuf:"varint,1,opt,name=outcome,proto3,enum=berth.v1.UseOutcome" json:"outcome,omitempty"`
 	// ticket is 32 random bytes, set only when outcome is AUTHORIZED. It is bound to the name,
 	// the executable hash and the caller's pid, and is valid once until expires_at.
-	Ticket        []byte                 `protobuf:"bytes,2,opt,name=ticket,proto3" json:"ticket,omitempty"`
-	ExpiresAt     *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	Ticket    []byte                 `protobuf:"bytes,2,opt,name=ticket,proto3" json:"ticket,omitempty"`
+	ExpiresAt *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
+	// pass_env is the matched grant's list; berth run passes only these beyond the allowlist.
+	PassEnv       []string `protobuf:"bytes,4,rep,name=pass_env,json=passEnv,proto3" json:"pass_env,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -941,6 +964,13 @@ func (x *AuthorizeUseResponse) GetTicket() []byte {
 func (x *AuthorizeUseResponse) GetExpiresAt() *timestamppb.Timestamp {
 	if x != nil {
 		return x.ExpiresAt
+	}
+	return nil
+}
+
+func (x *AuthorizeUseResponse) GetPassEnv() []string {
+	if x != nil {
+		return x.PassEnv
 	}
 	return nil
 }
@@ -1067,7 +1097,7 @@ const file_berth_v1_secrets_proto_rawDesc = "" +
 	"\x05state\x18\x02 \x01(\x0e2\x15.berth.v1.SecretStateR\x05state\x129\n" +
 	"\n" +
 	"created_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\tcreatedAt\x120\n" +
-	"\tconsumers\x18\x04 \x03(\v2\x12.berth.v1.ConsumerR\tconsumers\"\xef\x02\n" +
+	"\tconsumers\x18\x04 \x03(\v2\x12.berth.v1.ConsumerR\tconsumers\"\x8a\x03\n" +
 	"\bConsumer\x12\x19\n" +
 	"\bgrant_id\x18\x01 \x01(\x03R\agrantId\x12*\n" +
 	"\x05state\x18\x02 \x01(\x0e2\x14.berth.v1.GrantStateR\x05state\x12\x19\n" +
@@ -1082,7 +1112,8 @@ const file_berth_v1_secrets_proto_rawDesc = "" +
 	"\flast_used_at\x18\t \x01(\v2\x1a.google.protobuf.TimestampR\n" +
 	"lastUsedAt\x12\x1b\n" +
 	"\tuse_count\x18\n" +
-	" \x01(\x03R\buseCount\"\xf4\x01\n" +
+	" \x01(\x03R\buseCount\x12\x19\n" +
+	"\bpass_env\x18\v \x03(\tR\apassEnv\"\xb8\x02\n" +
 	"\x12GrantSecretRequest\x12)\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tB\n" +
@@ -1090,7 +1121,8 @@ const file_berth_v1_secrets_proto_rawDesc = "" +
 	"\x04name\x18\x02 \x01(\tB#\xbaH r\x1e2\x1c^[a-z0-9][a-z0-9._-]{0,127}$R\x04name\x12&\n" +
 	"\bexe_path\x18\x03 \x01(\tB\v\xbaH\br\x06\x18\x80\b:\x01/R\aexePath\x12%\n" +
 	"\targs_glob\x18\x04 \x01(\tB\b\xbaH\x05r\x03\x18\x80\bR\bargsGlob\x12+\n" +
-	"\x11allow_interpreter\x18\x05 \x01(\bR\x10allowInterpreter\"w\n" +
+	"\x11allow_interpreter\x18\x05 \x01(\bR\x10allowInterpreter\x12B\n" +
+	"\bpass_env\x18\x06 \x03(\tB'\xbaH$\x92\x01!\x10 \x18\x01\"\x1br\x192\x17^[A-Z_][A-Z0-9_]{0,63}$R\apassEnv\"w\n" +
 	"\x13GrantSecretResponse\x120\n" +
 	"\aoutcome\x18\x01 \x01(\x0e2\x16.berth.v1.GrantOutcomeR\aoutcome\x12.\n" +
 	"\bconsumer\x18\x02 \x01(\v2\x12.berth.v1.ConsumerR\bconsumer\"\xc7\x01\n" +
@@ -1101,12 +1133,13 @@ const file_berth_v1_secrets_proto_rawDesc = "" +
 	"\x04name\x18\x02 \x01(\tB#\xbaH r\x1e2\x1c^[a-z0-9][a-z0-9._-]{0,127}$R\x04name\x12&\n" +
 	"\bexe_path\x18\x03 \x01(\tB\v\xbaH\br\x06\x18\x80\b:\x01/R\aexePath\x12$\n" +
 	"\x04argv\x18\x04 \x03(\tB\x10\xbaH\r\x92\x01\n" +
-	"\x10\x80\x02\"\x05r\x03\x18\x80 R\x04argv\"\x99\x01\n" +
+	"\x10\x80\x02\"\x05r\x03\x18\x80 R\x04argv\"\xb4\x01\n" +
 	"\x14AuthorizeUseResponse\x12.\n" +
 	"\aoutcome\x18\x01 \x01(\x0e2\x14.berth.v1.UseOutcomeR\aoutcome\x12\x16\n" +
 	"\x06ticket\x18\x02 \x01(\fR\x06ticket\x129\n" +
 	"\n" +
-	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\"d\n" +
+	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x19\n" +
+	"\bpass_env\x18\x04 \x03(\tR\apassEnv\"d\n" +
 	"\x16RedeemUseTicketRequest\x12)\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tB\n" +

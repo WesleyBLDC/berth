@@ -49,8 +49,9 @@ berth run --env GH_TOKEN=gh-personal-token -- gh api user
 `berth run` puts the value in that one command's environment, and only when the person has granted that exact executable.
 Repeat `--env` for more secrets.
 Granting is the person's step, with Touch ID: ask them to run `berth secret grant <name> --exe <path> [--args <glob>]`; you cannot grant.
-Interpreters (shells, `python`, `node`, `#!` scripts) are refused unless the person adds `--allow-interpreter`, because anything an interpreter runs could print the secret; prefer granting the real tool.
-Only the signed `berth` gets secrets: a script of yours that calls the API or starts `berth-native` itself is refused.
+Interpreters and tools that run configured commands (shells, `python`, `node`, `git`, `ssh`, `make`, `#!` scripts) are refused unless the person adds `--allow-interpreter`, because anything an interpreter runs could print the secret; prefer granting the real tool.
+Only the signed `berth` gets secrets: a script of yours that calls the API or starts `berth-native` itself is refused, and `berth run` talks only to the signed `berthd`.
+The command gets a clean environment: `HOME`, `PATH`, `TERM`, `LANG`, `LC_*`, `USER`, `LOGNAME`, `SHELL`, `TMPDIR`, the secrets, and only the variables its grant lists (`berth secret grant ... --pass-env NAME`). Variables you set on `berth run` do not reach it otherwise; if the tool needs one, ask the person to grant it with `--pass-env`. `DYLD_*`, `LD_*` and `*_OPTIONS`/`*_OPTS`/`*OPT` never pass.
 A grant pins the file's hash, so after the tool is upgraded the person grants it again.
 
 ## Exit codes and fixes
@@ -58,7 +59,7 @@ A grant pins the file's hash, so after the tool is upgraded the person grants it
 | Code | Meaning | Fix |
 |---|---|---|
 | 0 | Success | |
-| 1 | berthd unreachable, or it refused the request; the message says why | `berth status`; for "already exists" use the stored secret; for "no stored secret" request it; for "signed berth binary" the person runs `make build` and you use `bin/berth`; for "is an interpreter" ask the person whether to grant the real tool instead |
+| 1 | berthd unreachable, or it refused the request; the message says why | `berth status`; for "already exists" use the stored secret; for "no stored secret" request it; for "signed berth binary" or "not the signed berthd" the person runs `make build`, starts `bin/berthd`, and you use `bin/berth`; for "is an interpreter" ask the person whether to grant the real tool instead |
 | 2 | Usage error | Check the command shape above |
 | 3 | The person denied the dialog or Touch ID | Do not retry on your own; ask the person whether they want to |
 | 4 | The store or grant failed | Read the message, then ask the person |
