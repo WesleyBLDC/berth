@@ -84,7 +84,10 @@ var _ api.Agents = (*agents)(nil)
 func newAgents(ctx context.Context, d agentsDeps) *agents {
 	a := &agents{agentsDeps: d, ctx: ctx, stores: map[string]*storeSlots{}, watches: map[string]*sessionWatch{}}
 	if a.After == nil {
-		a.After = func(d time.Duration, f func()) func() { return func() { time.AfterFunc(d, f).Stop() } }
+		a.After = func(d time.Duration, f func()) func() {
+			t := time.AfterFunc(d, f)
+			return func() { t.Stop() }
+		}
 	}
 	a.sessions = &actors[agentsession.State, agentsession.Event, agentsession.Effect]{
 		ctx: ctx, log: d.Log, store: d.Store, clock: d.Clock,
@@ -138,16 +141,17 @@ func (a *agents) watchExpiry(rec ports.AgentSessionRecord) {
 }
 
 // watchRoot sends RootExited when the bound root process exits (kqueue NOTE_EXIT, which checks
-// the start time, so a reused pid never counts).
-func (a *agents) watchRoot(id string, root ports.ProcessRef) {
+// the start time, so a reused pid never counts). It reports false when the root was already gone
+// and RootExited was applied at once.
+func (a *agents) watchRoot(id string, root ports.ProcessRef) bool {
 	if a.WatchExit == nil {
-		return
+		return true
 	}
 	a.mu.Lock()
 	w := a.watches[id]
 	if w == nil || w.stopRoot != nil {
 		a.mu.Unlock()
-		return
+		return true
 	}
 	ctx, cancel := context.WithCancel(a.ctx)
 	w.stopRoot = cancel
@@ -156,7 +160,7 @@ func (a *agents) watchRoot(id string, root ports.ProcessRef) {
 	exited, err := a.WatchExit(ctx, root)
 	if err != nil {
 		a.background(id, ev)
-		return
+		return false
 	}
 	go func() {
 		select {
@@ -165,6 +169,7 @@ func (a *agents) watchRoot(id string, root ports.ProcessRef) {
 		case <-ctx.Done():
 		}
 	}()
+	return true
 }
 
 // background applies an event no caller waits for; one the session can no longer take is fine.
@@ -201,7 +206,7 @@ func (a *agents) recover(ctx context.Context) error {
 		}
 		a.watchExpiry(rec)
 		if st == agentsession.Bound && rec.Root != (ports.ProcessRef{}) {
-			a.watchRoot(rec.ID, rec.Root) //nolint:contextcheck // the watch outlives this call and runs on berthd's context
+			_ = a.watchRoot(rec.ID, rec.Root) //nolint:contextcheck // the watch outlives this call and runs on berthd's context
 		}
 	}
 	return nil
@@ -320,7 +325,9 @@ func (a *agents) Authenticate(ctx context.Context, token string, peer ports.Peer
 		if now != agentsession.Bound {
 			return "", a.refuse("session "+string(now), rec.ID, peer)
 		}
-		a.watchRoot(rec.ID, root) //nolint:contextcheck // the watch outlives this call and runs on berthd's context
+		if !a.watchRoot(rec.ID, root) { //nolint:contextcheck // the watch outlives this call and runs on berthd's context
+			return "", a.refuse("session root exited", rec.ID, peer)
+		}
 	}
 	if !agentsession.Descends(lineage, root) {
 		rec.Root = root

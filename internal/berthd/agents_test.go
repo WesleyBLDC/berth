@@ -145,11 +145,16 @@ func (ft *fakeTimers) fire(i int) {
 type fakeExits struct {
 	mu    sync.Mutex
 	byPID map[int]chan struct{}
+	// gone pids exited before the watch, which then answers ErrProcessGone.
+	gone map[int]bool
 }
 
 func (e *fakeExits) watch(_ context.Context, p ports.ProcessRef) (<-chan struct{}, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if e.gone[p.PID] {
+		return nil, ports.ErrProcessGone
+	}
 	if _, ok := e.byPID[p.PID]; !ok {
 		e.byPID[p.PID] = make(chan struct{})
 	}
@@ -556,4 +561,36 @@ func TestRevokeThatCannotBeSavedIsUnavailable(t *testing.T) {
 	if f.state(t, id) != agentsession.Issued {
 		t.Fatalf("state %s", f.state(t, id))
 	}
+}
+
+func TestDefaultAfterFiresAndCancels(t *testing.T) {
+	a := newAgents(t.Context(), agentsDeps{Log: slog.New(slog.DiscardHandler), Clock: testutil.NewClock()})
+	fired := make(chan struct{})
+	a.After(20*time.Millisecond, func() { close(fired) })
+	select {
+	case <-fired:
+	case <-time.After(2 * time.Second):
+		t.Fatal("the default timer never fired")
+	}
+	cancelled := make(chan struct{})
+	stop := a.After(20*time.Millisecond, func() { close(cancelled) })
+	stop()
+	select {
+	case <-cancelled:
+		t.Fatal("a cancelled timer fired")
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestFirstCallWhoseRootIsAlreadyGoneIsRefused(t *testing.T) {
+	f := newAgentsFixture(t)
+	f.exits.gone = map[int]bool{20: true}
+	id, token := f.create(t, 0)
+	if err := f.auth(t, token, 22); !errors.Is(err, api.ErrAgentTokenInvalid) {
+		t.Fatalf("a call whose root had already exited: %v", err)
+	}
+	if f.state(t, id) != agentsession.Ended {
+		t.Fatalf("state %s, want Ended", f.state(t, id))
+	}
+	f.waitStopped(t, id)
 }

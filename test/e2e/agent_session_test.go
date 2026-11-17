@@ -223,3 +223,31 @@ func entityStateOK(t *testing.T, c *client.Client, entity string) (string, bool)
 	}
 	return st.GetState(), true
 }
+
+// TestAgentSessionExpiresWithNoCalls binds a session with a 2 second time to live and makes no
+// further call: berthd's own timer must record the expiry, which berth debug state reads straight
+// from the store without the refresh a listing or an agent call would do.
+func TestAgentSessionExpiresWithNoCalls(t *testing.T) {
+	h := home(t)
+	_, sock := startWithAgent(t, h, os.Getuid())
+	var outputs []string
+	id, _, file := newAgentSession(t, h, "--ttl", "2s")
+	if out, code := cliRunEnv(t, h, agentEnv(sock, file), &outputs, "secret", "ls"); code != 0 {
+		t.Fatalf("binding call: %d %s", code, out)
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	state := ""
+	for time.Now().Before(deadline) {
+		time.Sleep(250 * time.Millisecond)
+		out := berth(t, h, "debug", "state", "agent/"+id)
+		if state = strings.Fields(out + " ? ? ?")[2]; strings.HasPrefix(state, "Expired") {
+			break
+		}
+	}
+	if !strings.HasPrefix(state, "Expired") {
+		t.Fatalf("no expiry recorded without a call; agent/%s is %q", id, state)
+	}
+	if list := berth(t, h, "agent", "session", "ls"); !regexp.MustCompile(id + `\s+e2e\s+expired`).MatchString(list) {
+		t.Fatalf("session not expired:\n%s", list)
+	}
+}
