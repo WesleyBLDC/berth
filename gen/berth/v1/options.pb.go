@@ -65,8 +65,10 @@ const (
 	// unknown, expired or revoked, whose session ended, or that comes from a process outside the
 	// session's process tree; one reason for all, so a copied token learns nothing.
 	ErrorReason_ERROR_REASON_AGENT_TOKEN_INVALID ErrorReason = 16
-	// RATE_LIMITED refuses a store request beyond an agent session's limit on store dialogs, and a
-	// StartProxy beyond its limits on proxies berthd runs for it at once or starts in an hour.
+	// RATE_LIMITED refuses a store request beyond an agent session's limit on store dialogs, a
+	// StartProxy beyond its limits on proxies berthd runs for it at once or starts in an hour, an
+	// agent browser beyond its limits, and a WatchSessions beyond the open stream limit. The message
+	// says which limit.
 	ErrorReason_ERROR_REASON_RATE_LIMITED ErrorReason = 17
 	// AGENT_SESSION_NOT_FOUND means no agent session has that id.
 	ErrorReason_ERROR_REASON_AGENT_SESSION_NOT_FOUND ErrorReason = 18
@@ -77,6 +79,13 @@ const (
 	// BROWSER_LAUNCH_FAILED means the browser did not start or did not answer over its pipe, or
 	// the named executable is not a Chromium family browser.
 	ErrorReason_ERROR_REASON_BROWSER_LAUNCH_FAILED ErrorReason = 21
+	// BAD_GLOB refuses an args_glob that is not a valid pattern.
+	ErrorReason_ERROR_REASON_BAD_GLOB ErrorReason = 22
+	// PROXY_NOT_STARTED means berthd could not start berth-proxy for StartProxy, or the proxy did
+	// not come up; berthd's log says why.
+	ErrorReason_ERROR_REASON_PROXY_NOT_STARTED ErrorReason = 23
+	// ENTITY_NOT_FOUND means GetState found no state machine entity with that name.
+	ErrorReason_ERROR_REASON_ENTITY_NOT_FOUND ErrorReason = 24
 )
 
 // Enum value maps for ErrorReason.
@@ -104,6 +113,9 @@ var (
 		19: "ERROR_REASON_PROFILE_BUSY",
 		20: "ERROR_REASON_BROWSER_NOT_FOUND",
 		21: "ERROR_REASON_BROWSER_LAUNCH_FAILED",
+		22: "ERROR_REASON_BAD_GLOB",
+		23: "ERROR_REASON_PROXY_NOT_STARTED",
+		24: "ERROR_REASON_ENTITY_NOT_FOUND",
 	}
 	ErrorReason_value = map[string]int32{
 		"ERROR_REASON_UNSPECIFIED":             0,
@@ -128,6 +140,9 @@ var (
 		"ERROR_REASON_PROFILE_BUSY":            19,
 		"ERROR_REASON_BROWSER_NOT_FOUND":       20,
 		"ERROR_REASON_BROWSER_LAUNCH_FAILED":   21,
+		"ERROR_REASON_BAD_GLOB":                22,
+		"ERROR_REASON_PROXY_NOT_STARTED":       23,
+		"ERROR_REASON_ENTITY_NOT_FOUND":        24,
 	}
 )
 
@@ -229,7 +244,7 @@ const file_berth_v1_options_proto_rawDesc = "" +
 	"\n" +
 	"\x16berth/v1/options.proto\x12\bberth.v1\x1a google/protobuf/descriptor.proto\":\n" +
 	"\tErrorInfo\x12-\n" +
-	"\x06reason\x18\x01 \x01(\x0e2\x15.berth.v1.ErrorReasonR\x06reason*\x82\x06\n" +
+	"\x06reason\x18\x01 \x01(\x0e2\x15.berth.v1.ErrorReasonR\x06reason*\xe4\x06\n" +
 	"\vErrorReason\x12\x1c\n" +
 	"\x18ERROR_REASON_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eERROR_REASON_PROTOCOL_MISMATCH\x10\x01\x12\"\n" +
@@ -253,7 +268,10 @@ const file_berth_v1_options_proto_rawDesc = "" +
 	"$ERROR_REASON_AGENT_SESSION_NOT_FOUND\x10\x12\x12\x1d\n" +
 	"\x19ERROR_REASON_PROFILE_BUSY\x10\x13\x12\"\n" +
 	"\x1eERROR_REASON_BROWSER_NOT_FOUND\x10\x14\x12&\n" +
-	"\"ERROR_REASON_BROWSER_LAUNCH_FAILED\x10\x15:6\n" +
+	"\"ERROR_REASON_BROWSER_LAUNCH_FAILED\x10\x15\x12\x19\n" +
+	"\x15ERROR_REASON_BAD_GLOB\x10\x16\x12\"\n" +
+	"\x1eERROR_REASON_PROXY_NOT_STARTED\x10\x17\x12!\n" +
+	"\x1dERROR_REASON_ENTITY_NOT_FOUND\x10\x18:6\n" +
 	"\x05agent\x12\x1e.google.protobuf.MethodOptions\x18ц\x03 \x01(\bR\x05agentBy\n" +
 	"\fcom.berth.v1B\fOptionsProtoP\x01Z\x1aberth/gen/berth/v1;berthv1\xa2\x02\x03BXX\xaa\x02\bBerth.V1\xca\x02\bBerth\\V1\xe2\x02\x14Berth\\V1\\GPBMetadata\xea\x02\tBerth::V1b\x06proto3"
 

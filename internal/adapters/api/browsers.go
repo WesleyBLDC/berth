@@ -114,6 +114,9 @@ var errNoAgentSession = connect.NewError(connect.CodeFailedPrecondition, "agent 
 // browserError keeps the daemon's explanation for the typed refusals, which hold only facts
 // berthd chose (a profile name it validated, a browser id it minted, a fixed phrase).
 func browserError(err error) error {
+	if ce := commonError(err); ce != nil {
+		return ce
+	}
 	switch {
 	case err == nil:
 		return nil
@@ -129,8 +132,6 @@ func browserError(err error) error {
 		return agentsError(err)
 	case errors.Is(err, ErrBrowserLaunchFailed):
 		return withReason(connect.NewError(connect.CodeFailedPrecondition, err.Error()), berthv1.ErrorReason_ERROR_REASON_BROWSER_LAUNCH_FAILED)
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		return connect.NewError(connect.CodeCanceled, "gave up")
 	}
 	return connect.NewError(connect.CodeInternal, "could not complete the browser request")
 }

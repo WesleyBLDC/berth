@@ -271,7 +271,7 @@ func TestStartProxyStreamsAndTypesItsErrors(t *testing.T) {
 		reason berthv1.ErrorReason
 	}{
 		{api.ErrRateLimited, connect.CodeResourceExhausted, berthv1.ErrorReason_ERROR_REASON_RATE_LIMITED},
-		{api.ErrProxyNotStarted, connect.CodeUnavailable, berthv1.ErrorReason_ERROR_REASON_UNSPECIFIED},
+		{api.ErrProxyNotStarted, connect.CodeUnavailable, berthv1.ErrorReason_ERROR_REASON_PROXY_NOT_STARTED},
 	} {
 		fake.startErr = tc.err
 		_, err := receiveFirst(t, f, &berthv1.StartProxyRequest{RequestId: "req-start-" + tc.code.String(), Names: []string{"gh-token"}})

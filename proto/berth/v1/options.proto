@@ -52,8 +52,10 @@ enum ErrorReason {
   // unknown, expired or revoked, whose session ended, or that comes from a process outside the
   // session's process tree; one reason for all, so a copied token learns nothing.
   ERROR_REASON_AGENT_TOKEN_INVALID = 16;
-  // RATE_LIMITED refuses a store request beyond an agent session's limit on store dialogs, and a
-  // StartProxy beyond its limits on proxies berthd runs for it at once or starts in an hour.
+  // RATE_LIMITED refuses a store request beyond an agent session's limit on store dialogs, a
+  // StartProxy beyond its limits on proxies berthd runs for it at once or starts in an hour, an
+  // agent browser beyond its limits, and a WatchSessions beyond the open stream limit. The message
+  // says which limit.
   ERROR_REASON_RATE_LIMITED = 17;
   // AGENT_SESSION_NOT_FOUND means no agent session has that id.
   ERROR_REASON_AGENT_SESSION_NOT_FOUND = 18;
@@ -64,6 +66,13 @@ enum ErrorReason {
   // BROWSER_LAUNCH_FAILED means the browser did not start or did not answer over its pipe, or
   // the named executable is not a Chromium family browser.
   ERROR_REASON_BROWSER_LAUNCH_FAILED = 21;
+  // BAD_GLOB refuses an args_glob that is not a valid pattern.
+  ERROR_REASON_BAD_GLOB = 22;
+  // PROXY_NOT_STARTED means berthd could not start berth-proxy for StartProxy, or the proxy did
+  // not come up; berthd's log says why.
+  ERROR_REASON_PROXY_NOT_STARTED = 23;
+  // ENTITY_NOT_FOUND means GetState found no state machine entity with that name.
+  ERROR_REASON_ENTITY_NOT_FOUND = 24;
 }
 
 message ErrorInfo {

@@ -2,6 +2,7 @@ package api_test
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -46,6 +47,37 @@ func setup(t *testing.T) *fixture {
 	f.daemon = berthv1connect.NewDaemonServiceClient(client)
 	f.debug = berthv1connect.NewDebugServiceClient(client)
 	return f
+}
+
+// TestMappersAgree: berthd not recording an outcome, a deadline and a cancellation answer the same
+// in every service, so a client reads them once.
+func TestMappersAgree(t *testing.T) {
+	for name, mapErr := range api.ErrorMappers {
+		for _, tc := range []struct {
+			err    error
+			code   connect.Code
+			reason berthv1.ErrorReason
+		}{
+			{fmt.Errorf("step: %w", api.ErrUnavailable), connect.CodeUnavailable, berthv1.ErrorReason_ERROR_REASON_NOT_SERVING},
+			{fmt.Errorf("prompt: %w", context.DeadlineExceeded), connect.CodeDeadlineExceeded, berthv1.ErrorReason_ERROR_REASON_UNSPECIFIED},
+			{context.Canceled, connect.CodeCanceled, berthv1.ErrorReason_ERROR_REASON_UNSPECIFIED},
+		} {
+			if err := mapErr(tc.err); connect.CodeOf(err) != tc.code || api.ReasonOf(err) != tc.reason {
+				t.Errorf("%s(%v) = %v (%v), want %v (%v)", name, tc.err, err, api.ReasonOf(err), tc.code, tc.reason)
+			}
+		}
+		if err := mapErr(nil); err != nil {
+			t.Errorf("%s(nil) = %v", name, err)
+		}
+	}
+}
+
+func TestGetStateOfAnUnknownEntityIsTyped(t *testing.T) {
+	f := setup(t)
+	_, err := f.debug.GetState(t.Context(), &berthv1.GetStateRequest{Entity: "secret/none"})
+	if connect.CodeOf(err) != connect.CodeNotFound || api.ReasonOf(err) != berthv1.ErrorReason_ERROR_REASON_ENTITY_NOT_FOUND {
+		t.Fatalf("GetState of an unknown entity: %v (%v)", err, api.ReasonOf(err))
+	}
 }
 
 func TestProtocolMismatchIsATypedError(t *testing.T) {

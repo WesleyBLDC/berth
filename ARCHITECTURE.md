@@ -60,6 +60,7 @@ Swift does the native work because Keychain, Touch ID and ScreenCaptureKit are A
 - The socket is `$BERTH_HOME/berthd.sock`; `BERTH_HOME` defaults to `~/Library/Application Support/Berth`.
 - With `berthd -agent-uid <uid> -agent-gid <gid>`, a second socket serves the agent user (E3), by default at `/Users/Shared/Berth/<owner uid>/agent.sock`, with only the agent methods, each needing an agent session token; see [the socket](#the-socket-built).
 - Every Go client calls `Handshake` first, and a protocol version mismatch is a typed error (`ERROR_REASON_PROTOCOL_MISMATCH`).
+- Every refusal a client must react to carries an `ErrorReason`. Every service answers alike when `berthd` could not record an outcome (`Unavailable` with `ERROR_REASON_NOT_SERVING`), when a call ran out of time (`DeadlineExceeded`) and when it was cancelled (`Canceled`); anything untyped is `Internal`.
 - `buf breaking` fails the build if a change would break an existing client; `v1` only gains fields.
 
 | Service | Methods | Status |

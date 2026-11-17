@@ -110,6 +110,7 @@ func TestSecretsErrorsAreTyped(t *testing.T) {
 		{api.ErrTicketInvalid, connect.CodePermissionDenied, berthv1.ErrorReason_ERROR_REASON_TICKET_INVALID},
 		{api.ErrPeerNotTrusted, connect.CodePermissionDenied, berthv1.ErrorReason_ERROR_REASON_PEER_NOT_TRUSTED},
 		{api.ErrInterpreter, connect.CodeFailedPrecondition, berthv1.ErrorReason_ERROR_REASON_INTERPRETER},
+		{api.ErrBadGlob, connect.CodeInvalidArgument, berthv1.ErrorReason_ERROR_REASON_BAD_GLOB},
 		{errors.New("helper said /secret/path"), connect.CodeInternal, berthv1.ErrorReason_ERROR_REASON_UNSPECIFIED},
 	}
 	for _, tc := range cases {

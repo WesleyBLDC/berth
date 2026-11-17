@@ -124,7 +124,26 @@ func (h *handlers) admitStore(ctx context.Context) (func(), error) {
 	return release, nil
 }
 
+// commonError maps the errors every service answers alike: berthd not recording an outcome
+// (ErrUnavailable, which also covers an actor that stopped under a step), and a call that ran out
+// of time or was cancelled. It returns nil for anything else.
+func commonError(err error) error {
+	switch {
+	case errors.Is(err, ErrUnavailable):
+		return withReason(connect.NewError(connect.CodeUnavailable, "berthd could not record the outcome; try again once berth status shows Serving"),
+			berthv1.ErrorReason_ERROR_REASON_NOT_SERVING)
+	case errors.Is(err, context.DeadlineExceeded):
+		return connect.NewError(connect.CodeDeadlineExceeded, "the call ran out of time before berthd had an outcome")
+	case errors.Is(err, context.Canceled):
+		return connect.NewError(connect.CodeCanceled, "the call ended before berthd had an outcome")
+	}
+	return nil
+}
+
 func agentsError(err error) error {
+	if ce := commonError(err); ce != nil {
+		return ce
+	}
 	switch {
 	case err == nil:
 		return nil
@@ -139,11 +158,6 @@ func agentsError(err error) error {
 	case errors.Is(err, ErrAgentSessionNotFound):
 		return withReason(connect.NewError(connect.CodeNotFound, "no agent session has this id"),
 			berthv1.ErrorReason_ERROR_REASON_AGENT_SESSION_NOT_FOUND)
-	case errors.Is(err, ErrUnavailable):
-		return withReason(connect.NewError(connect.CodeUnavailable, "berthd could not record the outcome; try again once berth status shows Serving"),
-			berthv1.ErrorReason_ERROR_REASON_NOT_SERVING)
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		return connect.NewError(connect.CodeCanceled, "the call ended before berthd had an outcome")
 	}
 	return connect.NewError(connect.CodeInternal, "berthd could not complete the agent session request")
 }

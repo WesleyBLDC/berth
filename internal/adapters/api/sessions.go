@@ -68,6 +68,9 @@ func (h *handlers) WatchSessions(ctx context.Context, req *berthv1.WatchSessions
 }
 
 func sessionError(err error) error {
+	if ce := commonError(err); ce != nil {
+		return ce
+	}
 	switch {
 	case err == nil:
 		return nil
@@ -76,9 +79,8 @@ func sessionError(err error) error {
 	case errors.Is(err, ErrSessionNotStoppable):
 		return withReason(connect.NewError(connect.CodeFailedPrecondition, err.Error()), berthv1.ErrorReason_ERROR_REASON_SESSION_NOT_STOPPABLE)
 	case errors.Is(err, ErrTooManyWatchers):
-		return connect.NewError(connect.CodeResourceExhausted, "too many session streams are open; close one and try again")
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		return connect.NewError(connect.CodeCanceled, "gave up")
+		return withReason(connect.NewError(connect.CodeResourceExhausted, "too many session streams are open; close one and try again"),
+			berthv1.ErrorReason_ERROR_REASON_RATE_LIMITED)
 	}
 	return connect.NewError(connect.CodeInternal, "could not read browser sessions")
 }

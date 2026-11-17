@@ -130,7 +130,7 @@ func TestWatchSessionsValidatesAndStreams(t *testing.T) {
 		t.Fatalf("negative cursor: %v, want InvalidArgument", err)
 	}
 	fake.err = api.ErrTooManyWatchers
-	if _, err := recv(0); connect.CodeOf(err) != connect.CodeResourceExhausted {
-		t.Fatalf("too many streams: %v, want ResourceExhausted", err)
+	if _, err := recv(0); connect.CodeOf(err) != connect.CodeResourceExhausted || api.ReasonOf(err) != berthv1.ErrorReason_ERROR_REASON_RATE_LIMITED {
+		t.Fatalf("too many streams: %v, want ResourceExhausted and RATE_LIMITED", err)
 	}
 }

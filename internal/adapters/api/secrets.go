@@ -257,6 +257,9 @@ func (h *handlers) StartProxy(ctx context.Context, req *berthv1.StartProxyReques
 // secretsError maps the Secrets errors to typed Connect errors. Messages are fixed text, so no
 // detail from deeper layers (paths, helper output) reaches a caller.
 func secretsError(err error) error {
+	if ce := commonError(err); ce != nil {
+		return ce
+	}
 	switch {
 	case err == nil:
 		return nil
@@ -293,13 +296,13 @@ func secretsError(err error) error {
 		return withReason(connect.NewError(connect.CodeResourceExhausted, "this agent session has as many proxies running, or started as many in the last hour, as berthd allows; let one end or wait"),
 			berthv1.ErrorReason_ERROR_REASON_RATE_LIMITED)
 	case errors.Is(err, ErrProxyNotStarted):
-		return connect.NewError(connect.CodeUnavailable, "berthd could not start berth-proxy; berthd's log says why")
+		return withReason(connect.NewError(connect.CodeUnavailable, "berthd could not start berth-proxy; berthd's log says why"),
+			berthv1.ErrorReason_ERROR_REASON_PROXY_NOT_STARTED)
 	case errors.Is(err, ErrBadGlob):
-		return connect.NewError(connect.CodeInvalidArgument, "args_glob is not a valid pattern")
+		return withReason(connect.NewError(connect.CodeInvalidArgument, "args_glob is not a valid pattern"),
+			berthv1.ErrorReason_ERROR_REASON_BAD_GLOB)
 	case errors.Is(err, ErrCallerUnknown):
 		return connect.NewError(connect.CodePermissionDenied, "berthd could not identify the calling process")
-	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
-		return connect.NewError(connect.CodeCanceled, "the call ended before berthd had an outcome")
 	case connect.CodeOf(err) == connect.CodeUnimplemented:
 		return connect.NewError(connect.CodeUnimplemented, "berthd does not serve this method yet")
 	}

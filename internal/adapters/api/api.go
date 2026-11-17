@@ -146,7 +146,7 @@ func (h *handlers) GetState(ctx context.Context, req *berthv1.GetStateRequest) (
 		return nil, connect.NewError(connect.CodeInternal, "could not read state")
 	}
 	if !found {
-		return nil, connect.Errorf(connect.CodeNotFound, "no entity %q", req.GetEntity())
+		return nil, withReason(connect.Errorf(connect.CodeNotFound, "no entity %q", req.GetEntity()), berthv1.ErrorReason_ERROR_REASON_ENTITY_NOT_FOUND)
 	}
 	limit := int(req.GetHistoryLimit())
 	if limit == 0 {

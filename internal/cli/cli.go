@@ -314,6 +314,12 @@ func reportError(w io.Writer, err error, name, target string) int {
 		line = fmt.Sprintf("no managed browser has id %s; berth browser ls lists them", target)
 	case berthv1.ErrorReason_ERROR_REASON_BROWSER_LAUNCH_FAILED:
 		line = err.Error()
+	case berthv1.ErrorReason_ERROR_REASON_BAD_GLOB:
+		line = "the --args pattern is not a valid glob"
+	case berthv1.ErrorReason_ERROR_REASON_PROXY_NOT_STARTED:
+		line = "berthd could not start berth-proxy; berthd's log says why"
+	case berthv1.ErrorReason_ERROR_REASON_ENTITY_NOT_FOUND:
+		line = fmt.Sprintf("no state machine entity named %s", target)
 	case berthv1.ErrorReason_ERROR_REASON_UNSPECIFIED:
 		line = err.Error()
 	}
