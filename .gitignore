@@ -1,0 +1,20 @@
+# Go
+/bin/
+*.test
+*.out
+coverage.*
+
+# Xcode
+macos/**/build/
+macos/**/DerivedData/
+*.xcuserstate
+xcuserdata/
+
+# Local config and state, never committed
+/config.local.toml
+*.sqlite
+*.sqlite-*
+.env
+
+# macOS
+.DS_Store
