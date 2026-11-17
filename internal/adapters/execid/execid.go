@@ -32,9 +32,10 @@ func New(codesign string) *Identity { return &Identity{codesign: codesign} }
 
 var _ ports.ExecIdentity = (*Identity)(nil)
 
-// Identify resolves path, hashes the file, and reads its signature. A missing file returns an
-// error wrapping os.ErrNotExist; a file that is not signed, or whose signature does not verify,
-// has empty TeamID and SigningID.
+// Identify resolves path, hashes the file, and reads its signature and cdhash. A missing file
+// returns an error wrapping os.ErrNotExist; a file that is not signed, or whose signature does not
+// verify, has empty TeamID and SigningID. A #! script's CDHash is its interpreter's, since that is
+// the image the kernel runs; a file with no code directory has a zero CDHash.
 func (x *Identity) Identify(ctx context.Context, path string) (ports.Executable, error) {
 	abs, err := filepath.Abs(path)
 	if err != nil {
@@ -44,7 +45,7 @@ func (x *Identity) Identify(ctx context.Context, path string) (ports.Executable,
 	if err != nil {
 		return ports.Executable{}, fmt.Errorf("resolve executable: %w", err)
 	}
-	sum, shebang, err := hashFile(resolved)
+	sum, interpreter, shebang, err := hashFile(resolved)
 	if err != nil {
 		return ports.Executable{}, err
 	}
@@ -52,39 +53,59 @@ func (x *Identity) Identify(ctx context.Context, path string) (ports.Executable,
 	if err != nil {
 		return ports.Executable{}, err
 	}
-	return ports.Executable{Path: resolved, SHA256: sum, TeamID: team, SigningID: signing, Shebang: shebang}, nil
+	image := resolved
+	if shebang {
+		image = interpreter
+	}
+	var cdhash ports.CDHash
+	if image != "" {
+		if cdhash, err = x.CDHash(ctx, image); err != nil {
+			cdhash = ports.CDHash{}
+		}
+	}
+	return ports.Executable{Path: resolved, SHA256: sum, TeamID: team, SigningID: signing, Shebang: shebang, CDHash: cdhash}, nil
 }
 
-func hashFile(path string) (sum [32]byte, shebang bool, err error) {
+// hashFile hashes the file and, for a #! script, returns the interpreter path its first line
+// names (empty unless absolute).
+func hashFile(path string) (sum [32]byte, interpreter string, shebang bool, err error) {
 	f, err := os.Open(path) //nolint:gosec // identifying an arbitrary executable is this adapter's job
 	if err != nil {
-		return sum, false, fmt.Errorf("open executable: %w", err)
+		return sum, "", false, fmt.Errorf("open executable: %w", err)
 	}
 	defer func() { _ = f.Close() }()
 	info, err := f.Stat()
 	if err != nil {
-		return sum, false, fmt.Errorf("stat executable: %w", err)
+		return sum, "", false, fmt.Errorf("stat executable: %w", err)
 	}
 	if !info.Mode().IsRegular() {
-		return sum, false, fmt.Errorf("executable %s is not a regular file", path)
+		return sum, "", false, fmt.Errorf("executable %s is not a regular file", path)
 	}
 	h := sha256.New()
 	var head headWriter
 	if _, err := io.Copy(io.MultiWriter(h, &head), f); err != nil {
-		return sum, false, fmt.Errorf("read executable: %w", err)
+		return sum, "", false, fmt.Errorf("read executable: %w", err)
 	}
 	h.Sum(sum[:0])
-	return sum, head.n >= 2 && head.b[0] == '#' && head.b[1] == '!', nil
+	line, ok := bytes.CutPrefix(head.b[:min(head.n, len(head.b))], []byte("#!"))
+	if !ok {
+		return sum, "", false, nil
+	}
+	line, _, _ = bytes.Cut(line, []byte("\n"))
+	if fields := strings.Fields(string(line)); len(fields) > 0 && filepath.IsAbs(fields[0]) {
+		interpreter = fields[0]
+	}
+	return sum, interpreter, true, nil
 }
 
-// headWriter keeps the first two bytes written to it.
+// headWriter keeps the first bytes written to it, enough for the #! line the kernel reads.
 type headWriter struct {
-	b [2]byte
+	b [512]byte
 	n int
 }
 
 func (w *headWriter) Write(p []byte) (int, error) {
-	w.n += copy(w.b[min(w.n, 2):], p)
+	w.n += copy(w.b[min(w.n, len(w.b)):], p)
 	return len(p), nil
 }
 

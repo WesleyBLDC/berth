@@ -1,9 +1,11 @@
 package cli
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"os/signal"
@@ -14,7 +16,9 @@ import (
 
 	berthv1 "berth/gen/berth/v1"
 	"berth/internal/core/envpolicy"
+	"berth/internal/core/ports"
 	"berth/internal/mask"
+	"berth/internal/spawn"
 )
 
 var envKey = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -82,6 +86,7 @@ func runCommand(ctx context.Context, args []string, env Env) int {
 	tickets := make([][]byte, len(bindings))
 	// A variable passes only when every grant used here lists it.
 	var passEnv []string
+	var pinned []byte
 	for i, b := range bindings {
 		resp, err := c.Secrets.AuthorizeUse(ctx, &berthv1.AuthorizeUseRequest{RequestId: requestID(), Name: b.name, ExePath: exe, Argv: argv})
 		if err != nil {
@@ -90,6 +95,14 @@ func runCommand(ctx context.Context, args []string, env Env) int {
 		switch resp.GetOutcome() {
 		case berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED:
 			tickets[i] = resp.GetTicket()
+			// Every grant here pins the same file, so they pin one image; one that pins another,
+			// or none, cannot be checked against the child.
+			if len(resp.GetCdhash()) != len(ports.CDHash{}) || (i > 0 && !bytes.Equal(resp.GetCdhash(), pinned)) {
+				fmt.Fprintf(env.Stderr, "berthd pinned no single code identity for %s; ask the person to run: berth secret grant %s --exe %s\n",
+					exe, b.name, exe)
+				return ExitStaleGrant
+			}
+			pinned = resp.GetCdhash()
 			if i == 0 {
 				passEnv = resp.GetPassEnv()
 			} else {
@@ -103,6 +116,7 @@ func runCommand(ctx context.Context, args []string, env Env) int {
 		case berthv1.UseOutcome_USE_OUTCOME_STALE_GRANT:
 			fmt.Fprintf(env.Stderr, "%s changed since it was granted %s; ask the person to run: berth secret grant %s --exe %s\n",
 				exe, b.name, b.name, exe)
+			fmt.Fprintln(env.Stderr, "grants made before this version of berth go stale at their first use and need one fresh berth secret grant")
 			return ExitStaleGrant
 		case berthv1.UseOutcome_USE_OUTCOME_UNSPECIFIED:
 		}
@@ -124,53 +138,194 @@ func runCommand(ctx context.Context, args []string, env Env) int {
 		}
 		values = append(values, v)
 	}
-	return startChild(ctx, exe, argv, envpolicy.Child(os.Environ(), passEnv), bindings, values, env)
+	var want ports.CDHash
+	copy(want[:], pinned)
+	return startVerified(ctx, exe, argv, envpolicy.Child(os.Environ(), passEnv), bindings, values, want, env)
 }
 
-// startChild runs exe with childEnv plus the secrets. With secrets, childEnv comes from
-// envpolicy, never the whole environment berth was started with; a proxied child holds none.
-func startChild(ctx context.Context, exe string, argv, childEnv []string, bindings envFlags, values [][]byte, env Env) int {
-	cmd := exec.CommandContext(ctx, exe, argv...) //nolint:gosec // running the person's chosen command is what berth run is for
-	cmd.Stdin, cmd.Stdout, cmd.Stderr = env.Stdin, env.Stdout, env.Stderr
-	// Without values there is nothing to mask, and the child keeps berth's terminal as its own.
-	if len(values) > 0 {
-		stdout, stderr := mask.NewWriter(env.Stdout, values), mask.NewWriter(env.Stderr, values)
-		defer func() { _ = stdout.Close(); _ = stderr.Close() }()
-		cmd.Stdout, cmd.Stderr = stdout, stderr
+// startVerified starts exe suspended with childEnv plus the secrets, and lets it run only if the
+// kernel reports the cdhash berthd pinned when the person granted it: a file swapped after
+// AuthorizeUse hashed it is killed before its first instruction. The secrets stay []byte all the
+// way into the child's environment, and childEnv comes from envpolicy, never berth's own.
+func startVerified(ctx context.Context, exe string, argv, childEnv []string, bindings envFlags, values [][]byte, want ports.CDHash, env Env) int {
+	// A C environment ends each entry at a NUL, so such a value would reach the child cut short.
+	for i, v := range values {
+		if bytes.IndexByte(v, 0) >= 0 {
+			fmt.Fprintf(env.Stderr, "secret %s contains a NUL byte, which cannot go into an environment variable; nothing started\n", bindings[i].name)
+			return ExitError
+		}
 	}
-	cmd.Env = slices.Clone(childEnv)
+	stdout, stderr := mask.NewWriter(env.Stdout, values), mask.NewWriter(env.Stderr, values)
+	defer func() { _ = stdout.Close(); _ = stderr.Close() }()
+	entries := make([][]byte, 0, len(childEnv)+len(bindings))
+	for _, e := range childEnv {
+		entries = append(entries, []byte(e))
+	}
 	for i, b := range bindings {
-		cmd.Env = append(cmd.Env, envEntry(b.key, values[i]))
+		entries = append(entries, append([]byte(b.key+"="), values[i]...))
+	}
+	wipe := func() {
+		for _, e := range entries {
+			clear(e)
+		}
+		for _, v := range values {
+			clear(v)
+		}
+	}
+	defer wipe()
+	std, err := newStdio(env.Stdin, stdout, stderr)
+	if err != nil {
+		fmt.Fprintf(env.Stderr, "cannot start %s: %v\n", exe, err)
+		return ExitError
+	}
+	defer std.close()
+	if env.BeforeStart != nil {
+		if err := env.BeforeStart(exe); err != nil {
+			fmt.Fprintf(env.Stderr, "cannot start %s: %v\n", exe, err)
+			return ExitError
+		}
 	}
 
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
 	defer signal.Stop(signals)
 
-	err := cmd.Start()
-	cmd.Env = nil
-	for _, v := range values {
-		clear(v)
-	}
+	pid, err := spawn.StartSuspended(exe, append([]string{exe}, argv...), entries, std.child)
+	std.started()
+	wipe()
 	if err != nil {
 		fmt.Fprintf(env.Stderr, "cannot start %s: %v\n", exe, err)
 		return ExitError
 	}
+	proc, err := os.FindProcess(pid)
+	if err != nil {
+		fmt.Fprintf(env.Stderr, "cannot find %s after starting it: %v\n", exe, err)
+		return ExitError
+	}
+	if live, err := spawn.Live(pid); err != nil || live.CDHash != want || !live.Valid() {
+		_ = proc.Kill()
+		_, _ = proc.Wait()
+		std.wait()
+		fmt.Fprintf(env.Stderr, "%s is not the code that was granted; berth killed it before it ran. Ask the person to check the file, then run: berth secret grant %s --exe %s\n",
+			exe, bindings[0].name, exe)
+		return ExitStaleGrant
+	}
+	if err := spawn.Resume(pid); err != nil {
+		_ = proc.Kill()
+		_, _ = proc.Wait()
+		std.wait()
+		fmt.Fprintf(env.Stderr, "cannot resume %s: %v\n", exe, err)
+		return ExitError
+	}
+	stop := forwardSignals(ctx, proc, signals)
+	state, err := proc.Wait()
+	stop()
+	std.wait()
+	if err != nil {
+		fmt.Fprintln(env.Stderr, err)
+		return ExitError
+	}
+	return exitStatus(state)
+}
+
+// stdio gives a suspended child real descriptors: an *os.File is handed over as it is, and any
+// other reader or writer gets a pipe and a copying goroutine, as exec.Cmd does.
+type stdio struct {
+	child [3]*os.File
+	// mine are the pipe ends berth keeps; theirs are closed once the child holds its copies.
+	mine, theirs []*os.File
+	copies       []chan struct{}
+}
+
+func newStdio(in io.Reader, out, errOut io.Writer) (*stdio, error) {
+	s := &stdio{}
+	if f, ok := in.(*os.File); ok {
+		s.child[0] = f
+	} else {
+		r, w, err := os.Pipe()
+		if err != nil {
+			return nil, err
+		}
+		s.child[0], s.theirs, s.mine = r, append(s.theirs, r), append(s.mine, w)
+		go func() { _, _ = io.Copy(w, in); _ = w.Close() }()
+	}
+	for i, dst := range []io.Writer{out, errOut} {
+		r, w, err := os.Pipe()
+		if err != nil {
+			s.close()
+			return nil, err
+		}
+		s.child[i+1], s.theirs, s.mine = w, append(s.theirs, w), append(s.mine, r)
+		done := make(chan struct{})
+		s.copies = append(s.copies, done)
+		go func() { _, _ = io.Copy(dst, r); close(done) }()
+	}
+	return s, nil
+}
+
+// started closes berth's copies of the child's ends, so output ends when the child's does.
+func (s *stdio) started() {
+	for _, f := range s.theirs {
+		_ = f.Close()
+	}
+	s.theirs = nil
+}
+
+// wait returns once the child's output has been copied.
+func (s *stdio) wait() {
+	s.started()
+	for _, done := range s.copies {
+		<-done
+	}
+}
+
+func (s *stdio) close() {
+	s.started()
+	for _, f := range s.mine {
+		_ = f.Close()
+	}
+}
+
+// startChild runs a proxied child, which holds no secret, with childEnv.
+func startChild(ctx context.Context, exe string, argv, childEnv []string, env Env) int {
+	cmd := exec.CommandContext(ctx, exe, argv...) //nolint:gosec // running the person's chosen command is what berth run is for
+	cmd.Stdin, cmd.Stdout, cmd.Stderr = env.Stdin, env.Stdout, env.Stderr
+	cmd.Env = slices.Clone(childEnv)
+
+	signals := make(chan os.Signal, 1)
+	signal.Notify(signals, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(signals)
+
+	if err := cmd.Start(); err != nil {
+		fmt.Fprintf(env.Stderr, "cannot start %s: %v\n", exe, err)
+		return ExitError
+	}
+	stop := forwardSignals(ctx, cmd.Process, signals)
+	err := cmd.Wait()
+	stop()
+	return exitCode(err, env)
+}
+
+// forwardSignals passes SIGTERM on to the child until stop is called, and kills the child if
+// ctx ends first.
+func forwardSignals(ctx context.Context, p *os.Process, signals <-chan os.Signal) (stop func()) {
 	done := make(chan struct{})
-	defer close(done)
 	go func() {
 		for {
 			select {
 			case s := <-signals:
 				if forwarded(s) {
-					_ = cmd.Process.Signal(s)
+					_ = p.Signal(s)
 				}
+			case <-ctx.Done():
+				_ = p.Kill()
+				return
 			case <-done:
 				return
 			}
 		}
 	}()
-	return exitCode(cmd.Wait(), env)
+	return func() { close(done) }
 }
 
 // forwarded reports whether berth passes a signal on to its child. The child shares berth's
@@ -178,13 +333,6 @@ func startChild(ctx context.Context, exe string, argv, childEnv []string, bindin
 // a terminal Ctrl-C already reaches it; forwarding SIGINT too would deliver it twice. berth
 // still catches SIGINT so it outlives the child and reports the child's exit.
 func forwarded(s os.Signal) bool { return s == syscall.SIGTERM }
-
-// envEntry is the one place a secret value becomes a Go string: exec.Cmd.Env is a []string and
-// the standard library offers no byte-slice way to hand a child its environment. The string
-// cannot be zeroed, so the caller drops its reference as soon as the child has started.
-func envEntry(key string, value []byte) string {
-	return key + "=" + string(value)
-}
 
 func exitCode(err error, env Env) int {
 	if err == nil {
@@ -195,8 +343,12 @@ func exitCode(err error, env Env) int {
 		fmt.Fprintln(env.Stderr, err)
 		return ExitError
 	}
-	if ws, ok := exitErr.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
+	return exitStatus(exitErr.ProcessState)
+}
+
+func exitStatus(state *os.ProcessState) int {
+	if ws, ok := state.Sys().(syscall.WaitStatus); ok && ws.Signaled() {
 		return 128 + int(ws.Signal())
 	}
-	return exitErr.ExitCode()
+	return state.ExitCode()
 }

@@ -8,7 +8,7 @@ Every check rests on kernel facts (audit tokens, live cdhash), never on paths or
 
 1. **Per run CA passed through environment variables**, not a persistent CA in the login keychain: no global trust change, no admin prompt. Trade: tools that only use the macOS trust store (Go binaries, Swift `URLSession`) cannot use the proxy in E2b.
 2. **`copy` is deferred** to E3 or the M5 app: any agent can poll the clipboard while a person approves, and without E3 the "refused for agents" check is only a process tree heuristic.
-3. **Scope moves:** MCP tools to M4 (with `berth-mcp` and session tokens), adopting existing Keychain items to after E3 (and only as a copy into `berth.<name>`, never by reference), the Always Allow audit, Herdr labels and `--from-clipboard` to later. The cdhash pinned suspended exec that closes the E2a hash to exec race is item 7, after integration.
+3. **Scope moves:** MCP tools to M4 (with `berth-mcp` and session tokens), adopting existing Keychain items to after E3 (and only as a copy into `berth.<name>`, never by reference), the Always Allow audit, Herdr labels and `--from-clipboard` to later. The cdhash pinned suspended exec that narrows the E2a hash to exec race is item 7, after integration.
 
 ## Design
 
@@ -139,4 +139,12 @@ What the e2e proves, and what it does not:
 - The canary run: A gets exactly `Bearer <canary>` once; B, not granted, gets the client's placeholder header untouched; plain HTTP gets 405 and never reaches A; C, granted but self signed, sees a failed TLS handshake and no request while the client gets 502 on its `CONNECT`; a wrong or missing credential gets 407; the canary is in no environment dump, CLI or child output, `berthd` log, database file or proxy temp file (checked during and after the run); the session ends `Ended` with one injected request.
 - Lifecycle: a revoke during a run stops injection and the session ends `Ended`; `SIGKILL` on the proxy makes the session `Lost` through kqueue `NOTE_EXIT`; `rotate` puts the new value in the next run; `rm` revokes the grants and the next `berth run --proxy` exits 8 with no session; `berth-proxy` with `GODEBUG` exits 2 before contacting `berthd`.
 - Ticket kinds: the fake helper's `trust_parent` switch takes the parent to be the other kind without checking its signature, so the e2e proves `berthd` records and returns the consumer kind and the helper refuses a mismatch; the signature half of the receiver check rests on the receiver table tests in `native/Tests/BerthNativeCoreTests/ReceiverTests.swift` and Wesley's manual check.
-- Remaining for the exit gate: item 7, the agent safety checklist walk for E2b, and Wesley's manual check with real signing, Touch ID and a real API with a test key.
+- Remaining for the exit gate: the agent safety checklist walk for E2b, and Wesley's manual check with real signing, Touch ID and a real API with a test key.
+
+## Exit notes (item 7)
+
+- Grants pin a cdhash (migration 0006, `AuthorizeUseResponse.cdhash`); `berth run --env` spawns the child with `POSIX_SPAWN_START_SUSPENDED` through libSystem trampolines (`internal/spawn`), compares the kernel's live cdhash by `csops`, then sends `SIGCONT` or `SIGKILL` (exit 6).
+- `TestSwappedBinaryNeverRuns` swaps the granted file through a `berth_e2e` only hook (`BERTH_E2E_SWAP_EXE`) after `AuthorizeUse`; the swapped binary is killed before it runs, proven by its marker file.
+- Limit: any `SIGCONT` lifts `POSIX_SPAWN_START_SUSPENDED`, so the check stops a file swap by itself but not a same user agent that also stops berth and resumes the child, or kills berth while the child waits; the swapped binary then runs with the values in its environment. No fix exists while values travel in the environment, and it falls under the accepted hostile same user threat model. The child stays in berth's process group so it keeps reading the terminal.
+- Scripts are checked by their interpreter's cdhash, so the race stays open for a script's own bytes; grants older than 0006 go Stale at their first use and must be granted again.
+- `berth run --proxy` still starts its child with `exec.Cmd`: that child holds no value, so the race does not apply.

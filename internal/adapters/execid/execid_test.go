@@ -149,15 +149,27 @@ func TestShebangAndCDHash(t *testing.T) {
 		t.Fatal(err)
 	}
 	id := New(DefaultCodesign)
-	if exe, err := id.Identify(t.Context(), script); err != nil || !exe.Shebang {
-		t.Fatalf("script: %+v, %v", exe, err)
+	sh, err := id.CDHash(t.Context(), "/bin/sh")
+	if err != nil {
+		t.Fatal(err)
 	}
-	if exe, err := id.Identify(t.Context(), "/bin/ls"); err != nil || exe.Shebang {
-		t.Fatalf("/bin/ls: %+v, %v", exe, err)
+	// The kernel runs a script's interpreter, so that is the image berth run will see.
+	if exe, err := id.Identify(t.Context(), script); err != nil || !exe.Shebang || exe.CDHash != sh {
+		t.Fatalf("script: %+v, %v", exe, err)
 	}
 	h, err := id.CDHash(t.Context(), "/bin/ls")
 	if err != nil || h == ([20]byte{}) {
 		t.Fatalf("cdhash %x, %v", h, err)
+	}
+	if exe, err := id.Identify(t.Context(), "/bin/ls"); err != nil || exe.Shebang || exe.CDHash != h {
+		t.Fatalf("/bin/ls: %+v, %v", exe, err)
+	}
+	relative := filepath.Join(dir, "relative")
+	if err := os.WriteFile(relative, []byte("#! sh -e\n"), 0o700); err != nil { //nolint:gosec // an executable fixture
+		t.Fatal(err)
+	}
+	if exe, err := id.Identify(t.Context(), relative); err != nil || !exe.Shebang || exe.CDHash != ([20]byte{}) {
+		t.Fatalf("script with a relative interpreter: %+v, %v", exe, err)
 	}
 	if _, err := id.CDHash(t.Context(), script); err == nil {
 		t.Fatal("an unsigned script has a cdhash")

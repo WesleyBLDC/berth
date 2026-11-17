@@ -27,12 +27,14 @@ func TestSecretAndGrantRecordsRoundTrip(t *testing.T) {
 	if err := s.AddSecret(ctx, "gh-token", first.Add(time.Hour)); err != nil {
 		t.Fatal(err)
 	}
-	exe := ports.Executable{Path: "/usr/bin/true", SHA256: [32]byte{0xab, 1}, TeamID: "T", SigningID: "S"}
+	exe := ports.Executable{Path: "/usr/bin/true", SHA256: [32]byte{0xab, 1}, TeamID: "T", SigningID: "S", CDHash: ports.CDHash{0xcd, 2}}
+	unpinned := exe
+	unpinned.CDHash = ports.CDHash{}
 	id1, err := s.AddGrant(ctx, ports.GrantRecord{Secret: "gh-token", Exe: exe, ArgsGlob: "-c *", PassEnv: []string{"GH_HOST", "AWS_REGION"}, CreatedAt: first})
 	if err != nil {
 		t.Fatal(err)
 	}
-	id2, err := s.AddGrant(ctx, ports.GrantRecord{Secret: "gh-token", Exe: exe, CreatedAt: first})
+	id2, err := s.AddGrant(ctx, ports.GrantRecord{Secret: "gh-token", Exe: unpinned, CreatedAt: first})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -59,7 +61,7 @@ func TestSecretAndGrantRecordsRoundTrip(t *testing.T) {
 	if err != nil || len(grants) != 2 {
 		t.Fatalf("grants %+v, %v", grants, err)
 	}
-	if grants[0].ID != id2 || !grants[0].LastUsedAt.IsZero() || grants[0].UseCount != 0 {
+	if grants[0].ID != id2 || grants[0].Exe != unpinned || !grants[0].LastUsedAt.IsZero() || grants[0].UseCount != 0 {
 		t.Fatalf("newest grant %+v", grants[0])
 	}
 	g := grants[1]

@@ -1311,7 +1311,11 @@ type AuthorizeUseResponse struct {
 	Ticket    []byte                 `protobuf:"bytes,2,opt,name=ticket,proto3" json:"ticket,omitempty"`
 	ExpiresAt *timestamppb.Timestamp `protobuf:"bytes,3,opt,name=expires_at,json=expiresAt,proto3" json:"expires_at,omitempty"`
 	// pass_env is the matched grant's list; berth run passes only these beyond the allowlist.
-	PassEnv       []string `protobuf:"bytes,4,rep,name=pass_env,json=passEnv,proto3" json:"pass_env,omitempty"`
+	PassEnv []string `protobuf:"bytes,4,rep,name=pass_env,json=passEnv,proto3" json:"pass_env,omitempty"`
+	// cdhash is the code directory hash berthd read from the executable when it was granted (for a
+	// script, its interpreter's), 20 bytes. berth run starts the child suspended and runs it only
+	// if the kernel reports this cdhash for it. Empty when the grant pinned none.
+	Cdhash        []byte `protobuf:"bytes,5,opt,name=cdhash,proto3" json:"cdhash,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -1370,6 +1374,13 @@ func (x *AuthorizeUseResponse) GetExpiresAt() *timestamppb.Timestamp {
 func (x *AuthorizeUseResponse) GetPassEnv() []string {
 	if x != nil {
 		return x.PassEnv
+	}
+	return nil
+}
+
+func (x *AuthorizeUseResponse) GetCdhash() []byte {
+	if x != nil {
+		return x.Cdhash
 	}
 	return nil
 }
@@ -2405,13 +2416,14 @@ const file_berth_v1_secrets_proto_rawDesc = "" +
 	"\x04name\x18\x02 \x01(\tB#\xbaH r\x1e2\x1c^[a-z0-9][a-z0-9._-]{0,127}$R\x04name\x12&\n" +
 	"\bexe_path\x18\x03 \x01(\tB\v\xbaH\br\x06\x18\x80\b:\x01/R\aexePath\x12$\n" +
 	"\x04argv\x18\x04 \x03(\tB\x10\xbaH\r\x92\x01\n" +
-	"\x10\x80\x02\"\x05r\x03\x18\x80 R\x04argv\"\xb4\x01\n" +
+	"\x10\x80\x02\"\x05r\x03\x18\x80 R\x04argv\"\xcc\x01\n" +
 	"\x14AuthorizeUseResponse\x12.\n" +
 	"\aoutcome\x18\x01 \x01(\x0e2\x14.berth.v1.UseOutcomeR\aoutcome\x12\x16\n" +
 	"\x06ticket\x18\x02 \x01(\fR\x06ticket\x129\n" +
 	"\n" +
 	"expires_at\x18\x03 \x01(\v2\x1a.google.protobuf.TimestampR\texpiresAt\x12\x19\n" +
-	"\bpass_env\x18\x04 \x03(\tR\apassEnv\"d\n" +
+	"\bpass_env\x18\x04 \x03(\tR\apassEnv\x12\x16\n" +
+	"\x06cdhash\x18\x05 \x01(\fR\x06cdhash\"d\n" +
 	"\x16RedeemUseTicketRequest\x12)\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tB\n" +

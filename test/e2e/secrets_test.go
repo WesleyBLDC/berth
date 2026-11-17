@@ -587,3 +587,57 @@ func mustReadDir(t *testing.T, dir string) []string {
 	}
 	return names
 }
+
+// TestSwappedBinaryNeverRuns closes the race between berthd hashing the granted file and berth
+// run starting it: the berth_e2e hook swaps the file in that window, and the child the kernel
+// loads has another cdhash, so berth kills it while it is still suspended.
+func TestSwappedBinaryNeverRuns(t *testing.T) {
+	h := home(t)
+	canary := "canary-swap-" + rand.Text()
+	fakeDir := filepath.Join(h, "fake-native")
+	if err := os.MkdirAll(fakeDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := json.Marshal(map[string]string{"answer": "approve", "value": base64.StdEncoding.EncodeToString([]byte(canary))})
+	if err := os.WriteFile(filepath.Join(fakeDir, "config.json"), cfg, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	start(t, h)
+	waitServing(t, h)
+	var outputs []string
+	if out, code := cliRun(t, h, &outputs, "secret", "request", "swap-token", "--why", "e2e"); code != 0 {
+		t.Fatalf("request: %d %q", code, out)
+	}
+	exe := consumerCopy(t)
+	if out, code := cliRun(t, h, &outputs, "secret", "grant", "swap-token", "--exe", exe); code != 0 {
+		t.Fatalf("grant: %d %q", code, out)
+	}
+	marker := filepath.Join(t.TempDir(), "ran")
+	// Unswapped, the granted consumer runs and gets the value.
+	sum := sha256.Sum256([]byte(canary))
+	if out, code := cliRun(t, h, &outputs, "run", "--env", "K=swap-token", "--", exe, marker); code != 0 || !strings.HasPrefix(out, hex.EncodeToString(sum[:])) {
+		t.Fatalf("run before the swap: %d %q", code, out)
+	}
+
+	swap := []string{"BERTH_E2E_SWAP_EXE=" + filepath.Join(binDir, "marker")}
+	out, code := cliRunEnv(t, h, swap, &outputs, "run", "--env", "K=swap-token", "--", exe, marker)
+	if code != 6 || !strings.Contains(out, "is not the code that was granted; berth killed it before it ran") {
+		t.Fatalf("swapped run: %d %q", code, out)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("the swapped binary ran: %v", err)
+	}
+	// The file in place now is the marker, and it does run when started directly, so the run
+	// above was refused, not broken.
+	if err := exec.CommandContext(t.Context(), exe, marker).Run(); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(marker); err != nil {
+		t.Fatalf("the marker binary does not work: %v", err)
+	}
+	for i, o := range outputs {
+		if strings.Contains(o, canary) {
+			t.Errorf("canary in output %d", i)
+		}
+	}
+}
