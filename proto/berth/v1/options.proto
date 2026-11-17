@@ -48,6 +48,14 @@ enum ErrorReason {
   // SESSION_NOT_STOPPABLE refuses a stop of another user's browser, or of one owned by the
   // person or an app without force.
   ERROR_REASON_SESSION_NOT_STOPPABLE = 15;
+  // AGENT_TOKEN_INVALID refuses an agent socket call whose berth-agent-token header is missing,
+  // unknown, expired or revoked, whose session ended, or that comes from a process outside the
+  // session's process tree; one reason for all, so a copied token learns nothing.
+  ERROR_REASON_AGENT_TOKEN_INVALID = 16;
+  // RATE_LIMITED refuses a store request beyond an agent session's limit on store dialogs.
+  ERROR_REASON_RATE_LIMITED = 17;
+  // AGENT_SESSION_NOT_FOUND means no agent session has that id.
+  ERROR_REASON_AGENT_SESSION_NOT_FOUND = 18;
 }
 
 message ErrorInfo {

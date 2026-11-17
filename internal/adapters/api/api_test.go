@@ -143,12 +143,13 @@ func eachMethod(f func(m protoreflect.MethodDescriptor)) {
 }
 
 // TestNoFieldCarriesAValue pins the only places that could hold secret material: bytes fields
-// (tickets and a pinned cdhash, which are not values) and fields named for a value (the proxy
-// header's fixed text).
+// (tickets and a pinned cdhash, which are not values), fields named for a value (the proxy
+// header's fixed text) and fields named for a token (the agent session token, returned once).
 func TestNoFieldCarriesAValue(t *testing.T) {
 	allowed := []string{
 		"berth.v1.AuthorizeUseResponse.cdhash",
 		"berth.v1.AuthorizeUseResponse.ticket",
+		"berth.v1.CreateAgentSessionResponse.token",
 		"berth.v1.ProxyTarget.value_prefix",
 		"berth.v1.ProxyTarget.value_suffix",
 		"berth.v1.ProxyTicket.ticket",
@@ -165,7 +166,7 @@ func TestNoFieldCarriesAValue(t *testing.T) {
 		for i := range md.Fields().Len() {
 			fd := md.Fields().Get(i)
 			name := string(fd.Name())
-			if fd.Kind() == protoreflect.BytesKind || strings.Contains(name, "value") || strings.Contains(name, "password") || strings.Contains(name, "plaintext") {
+			if fd.Kind() == protoreflect.BytesKind || strings.Contains(name, "value") || strings.Contains(name, "password") || strings.Contains(name, "plaintext") || strings.Contains(name, "token") {
 				found = append(found, string(fd.FullName()))
 			}
 			if fd.Message() != nil {
@@ -185,7 +186,7 @@ func TestNoFieldCarriesAValue(t *testing.T) {
 
 // TestMutatingMethodsTakeARequestID keeps every method that changes something idempotent.
 func TestMutatingMethodsTakeARequestID(t *testing.T) {
-	readOnly := []string{"Handshake", "Status", "GetState", "ListSecrets", "WatchProxySession", "ListSessions", "InspectSession", "WatchSessions"}
+	readOnly := []string{"Handshake", "Status", "GetState", "ListSecrets", "WatchProxySession", "ListSessions", "InspectSession", "WatchSessions", "ListAgentSessions"}
 	eachMethod(func(m protoreflect.MethodDescriptor) {
 		if slices.Contains(readOnly, string(m.Name())) {
 			return

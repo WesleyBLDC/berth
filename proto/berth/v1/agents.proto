@@ -1,0 +1,78 @@
+syntax = "proto3";
+
+package berth.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
+
+// AgentService issues and ends agent sessions. No method is on the agent surface: only the owner
+// creates, lists and revokes sessions. Every agent method on the agent socket needs the token a
+// session was created with, sent in the berth-agent-token request header, never in a message.
+service AgentService {
+  // CreateAgentSession returns the session's token once. berthd keeps only its SHA-256, and the
+  // request log keeps the reply without the token, so a retry with the same request id gets the
+  // session but no token.
+  rpc CreateAgentSession(CreateAgentSessionRequest) returns (CreateAgentSessionResponse);
+  rpc ListAgentSessions(ListAgentSessionsRequest) returns (ListAgentSessionsResponse);
+  // RevokeAgentSession ends a session at once; its token is refused from then on.
+  rpc RevokeAgentSession(RevokeAgentSessionRequest) returns (RevokeAgentSessionResponse);
+}
+
+// AgentSessionState mirrors the agent session machine's states.
+enum AgentSessionState {
+  AGENT_SESSION_STATE_UNSPECIFIED = 0;
+  // ISSUED is a session whose token no process has presented yet.
+  AGENT_SESSION_STATE_ISSUED = 1;
+  // BOUND is a session tied to the process tree of the first process that presented its token.
+  AGENT_SESSION_STATE_BOUND = 2;
+  AGENT_SESSION_STATE_EXPIRED = 3;
+  AGENT_SESSION_STATE_REVOKED = 4;
+  // ENDED is a session whose root process exited.
+  AGENT_SESSION_STATE_ENDED = 5;
+}
+
+message AgentSession {
+  // id is 32 lowercase hex characters; it is not derived from the token and grants nothing.
+  string id = 1;
+  string name = 2;
+  AgentSessionState state = 3;
+  google.protobuf.Timestamp created_at = 4;
+  google.protobuf.Timestamp expires_at = 5;
+  // root_pid is the process tree root the session is bound to; 0 until it is bound.
+  int32 root_pid = 6;
+}
+
+message CreateAgentSessionRequest {
+  string request_id = 1 [(buf.validate.field).string = {
+    min_len: 8
+    max_len: 128
+  }];
+  // name is a label for the person; empty is allowed.
+  string name = 2 [(buf.validate.field).string.pattern = "^([A-Za-z0-9][A-Za-z0-9._-]{0,63})?$"];
+  // ttl_seconds is how long the token stays valid; 0 means 12 hours, and at most 7 days.
+  uint32 ttl_seconds = 3 [(buf.validate.field).uint32.lte = 604800];
+}
+
+message CreateAgentSessionResponse {
+  AgentSession session = 1;
+  // token is set only in the first reply; berthd cannot show it again.
+  string token = 2;
+}
+
+message ListAgentSessionsRequest {}
+
+message ListAgentSessionsResponse {
+  repeated AgentSession sessions = 1;
+}
+
+message RevokeAgentSessionRequest {
+  string request_id = 1 [(buf.validate.field).string = {
+    min_len: 8
+    max_len: 128
+  }];
+  string id = 2 [(buf.validate.field).string.pattern = "^[0-9a-f]{32}$"];
+}
+
+message RevokeAgentSessionResponse {
+  AgentSession session = 1;
+}

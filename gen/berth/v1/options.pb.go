@@ -61,6 +61,14 @@ const (
 	// SESSION_NOT_STOPPABLE refuses a stop of another user's browser, or of one owned by the
 	// person or an app without force.
 	ErrorReason_ERROR_REASON_SESSION_NOT_STOPPABLE ErrorReason = 15
+	// AGENT_TOKEN_INVALID refuses an agent socket call whose berth-agent-token header is missing,
+	// unknown, expired or revoked, whose session ended, or that comes from a process outside the
+	// session's process tree; one reason for all, so a copied token learns nothing.
+	ErrorReason_ERROR_REASON_AGENT_TOKEN_INVALID ErrorReason = 16
+	// RATE_LIMITED refuses a store request beyond an agent session's limit on store dialogs.
+	ErrorReason_ERROR_REASON_RATE_LIMITED ErrorReason = 17
+	// AGENT_SESSION_NOT_FOUND means no agent session has that id.
+	ErrorReason_ERROR_REASON_AGENT_SESSION_NOT_FOUND ErrorReason = 18
 )
 
 // Enum value maps for ErrorReason.
@@ -82,24 +90,30 @@ var (
 		13: "ERROR_REASON_NOT_AGENT_METHOD",
 		14: "ERROR_REASON_SESSION_NOT_FOUND",
 		15: "ERROR_REASON_SESSION_NOT_STOPPABLE",
+		16: "ERROR_REASON_AGENT_TOKEN_INVALID",
+		17: "ERROR_REASON_RATE_LIMITED",
+		18: "ERROR_REASON_AGENT_SESSION_NOT_FOUND",
 	}
 	ErrorReason_value = map[string]int32{
-		"ERROR_REASON_UNSPECIFIED":           0,
-		"ERROR_REASON_PROTOCOL_MISMATCH":     1,
-		"ERROR_REASON_REQUEST_ID_REUSED":     2,
-		"ERROR_REASON_NOT_SERVING":           3,
-		"ERROR_REASON_SECRET_NOT_FOUND":      4,
-		"ERROR_REASON_SECRET_EXISTS":         5,
-		"ERROR_REASON_EXECUTABLE_NOT_FOUND":  6,
-		"ERROR_REASON_TICKET_INVALID":        7,
-		"ERROR_REASON_PEER_NOT_TRUSTED":      8,
-		"ERROR_REASON_INTERPRETER":           9,
-		"ERROR_REASON_BUSY":                  10,
-		"ERROR_REASON_BAD_PROXY_TARGET":      11,
-		"ERROR_REASON_GRANT_NOT_FOUND":       12,
-		"ERROR_REASON_NOT_AGENT_METHOD":      13,
-		"ERROR_REASON_SESSION_NOT_FOUND":     14,
-		"ERROR_REASON_SESSION_NOT_STOPPABLE": 15,
+		"ERROR_REASON_UNSPECIFIED":             0,
+		"ERROR_REASON_PROTOCOL_MISMATCH":       1,
+		"ERROR_REASON_REQUEST_ID_REUSED":       2,
+		"ERROR_REASON_NOT_SERVING":             3,
+		"ERROR_REASON_SECRET_NOT_FOUND":        4,
+		"ERROR_REASON_SECRET_EXISTS":           5,
+		"ERROR_REASON_EXECUTABLE_NOT_FOUND":    6,
+		"ERROR_REASON_TICKET_INVALID":          7,
+		"ERROR_REASON_PEER_NOT_TRUSTED":        8,
+		"ERROR_REASON_INTERPRETER":             9,
+		"ERROR_REASON_BUSY":                    10,
+		"ERROR_REASON_BAD_PROXY_TARGET":        11,
+		"ERROR_REASON_GRANT_NOT_FOUND":         12,
+		"ERROR_REASON_NOT_AGENT_METHOD":        13,
+		"ERROR_REASON_SESSION_NOT_FOUND":       14,
+		"ERROR_REASON_SESSION_NOT_STOPPABLE":   15,
+		"ERROR_REASON_AGENT_TOKEN_INVALID":     16,
+		"ERROR_REASON_RATE_LIMITED":            17,
+		"ERROR_REASON_AGENT_SESSION_NOT_FOUND": 18,
 	}
 )
 
@@ -201,7 +215,7 @@ const file_berth_v1_options_proto_rawDesc = "" +
 	"\n" +
 	"\x16berth/v1/options.proto\x12\bberth.v1\x1a google/protobuf/descriptor.proto\":\n" +
 	"\tErrorInfo\x12-\n" +
-	"\x06reason\x18\x01 \x01(\x0e2\x15.berth.v1.ErrorReasonR\x06reason*\xa8\x04\n" +
+	"\x06reason\x18\x01 \x01(\x0e2\x15.berth.v1.ErrorReasonR\x06reason*\x97\x05\n" +
 	"\vErrorReason\x12\x1c\n" +
 	"\x18ERROR_REASON_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eERROR_REASON_PROTOCOL_MISMATCH\x10\x01\x12\"\n" +
@@ -219,7 +233,10 @@ const file_berth_v1_options_proto_rawDesc = "" +
 	"\x1cERROR_REASON_GRANT_NOT_FOUND\x10\f\x12!\n" +
 	"\x1dERROR_REASON_NOT_AGENT_METHOD\x10\r\x12\"\n" +
 	"\x1eERROR_REASON_SESSION_NOT_FOUND\x10\x0e\x12&\n" +
-	"\"ERROR_REASON_SESSION_NOT_STOPPABLE\x10\x0f:6\n" +
+	"\"ERROR_REASON_SESSION_NOT_STOPPABLE\x10\x0f\x12$\n" +
+	" ERROR_REASON_AGENT_TOKEN_INVALID\x10\x10\x12\x1d\n" +
+	"\x19ERROR_REASON_RATE_LIMITED\x10\x11\x12(\n" +
+	"$ERROR_REASON_AGENT_SESSION_NOT_FOUND\x10\x12:6\n" +
 	"\x05agent\x12\x1e.google.protobuf.MethodOptions\x18ц\x03 \x01(\bR\x05agentBy\n" +
 	"\fcom.berth.v1B\fOptionsProtoP\x01Z\x1aberth/gen/berth/v1;berthv1\xa2\x02\x03BXX\xaa\x02\bBerth.V1\xca\x02\bBerth\\V1\xe2\x02\x14Berth\\V1\\GPBMetadata\xea\x02\tBerth::V1b\x06proto3"
 
