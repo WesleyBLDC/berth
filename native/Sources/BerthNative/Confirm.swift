@@ -3,7 +3,7 @@ import Foundation
 
 @MainActor
 func runConfirm(_ line: Data) async -> Never {
-    let request: ConfirmRequest
+    let request: ConfirmPrompt
     do {
         request = try decodeConfirm(line)
     } catch {

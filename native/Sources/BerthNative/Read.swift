@@ -9,9 +9,11 @@ func readFailed(_ message: String) -> Never {
 
 func runRead(_ line: Data) -> Never {
     // The receiver is checked before the ticket is spent: the value goes only to the signed
-    // berth that started this helper, over the socket it handed over.
-    if let refusal = valueChannelRefusal(valueFD, parent: getppid(), requirement: berthCLIRequirement) {
-        readFailed(refusal)
+    // berth or berth-proxy that started this helper, over the socket it handed over.
+    let parent: ConsumerKind
+    switch checkValueChannel(valueFD, parent: getppid(), requirements: parentRequirements) {
+    case .parent(let kind): parent = kind
+    case .refused(let why): readFailed(why)
     }
     let ticket: [UInt8]
     do {
@@ -19,20 +21,27 @@ func runRead(_ line: Data) -> Never {
     } catch {
         readFailed(error.description)
     }
-    let path = socketPath(environment: ProcessInfo.processInfo.environment, fallbackHome: NSHomeDirectory())
-    let name: String
+    let redeemed: RedeemedTicket
     do {
-        let raw = try exchange(path: path, request: redeemRequest(ticket: ticket, requestID: randomHex()))
-        name = try redeemedName(from: parseHTTPResponse(raw))
+        redeemed = try redeem(ticket)
     } catch {
         readFailed("\(error)")
     }
+    if let refusal = useRefusal(parent: parent, redeemed) { readFailed(refusal) }
+    let name = redeemed.name
     let result = Keychain.withValue(name) { bytes in writeAll(bytes) }
     switch result {
     case .success(true): exit(0)
     case .success(false): readFailed("could not write the value to the value channel")
     case .failure(let error): readFailed("\(keychainService(for: name)): \(error.description)")
     }
+}
+
+/// Redeems a ticket with the signed berthd at the daemon socket.
+func redeem(_ ticket: [UInt8]) throws -> RedeemedTicket {
+    let path = socketPath(environment: ProcessInfo.processInfo.environment, fallbackHome: NSHomeDirectory())
+    let raw = try exchange(path: path, request: redeemRequest(ticket: ticket, requestID: randomHex()))
+    return try redeemedTicket(from: parseHTTPResponse(raw))
 }
 
 private func writeAll(_ bytes: UnsafeRawBufferPointer) -> Bool {

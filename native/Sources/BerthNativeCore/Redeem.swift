@@ -109,12 +109,67 @@ private func firstIndex(of needle: [UInt8], in haystack: [UInt8], from start: In
     return nil
 }
 
-/// Returns the secret name from a RedeemUseTicket response, or why the redeem failed.
-public func redeemedName(from response: HTTPResponse) throws(RedeemError) -> String {
+/// ConsumerKind in secrets.proto, as Connect JSON spells it.
+public enum ConsumerKind: String, Sendable {
+    case executable = "CONSUMER_KIND_EXECUTABLE"
+    case proxy = "CONSUMER_KIND_PROXY"
+}
+
+/// TicketAction in secrets.proto, as Connect JSON spells it.
+public enum TicketAction: String, Sendable {
+    case use = "TICKET_ACTION_USE"
+    case remove = "TICKET_ACTION_REMOVE"
+    case rotate = "TICKET_ACTION_ROTATE"
+}
+
+/// What berthd said a ticket is for. A kind or action that is absent (the proto zero value) or
+/// unknown is nil, so every rule below refuses it.
+public struct RedeemedTicket: Equatable, Sendable {
+    public var name: String
+    public var consumerKind: ConsumerKind?
+    public var action: TicketAction?
+
+    public init(name: String, consumerKind: ConsumerKind?, action: TicketAction?) {
+        self.name = name
+        self.consumerKind = consumerKind
+        self.action = action
+    }
+}
+
+/// Returns what a RedeemUseTicket response grants, or why the redeem failed.
+public func redeemedTicket(from response: HTTPResponse) throws(RedeemError) -> RedeemedTicket {
     let object = try? JSONSerialization.jsonObject(with: response.body) as? [String: Any]
     if let code = object?["code"] as? String { throw .connectError(code) }
     guard response.status == 200 else { throw .status(response.status) }
     guard let name = object?["name"] as? String else { throw .malformedResponse }
     guard isValidSecretName(name) else { throw .invalidName }
-    return name
+    return RedeemedTicket(
+        name: name,
+        consumerKind: (object?["consumerKind"] as? String).flatMap(ConsumerKind.init(rawValue:)),
+        action: (object?["action"] as? String).flatMap(TicketAction.init(rawValue:)))
+}
+
+/// The receiver rule for read, applied after the redeem: the ticket must be for reading, and for
+/// the kind of consumer the value channel's peer proved to be, so a ticket berthd made for the
+/// proxy never reaches the berth CLI and the reverse.
+public func useRefusal(parent: ConsumerKind, _ ticket: RedeemedTicket) -> String? {
+    guard ticket.action == .use else { return "the ticket is not for reading a value" }
+    guard ticket.consumerKind == parent else {
+        return
+            "the ticket is for \(ticket.consumerKind?.rawValue ?? "no consumer kind"), the parent is \(parent.rawValue)"
+    }
+    return nil
+}
+
+public enum LifecycleCommand: String, Sendable {
+    case remove, rotate
+
+    var action: TicketAction { self == .remove ? .remove : .rotate }
+}
+
+/// rotate and remove act only on a ticket berthd made for that command and that name.
+public func lifecycleRefusal(_ command: LifecycleCommand, name: String, _ ticket: RedeemedTicket) -> String? {
+    guard ticket.action == command.action else { return "the ticket is not for \(command.rawValue)" }
+    guard ticket.name == name else { return "the ticket is for another secret" }
+    return nil
 }

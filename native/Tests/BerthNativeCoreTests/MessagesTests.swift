@@ -29,7 +29,10 @@ let confirmLine = """
 }
 
 @Test func decodesConfirmRequest() throws {
-    let request = try decodeConfirm(Data(confirmLine.utf8))
+    guard case .grant(let request) = try decodeConfirm(Data(confirmLine.utf8)) else {
+        Issue.record("a grant line decoded as another action")
+        return
+    }
     #expect(request.secret == "github-token")
     #expect(
         request.consumer
@@ -91,4 +94,43 @@ func rejectsBadConsumerHash(_ hash: String) {
     #expect(
         socketPath(environment: ["BERTH_HOME": ""], fallbackHome: "/x")
             == "/x/Library/Application Support/Berth/berthd.sock")
+}
+
+let proxyLine = """
+    {"action":"proxy","secret":"openai","target":{"host":"api.openai.com","port":443,"header_name":"Authorization",\
+    "value_prefix":"Bearer ","value_suffix":"","path_glob":"/v1/*","methods":["GET","POST"],\
+    "placeholder_env":"OPENAI_API_KEY"},"requester":{"pid":42,"executable":"/usr/local/bin/claude","tree":[],\
+    "working_dir":"/tmp"}}
+    """
+
+@Test func decodesProxyConfirmRequest() throws {
+    guard case .proxy(let request) = try decodeConfirm(Data(proxyLine.utf8)) else {
+        Issue.record("a proxy line decoded as another action")
+        return
+    }
+    #expect(request.secret == "openai")
+    #expect(
+        request.target
+            == ProxyTarget(
+                host: "api.openai.com", port: 443, headerName: "Authorization", valuePrefix: "Bearer ",
+                pathGlob: "/v1/*", methods: ["GET", "POST"], placeholderEnv: "OPENAI_API_KEY"))
+}
+
+@Test(arguments: [#""port":443"#, #""host":"api.openai.com""#, #""header_name":"Authorization""#])
+func rejectsBadProxyTarget(_ field: String) {
+    let broken = field.replacingOccurrences(of: "443", with: "0").replacingOccurrences(
+        of: #"api.openai.com""#, with: #"""#
+    )
+    .replacingOccurrences(of: #"Authorization""#, with: #"""#)
+    let line = proxyLine.replacingOccurrences(of: field, with: broken)
+    #expect(throws: ProtocolError.invalidTarget) { try decodeConfirm(Data(line.utf8)) }
+}
+
+@Test func rejectsProxyConfirmWithoutTarget() {
+    let line = #"{"action":"proxy","secret":"k","requester":{"pid":1,"executable":"/x","tree":[],"working_dir":"/"}}"#
+    #expect(throws: ProtocolError.badJSON) { try decodeConfirm(Data(line.utf8)) }
+}
+
+@Test func encodesRemoveReplies() {
+    #expect(String(decoding: encodeReply(Reply(RemoveOutcome.removed)), as: UTF8.self) == "{\"outcome\":\"removed\"}\n")
 }

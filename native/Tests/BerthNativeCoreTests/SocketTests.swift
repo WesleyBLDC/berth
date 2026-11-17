@@ -19,14 +19,35 @@ import Testing
         unlink(path)
     }
     let me = getpid()
-    #expect(valueChannelRefusal(pair[1], parent: me, requirement: "always") == nil)
-    let unsigned = valueChannelRefusal(pair[1], parent: me, requirement: berthCLIRequirement)
-    #expect(unsigned?.contains("not the signed berth") == true)
-    #expect(valueChannelRefusal(pair[1], parent: me + 1, requirement: "always")?.contains("is not the parent") == true)
-    #expect(valueChannelRefusal(pipeFDs[1], parent: me, requirement: "always") == "the value channel is not a socket")
-    #expect(valueChannelRefusal(file, parent: me, requirement: "always") == "the value channel is not a socket")
-    #expect(valueChannelRefusal(unconnected, parent: me, requirement: "always")?.contains("has no peer") == true)
-    #expect(valueChannelRefusal(999, parent: me, requirement: "always") == "no value channel on fd 999")
+    let always = [(ConsumerKind.executable, "always")]
+    #expect(checkValueChannel(pair[1], parent: me, requirements: always) == .parent(.executable))
+    // The test binary is neither signed parent, so the real pair refuses it.
+    guard case .refused(let unsigned) = checkValueChannel(pair[1], parent: me, requirements: parentRequirements)
+    else {
+        Issue.record("an unsigned peer passed the parent requirements")
+        return
+    }
+    #expect(unsigned.contains("not the signed berth or berth-proxy"))
+    #expect(refusal(pair[1], parent: me + 1)?.contains("is not the parent") == true)
+    #expect(refusal(pipeFDs[1], parent: me) == "the value channel is not a socket")
+    #expect(refusal(file, parent: me) == "the value channel is not a socket")
+    #expect(refusal(unconnected, parent: me)?.contains("has no peer") == true)
+    #expect(refusal(999, parent: me) == "no value channel on fd 999")
+}
+
+/// The kind a parent proves comes from the requirement it satisfied, not from the order tried.
+@Test func valueChannelSaysWhichParentRequirementPassed() throws {
+    var pair: [Int32] = [0, 0]
+    #expect(socketpair(AF_UNIX, SOCK_STREAM, 0, &pair) == 0)
+    defer { for fd in pair { close(fd) } }
+    let proxyOnly = [(ConsumerKind.executable, berthCLIRequirement), (ConsumerKind.proxy, "always")]
+    #expect(checkValueChannel(pair[1], parent: getpid(), requirements: proxyOnly) == .parent(.proxy))
+}
+
+private func refusal(_ fd: Int32, parent: pid_t) -> String? {
+    guard case .refused(let why) = checkValueChannel(fd, parent: parent, requirements: [(.executable, "always")])
+    else { return nil }
+    return why
 }
 
 /// Serves one connection on a temporary socket from this process, answering with reply.

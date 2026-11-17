@@ -185,20 +185,187 @@ func TestMissingHelperFails(t *testing.T) {
 	}
 }
 
-// serveRedeem answers RedeemUseTicket on $BERTH_HOME/berthd.sock with name for any ticket.
-func serveRedeem(t *testing.T, home, name string) {
+// serveRedeem answers RedeemUseTicket on $BERTH_HOME/berthd.sock with answer for any ticket,
+// and returns the base64 tickets it was sent.
+func serveRedeem(t *testing.T, home string, answer map[string]string) chan string {
 	t.Helper()
 	var lc net.ListenConfig
 	ln, err := lc.Listen(t.Context(), "unix", filepath.Join(home, "berthd.sock"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	srv := &http.Server{ReadHeaderTimeout: 5 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	tickets := make(chan string, 8)
+	srv := &http.Server{ReadHeaderTimeout: 5 * time.Second, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Ticket string `json:"ticket"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&req)
+		tickets <- req.Ticket
 		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(map[string]string{"name": name})
+		_ = json.NewEncoder(w).Encode(answer)
 	})}
 	go func() { _ = srv.Serve(ln) }()
 	t.Cleanup(func() { _ = srv.Close() })
+	return tickets
+}
+
+// configure rewrites the fake helper's config.json with extra settings beside answer.
+func configure(t *testing.T, home, answer, extra string) {
+	t.Helper()
+	cfg := fmt.Sprintf(`{"answer":%q,"value":%q%s}`, answer, base64.StdEncoding.EncodeToString([]byte("canary-71c2")), extra)
+	if err := os.WriteFile(filepath.Join(home, "fake-native", "config.json"), []byte(cfg), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func plant(t *testing.T, home, name, value string) {
+	t.Helper()
+	dir := filepath.Join(home, "fake-native", "values")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(value), 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestConfirmPowerSendsProxyTarget(t *testing.T) {
+	home := berthHome(t, "approve")
+	p := ports.PowerPrompt{
+		Action: ports.PowerProxyGrant,
+		Secret: "openai",
+		Proxy: ports.ProxyTarget{
+			Host: "api.openai.com", Port: 443, HeaderName: "Authorization", ValuePrefix: "Bearer ",
+			PathGlob: "/v1/*", Methods: []string{"GET", "POST"}, PlaceholderEnv: "OPENAI_API_KEY",
+		},
+		Requester: ports.Requester{PID: 9, Executable: "/x", WorkingDir: "/"},
+	}
+	got, err := native.New(helper).ConfirmPower(t.Context(), p)
+	if err != nil || got != ports.PowerApproved {
+		t.Fatalf("got %q, %v; want approved", got, err)
+	}
+	want := `{"action":"proxy","requester":{"executable":"/x","pid":9,"tree":[],"working_dir":"/"},"secret":"openai","target":{"header_name":"Authorization","host":"api.openai.com","methods":["GET","POST"],"path_glob":"/v1/*","placeholder_env":"OPENAI_API_KEY","port":443,"value_prefix":"Bearer ","value_suffix":""}}`
+	if got := string(requests(t, home)[0].Request); got != want {
+		t.Fatalf("request\n got %s\nwant %s", got, want)
+	}
+}
+
+func TestRotateAndRemoveSendTheActionTicket(t *testing.T) {
+	ticket := ports.Ticket{0xde, 0xad, 31: 0x01}
+	prompt := ports.LifecyclePrompt{Name: "k", Requester: requester}
+	for _, c := range []struct {
+		command, action string
+		call            func(*native.Approver) (string, error)
+		want, value     string
+	}{
+		{"rotate", "TICKET_ACTION_ROTATE", func(a *native.Approver) (string, error) {
+			o, err := a.RotateSecret(t.Context(), prompt, ticket)
+			return string(o), err
+		}, "stored", "canary-71c2"},
+		{"remove", "TICKET_ACTION_REMOVE", func(a *native.Approver) (string, error) {
+			o, err := a.RemoveSecret(t.Context(), prompt, ticket)
+			return string(o), err
+		}, "removed", ""},
+	} {
+		t.Run(c.command, func(t *testing.T) {
+			home := berthHome(t, "approve")
+			plant(t, home, "k", "old")
+			tickets := serveRedeem(t, home, map[string]string{"name": "k", "action": c.action})
+			got, err := c.call(native.New(helper))
+			if err != nil || got != c.want {
+				t.Fatalf("got %q, %v; want %s", got, err, c.want)
+			}
+			if n := len(tickets); n != 1 {
+				t.Fatalf("berthd saw %d tickets", n)
+			}
+			if got := <-tickets; got != base64.StdEncoding.EncodeToString(ticket[:]) {
+				t.Fatalf("berthd saw ticket %s", got)
+			}
+			reqs := requests(t, home)
+			wantLog := `{"name":"k","redeemed":true,"requester":{"pid":4242,"executable":"/opt/agent/bin/agent","tree":[{"pid":4000,"executable":"/bin/zsh"},{"pid":1,"executable":"/sbin/launchd"}],"working_dir":"/Users/someone/project"}}`
+			if len(reqs) != 1 || reqs[0].Command != c.command || string(reqs[0].Request) != wantLog {
+				t.Fatalf("requests = %+v", reqs)
+			}
+			v, _ := os.ReadFile(filepath.Join(home, "fake-native", "values", "k"))
+			if string(v) != c.value {
+				t.Fatalf("item holds %q", v)
+			}
+		})
+	}
+}
+
+func TestLifecycleOutcomes(t *testing.T) {
+	ticket := ports.Ticket{1}
+	prompt := ports.LifecyclePrompt{Name: "k"}
+	cases := []struct {
+		answer     string
+		action     string
+		wantRotate ports.StoreOutcome
+		wantRemove ports.RemoveOutcome
+		wantErr    bool
+	}{
+		{"deny", "", ports.StoreDenied, ports.RemoveDenied, false},
+		{"fail", "", ports.StoreFailed, ports.RemoveFailed, true},
+		{"crash", "", ports.StoreFailed, ports.RemoveFailed, true},
+		{"garbage", "", ports.StoreFailed, ports.RemoveFailed, true},
+		// A ticket berthd made for the other command is refused before the prompt.
+		{"approve", "crossed", ports.StoreFailed, ports.RemoveFailed, true},
+	}
+	for _, c := range cases {
+		t.Run(c.answer+c.action, func(t *testing.T) {
+			home := berthHome(t, c.answer)
+			plant(t, home, "k", "old")
+			rotateAction, removeAction := "TICKET_ACTION_ROTATE", "TICKET_ACTION_REMOVE"
+			if c.action == "crossed" {
+				rotateAction, removeAction = removeAction, rotateAction
+			}
+			a := native.New(helper)
+			_ = serveRedeem(t, home, map[string]string{"name": "k", "action": rotateAction})
+			r, err := a.RotateSecret(t.Context(), prompt, ticket)
+			if r != c.wantRotate || (err != nil) != c.wantErr {
+				t.Fatalf("rotate: %q, %v", r, err)
+			}
+			_ = os.Remove(filepath.Join(home, "berthd.sock"))
+			_ = serveRedeem(t, home, map[string]string{"name": "k", "action": removeAction})
+			m, err := a.RemoveSecret(t.Context(), prompt, ticket)
+			if m != c.wantRemove || (err != nil) != c.wantErr {
+				t.Fatalf("remove: %q, %v", m, err)
+			}
+			if v, _ := os.ReadFile(filepath.Join(home, "fake-native", "values", "k")); string(v) != "old" {
+				t.Fatalf("the item changed to %q", v)
+			}
+		})
+	}
+}
+
+// TestReadNeedsTheConsumerKindOfTheParent runs the fake helper as this test's child, trusted as
+// the given parent kind, against a berthd that names a consumer kind: crossed pairs get nothing.
+func TestReadNeedsTheConsumerKindOfTheParent(t *testing.T) {
+	for _, c := range []struct {
+		parent, kind string
+		ok           bool
+	}{
+		{"cli", "CONSUMER_KIND_EXECUTABLE", true},
+		{"proxy", "CONSUMER_KIND_PROXY", true},
+		{"cli", "CONSUMER_KIND_PROXY", false},
+		{"proxy", "CONSUMER_KIND_EXECUTABLE", false},
+		{"proxy", "", false},
+	} {
+		t.Run(c.parent+" "+c.kind, func(t *testing.T) {
+			home := berthHome(t, "approve")
+			configure(t, home, "approve", fmt.Sprintf(`,"trust_parent":%q`, c.parent))
+			plant(t, home, "gh-token", "canary-e2b4")
+			serveRedeem(t, home, map[string]string{"name": "gh-token", "consumerKind": c.kind, "action": "TICKET_ACTION_USE"})
+			got, err := native.Read(t.Context(), helper, ports.Ticket{1})
+			defer clear(got)
+			if c.ok && (err != nil || string(got) != "canary-e2b4") {
+				t.Fatalf("want the value, got %d bytes, %v", len(got), err)
+			}
+			if !c.ok && (err == nil || got != nil) {
+				t.Fatalf("a crossed pair got %d bytes", len(got))
+			}
+		})
+	}
 }
 
 // TestReadReturnsValueFromTheValueSocket stands in for berth-native with a script that writes
@@ -273,7 +440,7 @@ func TestFakeHelperRefusesAReceiverThatIsNotItsSignedParent(t *testing.T) {
 	for name, h := range map[string]string{"peer is not the parent": underShell, "peer is not the signed berth": helper} {
 		t.Run(name, func(t *testing.T) {
 			home := berthHome(t, "approve")
-			serveRedeem(t, home, "gh-token")
+			serveRedeem(t, home, map[string]string{"name": "gh-token", "consumerKind": "CONSUMER_KIND_EXECUTABLE", "action": "TICKET_ACTION_USE"})
 			got, err := native.Read(t.Context(), h, ports.Ticket{1})
 			if err == nil || got != nil {
 				t.Fatalf("want a refusal, got %d bytes, %v", len(got), err)

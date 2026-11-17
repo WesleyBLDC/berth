@@ -1,11 +1,6 @@
+import BerthNativeCore
 import Foundation
 import LocalAuthentication
-
-enum TouchIDResult: Equatable {
-    case approved
-    case denied
-    case failed(String)
-}
 
 /// Touch ID, or the login password when Touch ID is unavailable (deviceOwnerAuthentication).
 func askTouchID(reason: String) async -> TouchIDResult {

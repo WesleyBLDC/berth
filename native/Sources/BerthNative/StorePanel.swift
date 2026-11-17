@@ -35,7 +35,8 @@ final class BrassButton: NSButton {
 }
 
 /// The store dialog: a branded panel instead of NSAlert, because NSAlert offers no way to
-/// color its background or text. The title and body come unchanged from storeDialogText.
+/// color its background or text. The title, body and button label come unchanged from
+/// storeDialogText or rotateDialogText.
 @MainActor
 final class StorePanel: NSObject {
     let panel: NSPanel
@@ -70,7 +71,7 @@ final class StorePanel: NSObject {
         let save = BrassButton(title: "", target: self, action: #selector(saved))
         save.isBordered = false
         save.attributedTitle = NSAttributedString(
-            string: "Save",
+            string: text.button,
             attributes: [.foregroundColor: Brand.navy800, .font: NSFont.systemFont(ofSize: 13, weight: .semibold)]
         )
         save.keyEquivalent = "\r"
