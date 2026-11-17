@@ -65,6 +65,15 @@ const usage = `usage:
                                                 HTTPS_PROXY and the CA variables set by Berth and
                                                 NO_PROXY, HTTP_PROXY and ALL_PROXY removed;
                                                 --proxy and --env cannot be combined
+  berth ps [--all] [--json]                     list every Chromium family browser on this Mac,
+                                                what drives it and who started it; --all adds
+                                                browsers that stopped since berthd started
+  berth inspect <session id> [-n N]             show one browser's processes, owner chain and
+                                                recent transitions
+  berth stop <session id> [--force]             stop a browser: SIGTERM, then SIGKILL after 5 s;
+                                                one you or an app started needs --force, and
+                                                another user's is never stopped
+  berth leftovers [--stop]                      list, or stop, browsers whose owner exited
 
 exit codes:
   0  success
@@ -129,6 +138,14 @@ func Run(ctx context.Context, args []string, env Env) int {
 		}
 	case len(args) >= 1 && args[0] == "run":
 		return runCommand(ctx, args[1:], env)
+	case len(args) >= 1 && args[0] == "ps":
+		return sessionList(ctx, args[1:], env)
+	case len(args) >= 1 && args[0] == "inspect":
+		return sessionInspect(ctx, args[1:], env)
+	case len(args) >= 1 && args[0] == "stop":
+		return sessionStop(ctx, args[1:], env)
+	case len(args) >= 1 && args[0] == "leftovers":
+		return sessionLeftovers(ctx, args[1:], env)
 	}
 	fmt.Fprint(env.Stderr, usage)
 	return ExitUsage
