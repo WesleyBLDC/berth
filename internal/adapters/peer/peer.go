@@ -131,3 +131,9 @@ func cString(b []byte) (string, error) {
 	}
 	return string(b[:n]), nil
 }
+
+// Executable is proc_pidpath for any pid, for adapters that list processes rather than peers.
+func Executable(pid int) (string, error) { return executable(pid) }
+
+// PIDInfo is one proc_pidinfo call of the given flavor into buf.
+func PIDInfo(pid, flavor int, buf []byte) error { return procInfo(pid, flavor, buf) }

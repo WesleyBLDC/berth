@@ -18,6 +18,7 @@ import (
 	"berth/internal/adapters/execid"
 	"berth/internal/adapters/native"
 	"berth/internal/adapters/peer"
+	"berth/internal/adapters/procscan"
 	"berth/internal/adapters/socket"
 	"berth/internal/adapters/sqlite"
 	"berth/internal/adapters/ticket"
@@ -231,7 +232,7 @@ func newSecretsFor(ctx context.Context, cfg Config, store *sqlite.Store) (*secre
 		Log: cfg.Log, Store: store, Records: store, Sessions: store, Clock: clock.System{},
 		Approver: native.New(helper), Execs: execs, Peers: peer.New(), Tickets: ticket.New(),
 		CLI: trusted(cli, codetrust.CLISigningID), Helper: trusted(helper, codetrust.HelperSigningID),
-		Proxy: trusted(proxy, codetrust.ProxySigningID), PID: os.Getpid(), Exits: watchExit,
+		Proxy: trusted(proxy, codetrust.ProxySigningID), PID: os.Getpid(), Exits: procscan.WatchPID,
 		AllowLocalTargets: cfg.AllowLocalProxyTargets,
 	}), nil
 }

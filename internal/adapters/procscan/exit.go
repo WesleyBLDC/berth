@@ -1,4 +1,6 @@
-package berthd
+//go:build darwin
+
+package procscan
 
 import (
 	"context"
@@ -8,11 +10,11 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-// watchExit returns a channel closed when the process exits, from a kqueue NOTE_EXIT filter
+// WatchPID returns a channel closed when the process exits, from a kqueue NOTE_EXIT filter
 // registered before it returns, so an exit right after the call is never missed. A process that
 // is already gone fails the registration. A kqueue error closes the channel too: a session whose
 // proxy cannot be watched is treated as lost rather than trusted.
-func watchExit(ctx context.Context, pid int) (<-chan struct{}, error) {
+func WatchPID(ctx context.Context, pid int) (<-chan struct{}, error) {
 	kq, err := unix.Kqueue()
 	if err != nil {
 		return nil, err
