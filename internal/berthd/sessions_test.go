@@ -569,3 +569,18 @@ func TestInvalidUTF8DoesNotBreakListing(t *testing.T) {
 		t.Fatalf("the snapshot cannot be sent: %v", err)
 	}
 }
+
+// A live browser whose file was replaced stays live, with its last path marked changed.
+func TestReplacedBrowserStaysLive(t *testing.T) {
+	f := newBrowsersFixture(t)
+	rows := slices.Clone(f.rows)
+	rows[3].Executable = ""
+	f.set(t, rows...)
+	if st, _ := f.b.state(t.Context(), session.Entity(f.id(100))); st == session.Stopped {
+		t.Fatal("a browser whose file was replaced was recorded Stopped")
+	}
+	got, err := f.b.InspectSession(t.Context(), &berthv1.InspectSessionRequest{Id: f.id(100)})
+	if err != nil || got.GetSession().GetBrowser().GetExecutable() != shellPath || !got.GetSession().GetBrowser().GetExecutableChanged() {
+		t.Fatalf("inspect: %v %v", got.GetSession().GetBrowser(), err)
+	}
+}

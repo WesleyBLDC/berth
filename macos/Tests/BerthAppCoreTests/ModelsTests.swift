@@ -28,6 +28,8 @@ import Testing
     #expect(s.owner?.process?.startedAt == Date(timeIntervalSince1970: 1_763_379_990))
     #expect(s.owner?.process?.executable == "/usr/local/bin/claude")
     #expect(s.owner?.process?.role == .ancestor)
+    #expect(s.owner?.process?.executableChanged == true)
+    #expect(s.browser?.executableChanged == true)
     #expect(s.browser?.pid == 4242)
     #expect(s.browser?.startedAt == Date(timeIntervalSince1970: 1_763_380_000.123456))
     #expect(s.browser?.executable == "/opt/chrome/Chrome for Testing")

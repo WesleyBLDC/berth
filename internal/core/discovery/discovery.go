@@ -70,6 +70,16 @@ type Scanner struct {
 	// keeps only the processes it listed, so a process that is gone is forgotten.
 	sigs map[instance]classified
 	args map[instance][]string
+	// exes holds each listed process's last known path, so a running browser whose file was
+	// replaced or deleted, for which the kernel gives no path, is not taken for one that exited.
+	// The kernel bounds a path at 4 KiB.
+	exes map[running]string
+}
+
+// running keys a process instance by pid and start time alone.
+type running struct {
+	pid   int
+	start int64
 }
 
 // instance keys a process by its executable too, since exec keeps the pid and start time.
@@ -93,6 +103,17 @@ func (s *Scanner) Scan(ctx context.Context) ([]Observed, error) {
 	procs, err := s.src.List(ctx)
 	if err != nil {
 		return nil, err
+	}
+	exes := make(map[running]string, len(procs))
+	for i := range procs {
+		p := &procs[i]
+		r := running{p.PID, p.Start.UnixNano()}
+		if last, ok := s.exes[r]; ok && p.Executable == "" {
+			p.Executable, p.ExecutableChanged = last, true
+		}
+		if p.Executable != "" {
+			exes[r] = p.Executable
+		}
 	}
 	byPID := make(map[int]ports.ProcessInfo, len(procs))
 	children := make(map[int][]int)
@@ -155,7 +176,7 @@ func (s *Scanner) Scan(ctx context.Context) ([]Observed, error) {
 		}
 		out = append(out, observe(ctx, s.src, c, byPID, children, ancestorArgs, s.uid))
 	}
-	s.sigs, s.args = sigs, args
+	s.sigs, s.args, s.exes = sigs, args, exes
 	return out, nil
 }
 

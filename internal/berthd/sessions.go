@@ -662,6 +662,7 @@ func sessionProto(t *tracked) *berthv1.Session {
 func processProto(p ports.ProcessInfo, role berthv1.ProcessRole) *berthv1.SessionProcess {
 	return &berthv1.SessionProcess{
 		Pid: int32(p.PID), StartedAt: timestamppb.New(p.Start), Executable: p.Executable, Role: role, //nolint:gosec // macOS pids fit in 32 bits
+		ExecutableChanged: p.ExecutableChanged,
 	}
 }
 

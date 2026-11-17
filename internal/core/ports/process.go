@@ -24,6 +24,9 @@ type ProcessInfo struct {
 	// Executable is the kernel's path for the process's text vnode, never argv[0]; empty when
 	// the kernel gave none.
 	Executable string
+	// ExecutableChanged means the kernel gave no path for a process it gave one for before, as
+	// when the file was replaced or deleted, so Executable is the last path seen.
+	ExecutableChanged bool
 }
 
 var (

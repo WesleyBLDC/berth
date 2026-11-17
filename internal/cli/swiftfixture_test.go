@@ -46,12 +46,12 @@ func fixtureSessions() []*berthv1.WatchSessionsResponse {
 			Kind: berthv1.OwnerKind_OWNER_KIND_AGENT, Name: "claude\x1b[2J",
 			Process: &berthv1.SessionProcess{
 				Pid: 4000, StartedAt: at(1763379990, 0), Executable: "/usr/local/bin/claude",
-				Role: berthv1.ProcessRole_PROCESS_ROLE_ANCESTOR,
+				Role: berthv1.ProcessRole_PROCESS_ROLE_ANCESTOR, ExecutableChanged: true,
 			},
 		},
 		Browser: &berthv1.SessionProcess{
 			Pid: 4242, StartedAt: at(1763380000, 123456000), Executable: "/opt/chrome/Chrome for Testing",
-			Role: berthv1.ProcessRole_PROCESS_ROLE_BROWSER,
+			Role: berthv1.ProcessRole_PROCESS_ROLE_BROWSER, ExecutableChanged: true,
 		},
 		ProcessCount: 7, OtherUser: true, Uid: 501, StateSince: at(1763380005, 123456789), ArgsUnreadable: true,
 	}

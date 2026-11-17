@@ -62,7 +62,9 @@ func (*Source) List(ctx context.Context) ([]ports.ProcessInfo, error) {
 		if pid <= 0 {
 			continue
 		}
-		// A process that exits between the table and this call just has no path.
+		// A process that exits between the table and this call, or whose file was replaced or
+		// deleted, has no path; the scanner keeps the last one it saw, so no path never means
+		// the process exited.
 		exe, _ := peer.Executable(pid)
 		out = append(out, ports.ProcessInfo{
 			ProcessRef: ports.ProcessRef{PID: pid, Start: start(k)},

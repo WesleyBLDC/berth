@@ -201,3 +201,12 @@ func TestJSONEscapesControlAndFormatRunes(t *testing.T) {
 		t.Fatalf("read back %q: %v", back.GetSessions()[0].GetUserDataDir(), err)
 	}
 }
+
+func TestInspectMarksAReplacedExecutable(t *testing.T) {
+	list := sampleSessions()
+	list[0].Browser.ExecutableChanged = true
+	r := invokeSessions(t, &fakeSessions{list: list}, "inspect", list[0].GetId())
+	if r.code != ExitOK || !strings.Contains(r.stdout, "/x/chrome-headless-shell (replaced or deleted since)") {
+		t.Fatalf("code %d, stdout:\n%s", r.code, r.stdout)
+	}
+}

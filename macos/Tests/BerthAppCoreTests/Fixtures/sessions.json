@@ -19,14 +19,16 @@
               "pid": 4000,
               "startedAt": "2025-11-17T11:46:30Z",
               "executable": "/usr/local/bin/claude",
-              "role": "PROCESS_ROLE_ANCESTOR"
+              "role": "PROCESS_ROLE_ANCESTOR",
+              "executableChanged": true
             }
           },
           "browser": {
             "pid": 4242,
             "startedAt": "2025-11-17T11:46:40.123456Z",
             "executable": "/opt/chrome/Chrome for Testing",
-            "role": "PROCESS_ROLE_BROWSER"
+            "role": "PROCESS_ROLE_BROWSER",
+            "executableChanged": true
           },
           "processCount": 7,
           "otherUser": true,

@@ -97,6 +97,9 @@ message SessionProcess {
   google.protobuf.Timestamp started_at = 2;
   string executable = 3;
   ProcessRole role = 4;
+  // executable_changed means the kernel no longer gives a path for the running process, as when
+  // its file was replaced or deleted, so executable is the last path berthd saw.
+  bool executable_changed = 5;
 }
 
 message SessionOwner {

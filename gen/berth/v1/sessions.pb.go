@@ -435,13 +435,16 @@ func (SnapshotReason) EnumDescriptor() ([]byte, []int) {
 }
 
 type SessionProcess struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Pid           int32                  `protobuf:"varint,1,opt,name=pid,proto3" json:"pid,omitempty"`
-	StartedAt     *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
-	Executable    string                 `protobuf:"bytes,3,opt,name=executable,proto3" json:"executable,omitempty"`
-	Role          ProcessRole            `protobuf:"varint,4,opt,name=role,proto3,enum=berth.v1.ProcessRole" json:"role,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state      protoimpl.MessageState `protogen:"open.v1"`
+	Pid        int32                  `protobuf:"varint,1,opt,name=pid,proto3" json:"pid,omitempty"`
+	StartedAt  *timestamppb.Timestamp `protobuf:"bytes,2,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
+	Executable string                 `protobuf:"bytes,3,opt,name=executable,proto3" json:"executable,omitempty"`
+	Role       ProcessRole            `protobuf:"varint,4,opt,name=role,proto3,enum=berth.v1.ProcessRole" json:"role,omitempty"`
+	// executable_changed means the kernel no longer gives a path for the running process, as when
+	// its file was replaced or deleted, so executable is the last path berthd saw.
+	ExecutableChanged bool `protobuf:"varint,5,opt,name=executable_changed,json=executableChanged,proto3" json:"executable_changed,omitempty"`
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *SessionProcess) Reset() {
@@ -500,6 +503,13 @@ func (x *SessionProcess) GetRole() ProcessRole {
 		return x.Role
 	}
 	return ProcessRole_PROCESS_ROLE_UNSPECIFIED
+}
+
+func (x *SessionProcess) GetExecutableChanged() bool {
+	if x != nil {
+		return x.ExecutableChanged
+	}
+	return false
 }
 
 type SessionOwner struct {
@@ -1312,7 +1322,7 @@ var File_berth_v1_sessions_proto protoreflect.FileDescriptor
 
 const file_berth_v1_sessions_proto_rawDesc = "" +
 	"\n" +
-	"\x17berth/v1/sessions.proto\x12\bberth.v1\x1a\x14berth/v1/debug.proto\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xa8\x01\n" +
+	"\x17berth/v1/sessions.proto\x12\bberth.v1\x1a\x14berth/v1/debug.proto\x1a\x1bbuf/validate/validate.proto\x1a\x1fgoogle/protobuf/timestamp.proto\"\xd7\x01\n" +
 	"\x0eSessionProcess\x12\x10\n" +
 	"\x03pid\x18\x01 \x01(\x05R\x03pid\x129\n" +
 	"\n" +
@@ -1320,7 +1330,8 @@ const file_berth_v1_sessions_proto_rawDesc = "" +
 	"\n" +
 	"executable\x18\x03 \x01(\tR\n" +
 	"executable\x12)\n" +
-	"\x04role\x18\x04 \x01(\x0e2\x15.berth.v1.ProcessRoleR\x04role\"\x7f\n" +
+	"\x04role\x18\x04 \x01(\x0e2\x15.berth.v1.ProcessRoleR\x04role\x12-\n" +
+	"\x12executable_changed\x18\x05 \x01(\bR\x11executableChanged\"\x7f\n" +
 	"\fSessionOwner\x12'\n" +
 	"\x04kind\x18\x01 \x01(\x0e2\x13.berth.v1.OwnerKindR\x04kind\x12\x12\n" +
 	"\x04name\x18\x02 \x01(\tR\x04name\x122\n" +

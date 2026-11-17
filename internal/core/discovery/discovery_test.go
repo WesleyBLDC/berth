@@ -299,3 +299,34 @@ func TestKeptTextIsValidUTF8(t *testing.T) {
 		t.Fatalf("member executable %q", o.Members[0].Executable)
 	}
 }
+
+// The kernel gives no path for a running process whose file was replaced or deleted, as a
+// browser or agent update does. That process keeps its last path, marked changed, so its
+// browser is neither taken for exited nor given another owner.
+func TestReplacedExecutableKeepsItsLastPath(t *testing.T) {
+	rows := table()
+	src := &testutil.Processes{}
+	src.Set(rows...)
+	s := discovery.NewScanner(src, me)
+	if _, err := s.Scan(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	rows[4].Executable, rows[3].Executable = "", ""
+	fresh := proc(500, 1, me, "")
+	src.Set(append(rows, fresh)...)
+	got, err := s.Scan(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(got, func(o discovery.Observed) bool { return o.Root.PID == 100 })
+	if i < 0 {
+		t.Fatal("the browser whose file was replaced is gone from the scan")
+	}
+	o := got[i]
+	if o.Root.Executable != shell || !o.Root.ExecutableChanged || o.Members[0].Executable != shell {
+		t.Fatalf("root %+v", o.Root)
+	}
+	if o.Chain[0].Executable != "/opt/homebrew/bin/node" || !o.Chain[0].ExecutableChanged || o.Chain[1].ExecutableChanged {
+		t.Fatalf("chain %+v", o.Chain)
+	}
+}

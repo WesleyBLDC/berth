@@ -80,7 +80,7 @@ func sessionInspect(ctx context.Context, args []string, env Env) int {
 	fmt.Fprintf(env.Stdout, "session %s: %s since %s\n\n", shown(s.GetId()), stateName(s.GetState()), when(s.GetStateSince().AsTime()))
 	w := tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintf(w, "browser\t%s, pid %d, started %s\n", kindName(s.GetKind()), s.GetBrowser().GetPid(), when(s.GetBrowser().GetStartedAt().AsTime()))
-	fmt.Fprintf(w, "executable\t%s\n", shown(s.GetBrowser().GetExecutable()))
+	fmt.Fprintf(w, "executable\t%s\n", executableName(s.GetBrowser()))
 	fmt.Fprintf(w, "driver\t%s\n", driverName(s.GetDriver()))
 	fmt.Fprintf(w, "headless\t%s\n", headlessName(s))
 	fmt.Fprintf(w, "cdp\t%s\n", cdpName(s))
@@ -296,9 +296,16 @@ func printProcesses(out io.Writer, procs []*berthv1.SessionProcess) {
 	w := tabwriter.NewWriter(out, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "PID\tROLE\tEXECUTABLE")
 	for _, p := range procs {
-		fmt.Fprintf(w, "%d\t%s\t%s\n", p.GetPid(), roleName(p.GetRole()), shown(p.GetExecutable()))
+		fmt.Fprintf(w, "%d\t%s\t%s\n", p.GetPid(), roleName(p.GetRole()), executableName(p))
 	}
 	_ = w.Flush()
+}
+
+func executableName(p *berthv1.SessionProcess) string {
+	if p.GetExecutableChanged() {
+		return shown(p.GetExecutable()) + " (replaced or deleted since)"
+	}
+	return shown(p.GetExecutable())
 }
 
 func printHistory(out io.Writer, hist []*berthv1.Transition) {

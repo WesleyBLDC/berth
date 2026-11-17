@@ -177,8 +177,10 @@ public struct SessionProcess: Decodable, Sendable, Equatable {
     public var startedAt: Date?
     public var executable = ""
     public var role = ProcessRole.unspecified
+    /// The kernel no longer gives a path for the process, so `executable` is the last one seen.
+    public var executableChanged = false
 
-    enum CodingKeys: String, CodingKey { case pid, startedAt, executable, role }
+    enum CodingKeys: String, CodingKey { case pid, startedAt, executable, role, executableChanged }
 
     public init() {}
 
@@ -188,6 +190,7 @@ public struct SessionProcess: Decodable, Sendable, Equatable {
         startedAt = try c.date(.startedAt)
         executable = try c.value(.executable, "")
         role = try c.value(.role, .unspecified)
+        executableChanged = try c.value(.executableChanged, false)
     }
 }
 

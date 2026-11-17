@@ -550,7 +550,7 @@ func (m *topModel) detail(s *berthv1.Session) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "session %s: %s since %s\n", shown(s.GetId()), stateName(s.GetState()), when(s.GetStateSince().AsTime()))
 	w := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
-	fmt.Fprintf(w, "executable\t%s\n", shown(s.GetBrowser().GetExecutable()))
+	fmt.Fprintf(w, "executable\t%s\n", executableName(s.GetBrowser()))
 	fmt.Fprintf(w, "cdp\t%s\n", cdpName(s))
 	fmt.Fprintf(w, "profile\t%s\n", profileName(s))
 	fmt.Fprintf(w, "arguments\t%s\n", argsName(s))
