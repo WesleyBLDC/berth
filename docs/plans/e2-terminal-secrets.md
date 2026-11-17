@@ -61,3 +61,35 @@ Touch ID and the dialog need a person, so e2e uses a test approver selected only
 ## Exit gate
 
 `make check` passes with the canary e2e, the manual Touch ID check is recorded here, the agent safety checklist is walked for E2a, and the wiki plan is updated.
+
+## Native helper protocol (items 2, 4 and 6 must match it exactly)
+
+`berth-native <command>` reads one JSON object on one line from stdin and writes one JSON object on one line to stdout, except `read`.
+It exits 0 for every outcome, including denied; a non-zero exit means it crashed or was misused.
+stderr carries short diagnostics and never a value.
+`berthd` always starts it with a scrubbed environment (only `HOME`, `PATH`, `BERTH_HOME`).
+
+| Command | stdin | stdout |
+|---|---|---|
+| `store` | `{"name":"...","reason":"...","requester":{"pid":1,"executable":"/path","tree":[{"pid":1,"executable":"/path"}],"working_dir":"/path"}}` | `{"outcome":"stored"}`, `"denied"` or `"failed"`, with optional `"error":"<short text>"` |
+| `confirm` | `{"action":"grant","secret":"...","consumer":{"path":"/path","sha256":"<64 hex>","team_id":"","signing_id":""},"args_glob":"","requester":{...}}` | `{"outcome":"approved"}`, `"denied"` or `"failed"` |
+| `read` | the ticket as 64 lowercase hex characters and a newline | the raw value bytes, no newline; on any failure nothing on stdout and exit 3 |
+
+- Keychain item: generic password, service `berth.<name>`, account `berth`, login keychain.
+- `store` refuses with `failed` if `berth.<name>` already exists.
+- `read` redeems the ticket itself: Connect unary JSON over HTTP/1.1 on the Unix socket `$BERTH_HOME/berthd.sock` (default `~/Library/Application Support/Berth/berthd.sock`): `POST /berth.v1.SecretsService/RedeemUseTicket`, `Content-Type: application/json`, body `{"requestId":"<random hex>","ticket":"<base64>"}`, response `{"name":"..."}`. No generated Swift code is needed.
+- Dialog and Touch ID text is built only from the JSON facts; the reason is shown as quoted text the requester wrote, never as a heading.
+- Test switches exist only in `#if DEBUG` builds. Go tests and e2e use a fake helper written in Go that speaks this protocol, never the Swift binary.
+
+## Decisions from the contract item (merged at 9027153)
+
+- `add` calls `RequestSecret` with a fixed reason; `reason` is required (1 to 500).
+- `RequestSecret` on a Stored name: `ERROR_REASON_SECRET_EXISTS` (replacing is rotate, E2b).
+- Grant or use on a name that is not Stored: `ERROR_REASON_SECRET_NOT_FOUND`; an unreadable executable: `ERROR_REASON_EXECUTABLE_NOT_FOUND`.
+- Unknown, expired or used ticket: `ERROR_REASON_TICKET_INVALID`; a peer that is not the signed helper: `ERROR_REASON_PEER_NOT_TRUSTED`, checked before the request log is read.
+- `USE_OUTCOME_NO_GRANT` covers no grant, denied, revoked, and argv not matching the glob; `STALE_GRANT` only for a hash change. An empty `args_glob` allows any arguments; `argv` excludes the executable.
+- Grant ids are SQLite autoincrement; sha256 is lowercase hex outside the core and `[32]byte` inside.
+- Tickets live only in `berthd` memory and are never persisted.
+- An event `Note` never holds the requester's reason, because an agent controls that text.
+- `UseRefused` goes on the grant entity when a grant exists, else on the secret entity.
+- The grant machine has no Failed state; item 3 decides where `GrantFailed` goes.
