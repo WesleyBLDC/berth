@@ -277,6 +277,7 @@ Built on branch `m2a` from `main` at 6de1d7b: items 1 to 10, each with its own c
 - M3 added the `Seen` event, so the session machine has 18 legal pairs, not the 17 in the design above, and every session has a row from first sight (the scan loop note above, that a steady session has no row, no longer holds).
 - M4 did not add `Launching`, `Ready` and `Failed` to this machine: it built a separate browser machine linked to the observed session ([the M4 plan](m4-managed-chromium.md#the-managed-browser-machine)).
 - `WatchSessions` (M3) joined the three methods here; none is on the agent surface.
+- Found by the audit of 2026-11-17, not fixed yet: `--json` output is not escaped beyond what JSON needs, so C1 controls, DEL and bidi overrides print raw there (checklist item 5 above overstates it); kept text is not made valid UTF-8, so one invalid byte in a profile folder fails `ListSessions` for every session; a live browser whose executable file was replaced or deleted is recorded `Stopped`; and a session left in `Stopping` by a restart stays there.
 
 ### What remains for the exit gate
 
