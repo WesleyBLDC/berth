@@ -103,7 +103,7 @@ Go tests use a fake helper written in Go ([`internal/adapters/native/fakehelper`
 
 `berth` reads nothing else from the proxy and kills it 5 seconds after closing its stdin.
 For an agent session (`BERTH_AGENT_SOCKET` set), `berth` starts no proxy: it calls `StartProxy`, and `berthd` speaks these lines with the proxy it starts as the owner through the same starter (`internal/proxyproc`), passing the control facts on in the stream's first message with the CA certificate as PEM instead of the file paths; see [the header proxy](#the-header-proxy-built-e2b).
-The proxy exits 0 when it ended normally, 1 on an error (berthd, `berth-native` or the network), 2 when it refused its environment, the request or a grant before serving, and 3 when `berthd` stopped the session, the watch stream broke or the CA expired.
+The proxy exits 0 when it ended normally, 1 on an error (berthd, `berth-native` or the network), 2 when it refused its environment, the request or a grant before serving, 3 when `berthd` stopped the session, the watch stream broke or the CA expired, and 4 when `berthd` holds no active proxy grant for every name.
 
 ### The berth command line (built)
 
@@ -114,10 +114,12 @@ The proxy exits 0 when it ended normally, 1 on an error (berthd, `berth-native` 
 | 2 | Usage error |
 | 3 | The person denied the dialog or Touch ID |
 | 4 | The store, grant, rotate or remove failed |
-| 5 | `run`: no grant lets this executable use the secret; nothing started |
+| 5 | `run`: no grant lets this executable use the secret, or (`--proxy`) no active proxy grant covers every name; nothing started |
 | 6 | `run`: the executable changed since it was granted, or the image the kernel loaded is not the granted code (killed while suspended) |
 | 7 | The secret is busy: a store, rotate or remove dialog or a grant's Touch ID is open (`ERROR_REASON_BUSY`) |
 | 8 | `run --proxy`: `berth-proxy` did not start or answered badly; nothing started |
+
+`berth run --proxy` as an agent exits with the code of `berthd`'s refusal: 5 without a grant, 8 when `berthd` could not start the proxy, and 1 for any other refusal, a rate limit included, whose own message `berth` prints.
 
 Once its command starts, `berth run` exits with the command's own code.
 `berth agent session new|ls|revoke` issues, lists and ends agent sessions on the owner socket; `new` prints the token once.

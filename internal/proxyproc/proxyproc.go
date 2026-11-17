@@ -151,24 +151,32 @@ func Check(ctl proxyctl.Control) error {
 }
 
 // Stop closes the proxy's stdin, which ends its session, and kills it if it has not exited
-// within timeout; now kills it at once. It reports whether the timeout killed it.
-func Stop(p *Process, timeout time.Duration, now bool) (killed bool) {
+// within timeout; now kills it at once, which leaves the code of a proxy that already exited as
+// it was. It reports whether the timeout killed it, and the proxy's exit code, -1 when a signal
+// ended it.
+func Stop(p *Process, timeout time.Duration, now bool) (killed bool, code int) {
 	_ = p.Stdin.Close()
 	if now {
 		_ = p.Kill()
 	}
-	done := make(chan struct{})
-	go func() {
-		// The proxy's exit status changes nothing for its owner.
-		_ = p.Wait()
-		close(done)
-	}()
+	done := make(chan int, 1)
+	go func() { done <- exitCode(p.Wait()) }()
 	select {
-	case <-done:
-		return false
+	case code := <-done:
+		return false, code
 	case <-time.After(timeout):
 		_ = p.Kill()
-		<-done
-		return true
+		return true, <-done
 	}
+}
+
+func exitCode(err error) int {
+	if err == nil {
+		return 0
+	}
+	var exited interface{ ExitCode() int }
+	if errors.As(err, &exited) {
+		return exited.ExitCode()
+	}
+	return -1
 }

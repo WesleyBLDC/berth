@@ -178,7 +178,7 @@ func TestAgentBrowserThroughTheAgentSocket(t *testing.T) {
 			cdpTokens = append(cdpTokens, b.token)
 		}
 		out, code := cliRunEnv(t, h, envA, &outputs, "browser", "open")
-		if code != 1 || !strings.Contains(out, "over one of its limits") {
+		if code != 1 || !strings.Contains(out, "has 2 browsers open, or opened 10 in the last hour") {
 			t.Fatalf("a third open browser: %d %q", code, out)
 		}
 		other := openAgentBrowser(t, h, envB, &printed)

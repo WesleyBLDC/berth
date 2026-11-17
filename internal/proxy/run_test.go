@@ -352,13 +352,12 @@ func TestNoGrantOrBadRequestServesNothing(t *testing.T) {
 	deps := testDeps(t, d, u, canary)
 	deps.Read = func(context.Context, []byte) ([]byte, error) { return nil, errors.New("must not read") }
 	for in, want := range map[string]int{
-		`{"secrets":["api-key"]}` + "\n":                ExitRefused,
-		`{"secrets":["API"]}` + "\n":                    ExitRefused,
-		`{"secrets":["a","a"]}` + "\n":                  ExitRefused,
-		`{"secrets":["a"],"extra":1}` + "\n":            ExitRefused,
-		`{"secrets":["api-key"]}`:                       ExitRefused,
-		`{"secrets":[]}` + "\n":                         ExitRefused,
-		`{"secrets":["api-key"]} {"secrets":[]}` + "\n": ExitRefused,
+		`{"secrets":["api-key"],"mode":"owner"}` + "\n":     ExitNoGrant,
+		`{"secrets":["API"],"mode":"owner"}` + "\n":         ExitRefused,
+		`{"secrets":["a","a"],"mode":"owner"}` + "\n":       ExitRefused,
+		`{"secrets":["a"],"mode":"owner","extra":1}` + "\n": ExitRefused,
+		`{"secrets":["api-key"],"mode":"owner"}`:            ExitRefused,
+		`{"secrets":[],"mode":"owner"}` + "\n":              ExitRefused,
 	} {
 		var stdout bytes.Buffer
 		deps.Stdin, deps.Stdout, deps.Stderr = strings.NewReader(in), &stdout, io.Discard

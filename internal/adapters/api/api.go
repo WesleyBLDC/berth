@@ -284,6 +284,16 @@ func withReason(e *connect.Error, reason berthv1.ErrorReason) *connect.Error {
 	return e
 }
 
+// MessageOf is the message berthd's mapper chose for err, without the code prefix err.Error()
+// adds; for an error that is not a Connect error it is err.Error().
+func MessageOf(err error) string {
+	var ce *connect.Error
+	if errors.As(err, &ce) {
+		return ce.Message()
+	}
+	return err.Error()
+}
+
 // ReasonOf extracts the typed reason from an error, for clients.
 func ReasonOf(err error) berthv1.ErrorReason {
 	var ce *connect.Error

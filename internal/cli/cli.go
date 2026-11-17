@@ -103,7 +103,8 @@ exit codes:
   2  usage error
   3  denied by the person
   4  the store or grant failed
-  5  run: no grant lets this command use the secret; the command did not start
+  5  run: no grant lets this command use the secret, or run --proxy: no proxy grant for every
+     name; the command did not start
   6  run: the command changed since it was granted; the command did not start
   7  the secret is busy with another request waiting for the person; try again later
   8  run --proxy: berth-proxy did not start or answered badly; the command did not start
@@ -207,8 +208,7 @@ func status(ctx context.Context, env Env) int {
 	}
 	s, err := c.Daemon.Status(ctx, &berthv1.StatusRequest{})
 	if err != nil {
-		fmt.Fprintln(env.Stderr, err)
-		return ExitError
+		return reportError(env.Stderr, err, "", "")
 	}
 	w := tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintf(w, "state\t%s (v%d)\n", s.GetState(), s.GetStateVersion())
@@ -234,8 +234,7 @@ func debugState(ctx context.Context, entity string, args []string, env Env) int 
 	}
 	s, err := c.Debug.GetState(ctx, &berthv1.GetStateRequest{Entity: entity, HistoryLimit: uint32(*limit)}) //nolint:gosec // bounded to 500 above
 	if err != nil {
-		fmt.Fprintln(env.Stderr, err)
-		return ExitError
+		return reportError(env.Stderr, err, "", shown(entity))
 	}
 	fmt.Fprintf(env.Stdout, "%s (%s): %s, version %d\n\n", shown(s.GetEntity()), shown(s.GetKind()), shown(s.GetState()), s.GetVersion())
 	printHistory(env.Stdout, s.GetHistory())
@@ -305,7 +304,8 @@ func reportError(w io.Writer, err error, name, target string) int {
 	case berthv1.ErrorReason_ERROR_REASON_AGENT_TOKEN_INVALID:
 		line = "berthd refused the agent token: it is missing, unknown, expired or revoked, or this process is outside the session's process tree; ask the person for a new session"
 	case berthv1.ErrorReason_ERROR_REASON_RATE_LIMITED:
-		line = "this agent session is over one of its limits (store requests, browsers or proxies, at once or in the last hour); wait, or close what it has open, then try again"
+		// Several limits share the reason, and berthd's message says which one was hit.
+		line = shown(api.MessageOf(err))
 	case berthv1.ErrorReason_ERROR_REASON_AGENT_SESSION_NOT_FOUND:
 		line = fmt.Sprintf("no agent session has id %s; berth agent session ls lists them", target)
 	case berthv1.ErrorReason_ERROR_REASON_PROFILE_BUSY:
@@ -317,7 +317,8 @@ func reportError(w io.Writer, err error, name, target string) int {
 	case berthv1.ErrorReason_ERROR_REASON_BAD_GLOB:
 		line = "the --args pattern is not a valid glob"
 	case berthv1.ErrorReason_ERROR_REASON_PROXY_NOT_STARTED:
-		line = "berthd could not start berth-proxy; berthd's log says why"
+		fmt.Fprintln(w, "berthd could not start berth-proxy; berthd's log says why")
+		return ExitProxyFailed
 	case berthv1.ErrorReason_ERROR_REASON_ENTITY_NOT_FOUND:
 		line = fmt.Sprintf("no state machine entity named %s", target)
 	case berthv1.ErrorReason_ERROR_REASON_UNSPECIFIED:

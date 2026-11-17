@@ -43,6 +43,10 @@ type Control struct {
 // MaxNames is how many secrets one proxy run may name.
 const MaxNames = 16
 
+// ExitNoGrant is berth-proxy's exit code when berthd holds no active proxy grant for every name,
+// so berth can exit as berth run --env does without a grant.
+const ExitNoGrant = 4
+
 const (
 	// ReadyTimeout is how long a proxy has from its start to serving: berthd makes a session that
 	// opened no watch stream by then Lost, and berth stops waiting for the control line.

@@ -634,7 +634,7 @@ func TestProxyLifecycle(t *testing.T) {
 			t.Fatalf("rm: %d %q", code, out)
 		}
 		before := len(sessions(t, h))
-		if out, code := cliRunEnv(t, h, env, &outputs, loop...); code != 8 {
+		if out, code := cliRunEnv(t, h, env, &outputs, loop...); code != 5 || !strings.Contains(out, "no active proxy grant") {
 			t.Fatalf("run after rm: %d %q", code, out)
 		}
 		if rows := sessions(t, h); len(rows) != before {

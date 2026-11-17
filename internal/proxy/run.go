@@ -32,6 +32,8 @@ const (
 	ExitRefused = 2
 	// ExitStopped: berthd stopped the session, the watch stream broke, or the CA expired.
 	ExitStopped = 3
+	// ExitNoGrant: berthd holds no active proxy grant for every name; nothing was served.
+	ExitNoGrant = proxyctl.ExitNoGrant
 )
 
 const (
@@ -103,7 +105,7 @@ func run(ctx context.Context, d Deps) (int, []*Grant) {
 		return fail(ExitError, "berthd refused to authorize the proxy", err), nil
 	}
 	if resp.GetOutcome() != berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED {
-		return fail(ExitRefused, "no active proxy grant for every name; grant them with berth secret proxy", nil), nil
+		return fail(ExitNoGrant, "no active proxy grant for every name; grant them with berth secret proxy", nil), nil
 	}
 	grants, err := buildGrants(names, resp.GetTickets(), d.AllowLocal)
 	if err != nil {

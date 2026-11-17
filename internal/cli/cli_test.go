@@ -406,3 +406,44 @@ func TestSecretProxySendsTheTarget(t *testing.T) {
 		t.Fatalf("sent %v, want %v", fake.target, want)
 	}
 }
+
+type refusingDaemon struct {
+	berthv1connect.UnimplementedDaemonServiceHandler
+	berthv1connect.UnimplementedDebugServiceHandler
+	err error
+}
+
+func (d refusingDaemon) Status(context.Context, *berthv1.StatusRequest) (*berthv1.StatusResponse, error) {
+	return nil, d.err
+}
+
+func (d refusingDaemon) GetState(context.Context, *berthv1.GetStateRequest) (*berthv1.GetStateResponse, error) {
+	return nil, d.err
+}
+
+// TestStatusAndDebugStateReportTypedErrors: both print reportError's line, not the raw error.
+func TestStatusAndDebugStateReportTypedErrors(t *testing.T) {
+	for _, tc := range []struct {
+		args   []string
+		reason berthv1.ErrorReason
+		want   string
+	}{
+		{[]string{"status"}, berthv1.ErrorReason_ERROR_REASON_NOT_SERVING, "berthd is not serving right now"},
+		{[]string{"debug", "state", "secret/none"}, berthv1.ErrorReason_ERROR_REASON_ENTITY_NOT_FOUND, "no state machine entity named secret/none\n"},
+	} {
+		d := refusingDaemon{err: reasonError(t, tc.reason)}
+		server := connect.NewServer()
+		berthv1connect.RegisterDaemonServiceHandler(server, d)
+		berthv1connect.RegisterDebugServiceHandler(server, d)
+		conn := connect.NewClient(connectinprocess.New(server))
+		cl := &client.Client{Daemon: berthv1connect.NewDaemonServiceClient(conn), Debug: berthv1connect.NewDebugServiceClient(conn)}
+		var out, errOut bytes.Buffer
+		code := Run(t.Context(), tc.args, Env{
+			Stdin: strings.NewReader(""), Stdout: &out, Stderr: &errOut,
+			Connect: func(context.Context) (*client.Client, error) { return cl, nil },
+		})
+		if code != ExitError || !strings.Contains(errOut.String(), tc.want) || strings.Contains(errOut.String(), "already_exists") {
+			t.Fatalf("%v: code %d, stderr %q", tc.args, code, errOut.String())
+		}
+	}
+}

@@ -70,13 +70,16 @@ func runProxied(ctx context.Context, names []string, exe string, argv []string, 
 		err = checkControl(ctl)
 	}
 	if err != nil {
-		stopProxy(p, env, true)
+		code := stopProxy(p, env, true)
 		fmt.Fprintf(env.Stderr, "berth-proxy did not start: %v; the command did not start\n", err)
+		if code == proxyctl.ExitNoGrant {
+			return ExitNoGrant
+		}
 		return ExitProxyFailed
 	}
 	go func() { _, _ = io.Copy(io.Discard, p.Stdout) }()
 	code := startChild(ctx, exe, argv, proxyChildEnv(os.Environ(), ctl), env)
-	stopProxy(p, env, false)
+	_ = stopProxy(p, env, false)
 	return code
 }
 
@@ -100,14 +103,14 @@ func runProxiedByBerthd(ctx context.Context, names []string, exe string, argv []
 	}
 	timer.Stop()
 	if err != nil {
-		reportError(env.Stderr, err, strings.Join(names, ", "), "")
+		code := reportError(env.Stderr, err, strings.Join(names, ", "), "")
 		fmt.Fprintln(env.Stderr, "berthd did not start berth-proxy; the command did not start")
-		return ExitProxyFailed
+		return code
 	}
 	if resp.GetOutcome() != berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED {
 		fmt.Fprintf(env.Stderr, "no active proxy grant for every one of %s; ask the person to grant it with berth secret proxy; the command did not start\n",
 			strings.Join(names, ", "))
-		return ExitProxyFailed
+		return ExitNoGrant
 	}
 	dir, ctl, err := writeCAFiles(resp)
 	if dir != "" {
@@ -185,9 +188,11 @@ func proxyChildEnv(environ []string, ctl proxyctl.Control) []string {
 }
 
 // stopProxy closes the proxy's stdin, which ends its session, and kills it if it has not exited
-// within proxyStopTimeout. A failed start kills it at once.
-func stopProxy(p *ProxyProcess, env Env, now bool) {
-	if proxyproc.Stop(p, proxyStopTimeout, now) {
+// within proxyStopTimeout. A failed start kills it at once. It returns the proxy's exit code.
+func stopProxy(p *ProxyProcess, env Env, now bool) int {
+	killed, code := proxyproc.Stop(p, proxyStopTimeout, now)
+	if killed {
 		fmt.Fprintf(env.Stderr, "berth-proxy did not exit within %s; killed it\n", proxyStopTimeout)
 	}
+	return code
 }

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -21,6 +22,7 @@ import (
 	berthv1 "berth/gen/berth/v1"
 	"berth/gen/berth/v1/berthv1connect"
 	"berth/internal/client"
+	"berth/internal/proxyctl"
 )
 
 // fakeCredential is low entropy on purpose, so secret scanners do not flag it.
@@ -32,9 +34,11 @@ const goodControl = `{"port":4123,"credential":"` + fakeCredential + `","ca_file
 // fakeProxy answers with control and then holds until berth closes its stdin. stopped records
 // whether marker existed at that moment, which proves stdin closed only after the child ran.
 type fakeProxy struct {
-	control  string
-	marker   string
-	hang     bool
+	control string
+	marker  string
+	hang    bool
+	// exit is the code the fake exits with.
+	exit     int
 	request  string
 	stopped  chan bool
 	killed   chan struct{}
@@ -69,7 +73,13 @@ func (f *fakeProxy) start(context.Context) (*ProxyProcess, error) {
 	return &ProxyProcess{
 		Stdin:  inW,
 		Stdout: outR,
-		Wait:   func() error { <-exited; return nil },
+		Wait: func() error {
+			<-exited
+			if f.exit != 0 {
+				return proxyExit(f.exit)
+			}
+			return nil
+		},
 		Kill: func() error {
 			f.killOnce.Do(func() { close(f.killed) })
 			_ = inR.CloseWithError(errors.New("killed"))
@@ -131,6 +141,29 @@ func TestRunProxyGivesTheChildBerthsValuesAndPassesTheExitCode(t *testing.T) {
 	}
 	if n := strings.Count(r.stdout, "HTTPS_PROXY="); n != 1 {
 		t.Errorf("HTTPS_PROXY set %d times", n)
+	}
+}
+
+// proxyExit stands in for the *exec.ExitError of a proxy that exited with a code.
+type proxyExit int
+
+func (e proxyExit) Error() string { return "exit status " + strconv.Itoa(int(e)) }
+func (e proxyExit) ExitCode() int { return int(e) }
+
+// TestRunProxyWithoutAGrantExitsAsEnvDoes: a proxy that exits for want of a grant makes berth
+// exit 5, like berth run --env, and any other early exit 8.
+func TestRunProxyWithoutAGrantExitsAsEnvDoes(t *testing.T) {
+	for exit, want := range map[int]int{proxyctl.ExitNoGrant: ExitNoGrant, 2: ExitProxyFailed, 1: ExitProxyFailed} {
+		marker := filepath.Join(t.TempDir(), "child-ran")
+		proxy := newFakeProxy("", marker)
+		proxy.exit = exit
+		r := invokeWith(t, &fakeSecrets{}, nil, proxy.start, "run", "--proxy", "k", "--", "/usr/bin/touch", marker)
+		if r.code != want || !strings.Contains(r.stderr, "the command did not start") {
+			t.Fatalf("proxy exit %d: code %d, stderr %q", exit, r.code, r.stderr)
+		}
+		if _, err := os.Stat(marker); !os.IsNotExist(err) {
+			t.Fatalf("the child ran: %v", err)
+		}
 	}
 }
 
@@ -320,20 +353,25 @@ func TestAgentRunProxyRefusalsNeverStartTheChild(t *testing.T) {
 	noCA.CaPem = "not a certificate"
 	for name, tc := range map[string]struct {
 		a    *agentProxy
+		code int
 		want string
 	}{
-		"no grant":       {&agentProxy{resp: &berthv1.StartProxyResponse{Outcome: berthv1.UseOutcome_USE_OUTCOME_NO_GRANT}}, "no active proxy grant"},
-		"rate limited":   {&agentProxy{err: withReasonErr(t, connect.CodeResourceExhausted, berthv1.ErrorReason_ERROR_REASON_RATE_LIMITED)}, "berthd did not start berth-proxy"},
-		"owned name":     {&agentProxy{resp: owned}, "invalid placeholder SSL_CERT_FILE"},
-		"no CA":          {&agentProxy{resp: noCA}, "no CA certificate"},
-		"bad credential": {&agentProxy{resp: &berthv1.StartProxyResponse{Outcome: berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED, Port: 1, CaPem: agentCA}}, "no valid credential"},
+		"no grant": {&agentProxy{resp: &berthv1.StartProxyResponse{Outcome: berthv1.UseOutcome_USE_OUTCOME_NO_GRANT}}, ExitNoGrant, "no active proxy grant"},
+		// The limits share a reason, so berth prints berthd's own message, which names the limit.
+		"rate limited":   {&agentProxy{err: withReasonErr(t, connect.CodeResourceExhausted, berthv1.ErrorReason_ERROR_REASON_RATE_LIMITED)}, ExitError, "refused\nberthd did not start berth-proxy"},
+		"busy":           {&agentProxy{err: withReasonErr(t, connect.CodeFailedPrecondition, berthv1.ErrorReason_ERROR_REASON_BUSY)}, ExitBusy, "is busy"},
+		"not started":    {&agentProxy{err: withReasonErr(t, connect.CodeUnavailable, berthv1.ErrorReason_ERROR_REASON_PROXY_NOT_STARTED)}, ExitProxyFailed, "could not start berth-proxy"},
+		"token refused":  {&agentProxy{err: withReasonErr(t, connect.CodeUnauthenticated, berthv1.ErrorReason_ERROR_REASON_AGENT_TOKEN_INVALID)}, ExitError, "refused the agent token"},
+		"owned name":     {&agentProxy{resp: owned}, ExitProxyFailed, "invalid placeholder SSL_CERT_FILE"},
+		"no CA":          {&agentProxy{resp: noCA}, ExitProxyFailed, "no CA certificate"},
+		"bad credential": {&agentProxy{resp: &berthv1.StartProxyResponse{Outcome: berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED, Port: 1, CaPem: agentCA}}, ExitProxyFailed, "no valid credential"},
 	} {
 		t.Run(name, func(t *testing.T) {
 			marker := filepath.Join(t.TempDir(), "child-ran")
 			tc.a.marker, tc.a.closed = marker, make(chan bool, 1)
 			r := invokeAgent(t, tc.a, "run", "--proxy", "k", "--", "/usr/bin/touch", marker)
-			if r.code != ExitProxyFailed || !strings.Contains(r.stderr, tc.want) || !strings.Contains(r.stderr, "the command did not start") {
-				t.Fatalf("code %d, stderr %q", r.code, r.stderr)
+			if r.code != tc.code || !strings.Contains(r.stderr, tc.want) || !strings.Contains(r.stderr, "the command did not start") {
+				t.Fatalf("code %d (want %d), stderr %q", r.code, tc.code, r.stderr)
 			}
 			if _, err := os.Stat(marker); !os.IsNotExist(err) {
 				t.Fatalf("the child ran: %v", err)
