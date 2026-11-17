@@ -64,7 +64,7 @@ Configuration inside the repository (`.git/config`, git hooks, a project `.npmrc
 | 3 | The agent socket | No (built) | `internal/adapters/socket`, `internal/adapters/api` (the agent only interceptor), `internal/berthd`, `cmd/berthd` flags | See [item 3](#item-3-the-agent-socket) |
 | 4 | Session tokens bound to the agent uid and its process tree | No for the logic (built); the cross user check needs a real second user | An agent session machine, a migration, `api` | See [item 4](#item-4-session-tokens-bound-to-the-agent-uid-and-its-process-tree) |
 | 5 | Spawn on behalf | Code now; the real runner launch needs D3 | `internal/berthd/spawn.go`, the spawn protocol, `berth run` agent mode | Same user: stdio arrives over `SCM_RIGHTS` and the consumer gets the env; by hand: the consumer runs as the runner with the runner's `HOME` and `PATH` |
-| 6 | `berthd` starts `berth-proxy` for agent sessions | No | `internal/berthd/proxy.go`, a `StartProxy` agent method | The proxy's parent is `berthd`; an agent run gets the port, credential and CA paths, never a value |
+| 6 | `berthd` starts `berth-proxy` for agent sessions | No (built); the cross user check needs a real second user | `internal/berthd/proxystart.go`, `internal/proxyproc`, a `StartProxy` agent method, `berth run --proxy` agent mode | See [item 6](#item-6-berthd-starts-berth-proxy-for-agent-sessions) |
 | 7 | `berth agent start`, with the optional Seatbelt profile | Launch as another user needs D3; the Seatbelt profile does not | `internal/cli/agent_start.go`, a Seatbelt profile | Seatbelt on: a write outside the workspace fails (one user, no admin); by hand: the harness runs as the agent user in the workspace |
 | 8 | Browser brokering | Launch as another user needs D3; the rest waits on M4 | M4's `BrowserDriver`, a `LaunchBrowser` agent method | The agent gets only a CDP proxy endpoint and token; a Chrome the agent starts itself is listed as not brokered |
 | 9 | Honest limits | No | `ARCHITECTURE.md` honest limits | Every limit below is written down with the item or milestone that narrows it |
@@ -100,7 +100,7 @@ If `/Users/Shared/Berth` or the socket folder already exists and is not owned an
 - **No swapping:** `berthd` walks the path as written from `/`, one component at a time, opening each level with `O_NOFOLLOW` and checking the open descriptor. It follows a symlink only when root owns it (so `/tmp` and `/var` work), and refuses any level owned by someone other than root or the owner, or writable by others unless it is a root owned sticky folder like `/Users/Shared`. The socket folder itself must be the owner's, with the agent group and mode `0710`. Go cannot bind relative to the checked descriptor, so `berthd` walks the path again after the bind and serves only if it reaches the same folder; since every level belongs to root or the owner and no one else can write it, only root could change a level in that window.
 - **Peer check:** every connection's peer uid is read with `LOCAL_PEERCRED` before a byte is read, as on the owner socket, and must equal the configured agent uid; any other connection is closed. The owner socket keeps refusing every uid but the owner's, so the agent can reach `berthd` only here.
 - **Methods:** only methods marked `(berth.v1.agent) = true` are served; every other method answers `PermissionDenied` with the new reason `ERROR_REASON_NOT_AGENT_METHOD`. The check reads the method's schema option, so a newly marked method is served without further wiring, and `TestAgentSurface` pins both the list and the refusal.
-- **Before items 5 and 6:** past the session token check of item 4, the agent methods answer exactly as on the owner socket. `AuthorizeUse` and `AuthorizeProxy` hand out tickets that only a `berth-native` or `berth-proxy` redeeming on the owner socket can use, and the owner socket refuses the agent uid, so a ticket an agent obtains here leads to no value.
+- **Before item 5:** past the session token check of item 4, the agent methods answer exactly as on the owner socket (item 6 added `StartProxy`, which starts the proxy as the owner instead). `AuthorizeUse` and `AuthorizeProxy` hand out tickets that only a `berth-native` or `berth-proxy` redeeming on the owner socket can use, and the owner socket refuses the agent uid, so a ticket an agent obtains here leads to no value.
 - **Tests:** an e2e case starts the real `berthd` with the agent uid set to the test's own uid and proves `ListSecrets` works and `Status` is refused on the agent socket; with a different uid every call fails; unit tests cover the folder checks and run the agent only interceptor over every method in the schema.
 
 ### Item 4: session tokens bound to the agent uid and its process tree
@@ -152,12 +152,44 @@ Taken while the maintainer was away; each is **provisional, awaiting the maintai
 - `berthd` asks the launch helper (D3) to start the signed `berth` in a consumer mode as the runner, holding the passed descriptors and one end of a socketpair, suspended; it starts `berth-native read` as the owner with the other end and a ticket bound to that runner process's audit token.
 - The value travels from `berth-native` to the runner's `berth` to the consumer's environment, never through `berthd` (invariants 7 and 11). The runner's `berth` runs the E2b cdhash check on the suspended consumer; the agent cannot signal either process.
 - The agent's `berth run --env` waits on the spawn socket for the exit status, so the terminal experience matches E2a.
+- **Never the owner as a fallback.** Until the runner user and the launch helper of D3 exist, spawn on behalf must refuse, never start the consumer as the owner. `berthd` runs as the owner, so starting the consumer itself would make the owner's account run an executable the agent picks among the granted ones, with arguments, a working folder and environment names the agent chooses. A grant pins the file and an optional argument glob, not what those arguments make the tool do: `git` granted with `--allow-interpreter` and given `-c core.sshCommand=...`, or any granted tool given a config file or plugin path the agent wrote, then runs agent written code as the owner, with the owner's home, Keychain prompts and `berth.db` in reach. That is a strict escalation over the agent running the tool as itself, which is why item 5 was not built with item 6.
 
 ### Item 6: `berthd` starts `berth-proxy` for agent sessions
 
-- A new agent method `StartProxy` (names and a request id) makes `berthd` start the signed `berth-proxy` as the owner; the proxy authorizes on the owner socket as today.
-- `berthd` returns the port, the per run credential and the CA bundle path, which lives in a run folder under the agent socket folder, readable by the `berth` group.
-- The agent's `berth run --proxy` starts its child as the agent (the child holds no secret); the session ends when the agent's run stream closes, so a crashed agent cannot leave a proxy running.
+Built (2026-11-17) and tested as one user, with the agent uid set to the test's own uid; that the agent cannot signal, trace or read the proxy needs the real second user.
+
+- **Method:** `StartProxy` on `SecretsService`, marked `(berth.v1.agent)`, so on the agent socket it needs a session token like every agent method. Its input is a request id and 1 to 16 secret names; it answers with a server stream whose first message carries the outcome and, when authorized, the proxy session id, the loopback port, the per run credential, the CA certificate as PEM and the placeholders. No message carries a value.
+- **Grants:** `berthd` checks every name for an Active proxy grant with the same function `AuthorizeProxy` uses, and answers `NO_GRANT` without starting anything when one is missing.
+- **Launch:** `berthd` starts the `berth-proxy` beside it (its `Config.Proxy` path) as its own user, in its own process group, with only `HOME`, `PATH`, `BERTH_HOME` and `TMPDIR` from `berthd`'s environment, through `internal/proxyproc`, the starter and control line reader `berth` uses in owner mode. It records the child's pid against the caller's agent session before it writes the request, and the proxy then authorizes on the owner socket exactly as one `berth` started does: `TrustProxy` pins it by live cdhash, the tickets are bound to its pid, and the `berth-native` that redeems them must be its child. `openSession` reads the agent session from that record for a proxy `berthd` started, so the proxy session row names the agent session and the item 4 hook stops it. The pid cannot name another process while the record exists: `berthd` learns of the child's exit from kqueue `NOTE_EXIT`, which fires before the child is reaped, removes the record, and only then reaps it; the removal takes only that call's own record, so it can never drop a record a later call made.
+- **Trust in the answer:** `berthd` passes the control line on only when a running proxy session has the child's pid, which only a process the proxy pin trusted can hold, and reads the CA certificate from the path that trusted proxy reported. Anything else is killed and the call answers `Unavailable`.
+- **Lifecycle:** the proxy runs while the stream stays open. When the caller's stream closes (`berth` exits normally, is killed, or cancels), `berthd` closes the proxy's stdin, the proxy ends its session with counts and exits, and `berthd` kills it if it has not exited within 5 seconds, then removes its record and reaps it. A grant revoke, a remove, an agent session revoke, expiry or lost root, and a daemon stop reach it through the existing `STOP` paths; its exit is watched with kqueue `NOTE_EXIT` as for every proxy session, and `berthd` ends the stream once the process has exited.
+- **CLI:** with `BERTH_AGENT_SOCKET` set, `berth run --proxy` calls `StartProxy` on the agent socket instead of starting `berth-proxy`, writes `ca.pem` and `bundle.pem` (`/etc/ssl/cert.pem` plus the CA) into a fresh `0700` folder in its own `TMPDIR`, checks the facts as it checks a control line (a valid port and credential, placeholders that name no variable Berth owns), starts the child with the same environment as owner mode, and closes the stream when the child exits; the folder is removed. Owner mode is unchanged.
+- **Limits:** one agent session can have `berthd` run at most 4 proxies at once and start at most 30 in any rolling hour, failed starts included; beyond either `StartProxy` answers `ResourceExhausted` with `ERROR_REASON_RATE_LIMITED` and starts nothing. The owner socket has no limit.
+- **Tests:** unit tests for the api handler (stream, validation, typed errors), the berthd flow with a fake proxy (the agent session on the row, the agent session's end and a closed stream both ending the session `Ended`, `NO_GRANT` starting nothing, a control line without a trusted session refused and killed, an unreadable CA and a failed first send both stopping the proxy, a proxy that ignores its closed stdin killed after the wait with its record held until its exit and then reaped, a call never dropping a later call's record, and both per session limits) and the CLI agent mode (the CA files, the child's environment, the stream closing only after the child ran, refusals never starting the child); end to end with the real binaries (`TestAgentProxyRunsUnderBerthd`): a call without a token or with a forged one is refused and starts nothing, the canary run injects only on the granted host and the child gets the agent's own CA copies, the proxy's parent is `berthd` and not `berth`, killing `berth` ends the session `Ended` and the proxy exits within 10 seconds, revoking the agent session stops the proxy with `AgentSessionEnded`, and the canary and the token appear in no output, `berthd` log (which now holds the proxy's stderr) or database file.
+
+#### Provisional decisions of item 6
+
+Taken while the maintainer was away; each is **provisional, awaiting the maintainer**.
+
+| # | Question | Provisional pick |
+|---|---|---|
+| P1 | How the proxy's life is tied to the run | A server stream: the proxy runs while the `StartProxy` stream is open, so `berth` dying ends it at once without a separate stop method or a watch on the caller's pid, as this plan first sketched ("the session ends when the agent's run stream closes"). The request id only holds back a retry while the stream it repeats runs; a stream cannot be replayed, and a retry after it ended starts a new proxy, since the first ended with its stream |
+| P2 | Where the CA reaches the agent | As PEM bytes in the reply, which the agent's `berth` writes into its own `0700` folder, instead of a run folder under the agent socket folder readable by the `berth` group: nothing shared to create, mode, squat or clean up after a crash, and the certificate is public. The private key stays in the proxy's memory as before. The agent can make its own child trust another CA, which it could do anyway |
+| P3 | Bound after the caller dies | Immediate: the closed stream closes the proxy's stdin; the proxy ends its session within its 2 second end timeout, and `berthd` kills it after 5 seconds at most |
+| P4 | Proxies per agent session | 4 at once and 30 starts in any rolling hour, counted in memory, since each is a process of the owner's started at the agent's request |
+| P5 | `StartProxy` on the owner socket | Allowed and unlimited; it records no agent session. The owner's `berth` keeps starting its own proxy |
+
+#### Honest limits of item 6
+
+- **The proxy now runs with the owner's rights:** it parses HTTP and TLS from the agent's child, so a memory safety or logic flaw in it would run with the owner's home, Keychain prompts and `berth.db` in reach, where before it ran as whoever started it. It is Go, standard library only, signed with the hardened runtime and pinned; running it as the runner user or under a Seatbelt profile would narrow this and belongs with items 5 and 7.
+- **The agent still holds the credential,** as in owner mode: any agent process that reads the child's environment can use the proxy while the run lives, within the grant's host, method and path, never the value.
+- **`berth` in agent mode does not verify the server on the agent socket:** it receives no value, only facts, so a fake server at `BERTH_AGENT_SOCKET` could only point the agent's own child at another proxy, and only something that already controls the agent's environment can set that variable.
+- **`berth run` does not wait for the proxy's end:** closing the stream is all it does, so the session's counts are recorded a moment after `berth` exits.
+- **`AuthorizeProxy`, `WatchProxySession` and `EndProxySession` stay on the agent surface** though no agent path uses them now: a `berth-proxy` the agent user starts itself connects with no token and is refused, and its tickets could only be redeemed on the owner socket, which refuses the agent uid. Closing them on the agent socket is a contract change left for later.
+- **The start limits live in memory:** a restart of `berthd` resets both the concurrent and the hourly counts.
+- **The proxy's stderr goes to `berthd`'s log,** not to the agent: its messages carry no value or credential, but an agent sees only that `berthd` could not start it, and its log lines add to `berthd`'s.
+- **During a daemon stop, a proxy still in its handshake gets no `STOP`:** `berthd` stops only sessions that exist, so a proxy that has not authorized yet ends when `berthd` exits and closes its stdin, or is refused when it reaches a socket that no longer serves.
+- **One user tests prove the plumbing, not the boundary:** with the agent uid equal to the owner's, the agent could still signal the proxy; that it cannot needs the real second user.
 
 ### Item 7: `berth agent start`
 
@@ -184,6 +216,7 @@ These go into `ARCHITECTURE.md` when the items that create them land.
 - `berthd` cannot see another user's process arguments (`kern.procargs2`), so it can broker only browsers it launched.
 - Before setup, the agent user can create `/Users/Shared/Berth` itself; that blocks setup (setup refuses a folder it did not create) but grants nothing, because `berthd` refuses a folder it does not trust and the agent socket does not start. After setup, nothing can squat the folders: the parent is root owned and the socket folder owner owned.
 - Free signing (D7): no Endpoint Security and no notarization until M8.
+- The `berth-proxy` of an agent session runs as the owner (item 6), so a flaw in its HTTP or TLS parsing would run with the owner's rights; running it as the runner user or under Seatbelt would narrow this.
 
 ## Follow ups from the review
 
@@ -196,6 +229,8 @@ These go into `ARCHITECTURE.md` when the items that create them land.
 - A failed argument read is cached as nil, so a process whose arguments could not be read once is never read again.
 - `AuthorizeUse` prompts have no per session limit yet, unlike store dialogs.
 - `agent_sessions` rows are never pruned; ended sessions stay in the table.
+- Close `AuthorizeProxy`, `WatchProxySession` and `EndProxySession` on the agent socket now that agent sessions get their proxy through `StartProxy` (item 6).
+- Run the `berth-proxy` of an agent session as the runner user once D3's launch helper exists, so a flaw in it no longer runs with the owner's rights (item 6).
 - `AdmitStore` reads the session's state from the database while holding the agents mutex, which serializes store admissions behind a database read.
 
 ## Acceptance tests
@@ -209,6 +244,10 @@ These go into `ARCHITECTURE.md` when the items that create them land.
 | The same token from a process outside the session's tree (one launchd adopted) is refused | e2e, one user | Built (item 4) |
 | A token from another uid is refused | Unit, one user; by hand, real second user | Built as a unit test (item 4); by hand planned |
 | One session can hold at most 3 store dialogs and start 10 an hour | e2e, one user | Built (item 4) |
+| An agent's `berth run --proxy` gets injection through a `berth-proxy` whose parent is `berthd`; the canary reaches no agent output, log or database file | e2e, one user | Built (item 6) |
+| Killing the agent's `berth`, or ending its agent session, stops the proxy `berthd` started | e2e, one user | Built (item 6) |
+| `StartProxy` without a valid token is refused and starts nothing; a fifth concurrent proxy, or a 31st start in an hour, for one session is refused | e2e and unit, one user | Built (item 6) |
+| The agent user cannot signal, trace or read the `berth-proxy` of its session | By hand, real second user | Planned (item 6) |
 | Revoking or expiring an agent session stops the proxy sessions authorized through it | Unit, one user | Built (item 4) |
 | The token never reaches a log, a database file or an output other than the one that issued it | e2e, one user | Built (item 4) |
 | From the agent identity: reading your home, Keychain items, `berth.db` and dotfiles fails | By hand, real second user | Planned (items 1, 2) |
@@ -220,4 +259,4 @@ These go into `ARCHITECTURE.md` when the items that create them land.
 ## Order
 
 After E2b and before or alongside M6, since M6 browser credentials face the same threat.
-Item 3 lands first, since it needs nothing from the maintainer; item 4 is built; items 6 and the Seatbelt half of 7 follow as one user; the spike (item 1) unblocks setup (2), spawn (5), agent start (7) and browser launch as another user (8).
+Item 3 lands first, since it needs nothing from the maintainer; items 4 and 6 are built; the Seatbelt half of 7 follows as one user; the spike (item 1) unblocks setup (2), spawn (5), agent start (7) and browser launch as another user (8).
