@@ -71,6 +71,7 @@ type FakeBrowser struct {
 
 	mu      sync.Mutex
 	answers map[string]string
+	refused map[string]bool
 	hooks   map[string]func()
 	calls   []FakeCall
 	sent    [][]byte
@@ -96,6 +97,7 @@ func (b *FakeBrowser) Call(ctx context.Context, session, method string, params [
 	b.mu.Lock()
 	b.calls = append(b.calls, FakeCall{Session: session, Method: method, Params: string(params)})
 	answer, scripted := b.answers[method]
+	refuse := b.refused[method]
 	hook := b.hooks[method]
 	b.mu.Unlock()
 	if hook != nil {
@@ -107,6 +109,8 @@ func (b *FakeBrowser) Call(ctx context.Context, session, method string, params [
 	default:
 	}
 	switch {
+	case refuse:
+		return nil, errors.New("CDP error -32000: refused by the fake browser")
 	case scripted:
 		return []byte(answer), nil
 	case method == "Browser.close" && b.wedged:
@@ -136,6 +140,16 @@ func (b *FakeBrowser) Answer(method, result string) {
 		b.answers = map[string]string{}
 	}
 	b.answers[method] = result
+}
+
+// Refuse makes every later call of method fail with a CDP error.
+func (b *FakeBrowser) Refuse(method string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.refused == nil {
+		b.refused = map[string]bool{}
+	}
+	b.refused[method] = true
 }
 
 // OnCall runs f each time Berth calls method, before the call is answered, as a browser that

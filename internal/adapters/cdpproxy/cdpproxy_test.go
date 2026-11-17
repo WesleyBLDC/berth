@@ -131,6 +131,7 @@ func TestAllowedPassesAndDeniedIsAnsweredByTheProxy(t *testing.T) {
 	}
 	defer func() { _ = ws.CloseNow() }()
 	ctx := t.Context()
+	attach(t, fb, ws, "S", "")
 	if err := ws.Write(ctx, websocket.MessageText, []byte(`{"id":1,"method":"Page.enable","sessionId":"S"}`)); err != nil {
 		t.Fatal(err)
 	}
@@ -563,6 +564,7 @@ func TestATargetAttachedDuringTheResetIsUndone(t *testing.T) {
 	_ = ws.CloseNow()
 	next := redial(t, endpoint)
 	defer func() { _ = next.CloseNow() }()
+	waitCall(t, fb, "S9", "Target.detachFromTarget")
 	var got []string
 	for _, c := range fb.Calls() {
 		got = append(got, c.Session+" "+c.Method+" "+c.Params)
@@ -573,6 +575,10 @@ func TestATargetAttachedDuringTheResetIsUndone(t *testing.T) {
 	if off < 0 || resumed < off || detached < resumed {
 		t.Fatalf("calls %q; auto attach must go off first, then the new target be resumed and detached", got)
 	}
+	// The session attached after the connection ended is hidden: nothing of it reaches the next.
+	if err := fb.Emit([]byte(`{"method":"Runtime.consoleAPICalled","sessionId":"S9","params":{}}`)); err != nil {
+		t.Fatal(err)
+	}
 	if err := fb.Emit([]byte(`{"method":"Target.targetCreated","params":{}}`)); err != nil {
 		t.Fatal(err)
 	}
@@ -581,28 +587,106 @@ func TestATargetAttachedDuringTheResetIsUndone(t *testing.T) {
 	}
 }
 
-// Chrome answers a call on a session it does not know without the session id; the call still
-// resolves, so the reset does not wait for it.
-func TestACallOnAnUnknownSessionResolves(t *testing.T) {
+// attach hands the connection a session, as Chrome's attachedToTarget does, and reads it.
+func attach(t *testing.T, fb *testutil.FakeBrowser, ws *websocket.Conn, session, parent string) {
+	t.Helper()
+	msg := `{"method":"Target.attachedToTarget","params":{"sessionId":"` + session + `","targetInfo":{"targetId":"T-` + session + `","type":"page","url":"about:blank"},"waitingForDebugger":false}`
+	if parent != "" {
+		msg += `,"sessionId":"` + parent + `"`
+	}
+	if err := fb.Emit([]byte(msg + `}`)); err != nil {
+		t.Fatal(err)
+	}
+	if m := read(t, ws); m["method"] != "Target.attachedToTarget" {
+		t.Fatalf("got %v, want the attach", m)
+	}
+}
+
+// waitCall waits until Berth made a call of method about session.
+func waitCall(t *testing.T, fb *testutil.FakeBrowser, session, method string) {
+	t.Helper()
+	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
+		if slices.ContainsFunc(fb.Calls(), func(c testutil.FakeCall) bool {
+			return c.Method == method && (c.Session == session || strings.Contains(c.Params, `"`+session+`"`))
+		}) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("no %s call about %s; calls %v", method, session, fb.Calls())
+		}
+	}
+}
+
+// A call goes only to a session the connection holds: never one it was not handed, one that
+// detached, or one hidden from it, which would otherwise run on Chrome's own page before the
+// detach lands. A reply on a hidden session still clears its call, so the id never sticks.
+func TestACallOnASessionNotHeldIsRefused(t *testing.T) {
 	fb, endpoint, _ := serve(t)
 	ws, _, err := dial(t, endpoint, true)
 	if err != nil {
 		t.Fatal(err)
 	}
+	defer func() { _ = ws.CloseNow() }()
 	write(t, ws, `{"id":4,"sessionId":"NOPE","method":"Runtime.evaluate","params":{"expression":"1"}}`)
-	waitSent(t, fb, 1)
-	if err := fb.Emit([]byte(`{"id":4,"error":{"code":-32001,"message":"Session with given id not found."}}`)); err != nil {
+	refusedWith(t, read(t, ws), 4, "not attached")
+
+	attach(t, fb, ws, "GONE", "")
+	if err := fb.Emit([]byte(`{"method":"Target.detachedFromTarget","params":{"sessionId":"GONE"}}`)); err != nil {
 		t.Fatal(err)
 	}
-	if m := read(t, ws); m["id"] != float64(4) {
-		t.Fatalf("reply = %v", m)
+	read(t, ws)
+	write(t, ws, `{"id":5,"sessionId":"GONE","method":"Runtime.evaluate","params":{"expression":"1"}}`)
+	refusedWith(t, read(t, ws), 5, "not attached")
+
+	attach(t, fb, ws, "S", "")
+	write(t, ws, `{"id":7,"sessionId":"S","method":"Runtime.evaluate","params":{"expression":"1"}}`)
+	waitSent(t, fb, 1)
+	if err := fb.Emit([]byte(`{"method":"Target.targetInfoChanged","params":{"targetInfo":{"targetId":"T-S","type":"page","url":"chrome://settings/"}}}`)); err != nil {
+		t.Fatal(err)
 	}
-	_ = ws.CloseNow()
-	start := time.Now()
-	next := redial(t, endpoint)
-	_ = next.CloseNow()
-	if took := time.Since(start); took > 2*time.Second {
-		t.Fatalf("the next connection waited %v for a call already answered", took)
+	read(t, ws)
+	write(t, ws, `{"id":8,"sessionId":"S","method":"Runtime.evaluate","params":{"expression":"1"}}`)
+	refusedWith(t, read(t, ws), 8, "not attached")
+	if err := fb.Emit([]byte(`{"id":7,"sessionId":"S","result":{}}`)); err != nil {
+		t.Fatal(err)
+	}
+	write(t, ws, `{"id":7,"method":"Target.getTargets"}`)
+	waitSent(t, fb, 2)
+	if len(fb.Sent()) != 2 {
+		t.Fatalf("browser got %q", fb.Sent())
+	}
+}
+
+// A hidden session whose detach Chrome refuses is gone, so its calls are forgotten and their ids
+// free again.
+func TestAFailedDetachFreesTheHiddenSessionsCalls(t *testing.T) {
+	fb, endpoint, _ := serve(t)
+	ws, _, err := dial(t, endpoint, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ws.CloseNow() }()
+	fb.Refuse("Target.detachFromTarget")
+	attach(t, fb, ws, "S", "")
+	write(t, ws, `{"id":7,"sessionId":"S","method":"Runtime.evaluate","params":{"expression":"1"}}`)
+	waitSent(t, fb, 1)
+	if err := fb.Emit([]byte(`{"method":"Target.targetInfoChanged","params":{"targetInfo":{"targetId":"T-S","type":"page","url":"chrome://settings/"}}}`)); err != nil {
+		t.Fatal(err)
+	}
+	read(t, ws)
+	waitCall(t, fb, "S", "Target.detachFromTarget")
+	for deadline := time.Now().Add(5 * time.Second); ; {
+		write(t, ws, `{"id":7,"method":"Target.getTargets"}`)
+		for wait := time.Now().Add(200 * time.Millisecond); len(fb.Sent()) < 2 && time.Now().Before(wait); {
+			time.Sleep(5 * time.Millisecond)
+		}
+		if len(fb.Sent()) >= 2 {
+			return
+		}
+		refusedWith(t, read(t, ws), 7, "already in flight")
+		if time.Now().After(deadline) {
+			t.Fatal("id 7 never came free after the failed detach")
+		}
 	}
 }
 
@@ -615,35 +699,38 @@ func TestASessionWhoseTargetLeavesTheWebIsDetached(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = ws.CloseNow() }()
+	attach(t, fb, ws, "S1", "")
+	attach(t, fb, ws, "S1-child", "S1")
 	for _, raw := range []string{
-		`{"method":"Target.attachedToTarget","params":{"sessionId":"S1","targetInfo":{"targetId":"T1","type":"page","url":"about:blank"},"waitingForDebugger":false}}`,
-		`{"method":"Target.targetInfoChanged","params":{"targetInfo":{"targetId":"T1","type":"page","url":"chrome://settings/"}}}`,
+		`{"method":"Target.targetInfoChanged","params":{"targetInfo":{"targetId":"T-S1","type":"page","url":"chrome://settings/"}}}`,
 		`{"method":"Runtime.consoleAPICalled","sessionId":"S1","params":{}}`,
+		`{"method":"Runtime.consoleAPICalled","sessionId":"S1-child","params":{}}`,
+		// A child attached under the hidden session is hidden and detached too.
+		`{"method":"Target.attachedToTarget","sessionId":"S1","params":{"sessionId":"S1-late","targetInfo":{"targetId":"T-late","type":"iframe","url":"https://a.example/"},"waitingForDebugger":false}}`,
+		`{"method":"Target.detachedFromTarget","sessionId":"S1","params":{"sessionId":"S1-child"}}`,
 		`{"method":"Target.targetCreated","params":{}}`,
 	} {
 		if err := fb.Emit([]byte(raw)); err != nil {
 			t.Fatal(err)
 		}
 	}
-	read(t, ws)
-	if m := read(t, ws); m["method"] != "Target.detachedFromTarget" || m["params"].(map[string]any)["sessionId"] != "S1" {
-		t.Fatalf("got %v, want the session's detach", m)
+	var notices []string
+	for range 2 {
+		m := read(t, ws)
+		if m["method"] != "Target.detachedFromTarget" {
+			t.Fatalf("got %v, want a detach notice; the change naming Chrome's page must not pass", m)
+		}
+		notices = append(notices, m["params"].(map[string]any)["sessionId"].(string))
 	}
-	if m := read(t, ws); m["method"] != "Target.targetInfoChanged" {
-		t.Fatalf("got %v", m)
+	slices.Sort(notices)
+	if !slices.Equal(notices, []string{"S1", "S1-child"}) {
+		t.Fatalf("detach notices for %v, want the session and its child", notices)
 	}
 	if m := read(t, ws); m["method"] != "Target.targetCreated" {
-		t.Fatalf("got %v; nothing about the detached session may follow", m)
+		t.Fatalf("got %v; nothing about the detached sessions may follow", m)
 	}
-	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
-		if slices.ContainsFunc(fb.Calls(), func(c testutil.FakeCall) bool {
-			return c.Method == "Target.detachFromTarget" && c.Params == `{"sessionId":"S1"}`
-		}) {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("the proxy never detached the session; calls %v", fb.Calls())
-		}
+	for _, s := range []string{"S1", "S1-child", "S1-late"} {
+		waitCall(t, fb, s, "Target.detachFromTarget")
 	}
 }
 
@@ -655,6 +742,7 @@ func TestAHistoryEntryMustBeLoadable(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer func() { _ = ws.CloseNow() }()
+	attach(t, fb, ws, "S", "")
 	fb.Answer("Page.getNavigationHistory", `{"currentIndex":1,"entries":[{"id":1,"url":"file:///etc/hosts"},{"id":2,"url":"https://a.example/"}]}`)
 	write(t, ws, `{"id":1,"sessionId":"S","method":"Page.navigateToHistoryEntry","params":{"entryId":1}}`)
 	refusedWith(t, read(t, ws), 1, "only http")
