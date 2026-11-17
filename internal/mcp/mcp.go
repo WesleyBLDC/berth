@@ -47,8 +47,9 @@ type Server struct {
 	out sync.Mutex
 	mu  sync.Mutex
 	// tokenDirs holds the folder of each open browser's token file, removed at its close and
-	// when the server ends.
+	// when the server ends; closed refuses new ones once it has.
 	tokenDirs map[string]string
+	closed    bool
 }
 
 type request struct {
@@ -74,10 +75,20 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 		wg.Wait()
 		s.Close()
 	}()
-	sc := bufio.NewScanner(in)
-	sc.Buffer(make([]byte, 64<<10), maxMessage)
-	for sc.Scan() {
-		line := bytes.TrimSpace(sc.Bytes())
+	r := bufio.NewReaderSize(in, 64<<10)
+	for {
+		raw, tooLong, err := readLine(r)
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				return nil
+			}
+			return err
+		}
+		if tooLong {
+			s.reply(out, nil, nil, &rpcError{Code: -32600, Message: "message larger than 1 MiB"})
+			continue
+		}
+		line := bytes.TrimSpace(raw)
 		if len(line) == 0 {
 			continue
 		}
@@ -86,15 +97,40 @@ func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {
 			s.reply(out, nil, nil, &rpcError{Code: -32600, Message: "not a JSON-RPC 2.0 request"})
 			continue
 		}
+		// A notification (no id) gets no reply, so it never runs a method: a tool with side
+		// effects must be a request the client sees answered. The client's own notifications
+		// (initialized, cancelled) need nothing from this server.
+		if req.ID == nil {
+			continue
+		}
 		wg.Go(func() {
 			result, rerr := s.handle(ctx, req)
-			// A notification gets no reply.
-			if req.ID != nil {
-				s.reply(out, req.ID, result, rerr)
-			}
+			s.reply(out, req.ID, result, rerr)
 		})
 	}
-	return sc.Err()
+}
+
+// readLine reads one line; a line over maxMessage is read to its end and reported as too long,
+// so one oversized message costs an error reply, not the session.
+func readLine(r *bufio.Reader) (line []byte, tooLong bool, err error) {
+	for {
+		chunk, err := r.ReadSlice('\n')
+		if len(line)+len(chunk) > maxMessage {
+			tooLong, line = true, nil
+		} else if !tooLong {
+			line = append(line, chunk...)
+		}
+		switch {
+		case err == nil:
+			return line, tooLong, nil
+		case errors.Is(err, bufio.ErrBufferFull):
+			continue
+		case errors.Is(err, io.EOF) && (len(line) > 0 || tooLong):
+			return line, tooLong, nil
+		default:
+			return nil, false, err
+		}
+	}
 }
 
 func (s *Server) reply(out io.Writer, id json.RawMessage, result any, rerr *rpcError) {
@@ -154,9 +190,6 @@ func (s *Server) handle(ctx context.Context, req request) (any, *rpcError) {
 		}
 		return toolResult(out, false), nil
 	}
-	if req.ID == nil {
-		return nil, nil
-	}
 	return nil, &rpcError{Code: -32601, Message: "method not found"}
 }
 
@@ -202,6 +235,19 @@ func (s *Server) call(ctx context.Context, name string, raw json.RawMessage) (an
 		}
 		s.removeToken(args.ID)
 		return map[string]string{"id": args.ID, "state": stateWord(resp.GetBrowser().GetState())}, nil
+	case "browser_list":
+		if err := strict(raw, &struct{}{}); err != nil {
+			return nil, err
+		}
+		resp, err := s.Browsers.ListAgentBrowsers(ctx, &berthv1.ListAgentBrowsersRequest{})
+		if err != nil {
+			return nil, err
+		}
+		browsers := []map[string]string{}
+		for _, b := range resp.GetBrowsers() {
+			browsers = append(browsers, map[string]string{"id": b.GetId(), "state": stateWord(b.GetState()), "cdp_endpoint": b.GetCdpEndpoint()})
+		}
+		return map[string]any{"browsers": browsers}, nil
 	case "secret_list":
 		if err := strict(raw, &struct{}{}); err != nil {
 			return nil, err
@@ -252,8 +298,14 @@ func strict(raw json.RawMessage, into any) error {
 }
 
 // writeToken puts a CDP token in a new 0600 file in a new 0700 folder, so it reaches the CDP
-// client without entering the model's context or a command line.
+// client without entering the model's context or a command line. It runs under s.mu, so Close
+// either removes the file or finds the server closed before the file exists.
 func (s *Server) writeToken(id, token string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return "", errors.New("berth-mcp is stopping")
+	}
 	dir, err := os.MkdirTemp(s.TokenDir, "berth-cdp-")
 	if err != nil {
 		return "", fmt.Errorf("could not make a folder for the CDP token: %w", err)
@@ -270,8 +322,6 @@ func (s *Server) writeToken(id, token string) (string, error) {
 		_ = os.RemoveAll(dir)
 		return "", fmt.Errorf("could not write the CDP token file: %w", err)
 	}
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s.tokenDirs == nil {
 		s.tokenDirs = map[string]string{}
 	}
@@ -289,16 +339,15 @@ func (s *Server) removeToken(id string) {
 	}
 }
 
-// Close removes every token file the server wrote; Serve calls it when it returns.
+// Close removes every token file the server wrote and writes no more; Serve calls it when it
+// returns, and berth-mcp on a signal.
 func (s *Server) Close() {
 	s.mu.Lock()
-	ids := make([]string, 0, len(s.tokenDirs))
-	for id := range s.tokenDirs {
-		ids = append(ids, id)
-	}
-	s.mu.Unlock()
-	for _, id := range ids {
-		s.removeToken(id)
+	defer s.mu.Unlock()
+	s.closed = true
+	for id, dir := range s.tokenDirs {
+		_ = os.RemoveAll(dir)
+		delete(s.tokenDirs, id)
 	}
 }
 

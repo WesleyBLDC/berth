@@ -132,6 +132,12 @@ func TestAgentBrowserReachesOnlyItsOwnSession(t *testing.T) {
 			t.Fatalf("%s: close = %v, want ErrBrowserNotFound", name, err)
 		}
 	}
+	for agent, want := range map[string]int{sessionA: 1, sessionB: 0, "": 0} {
+		list, _ := f.m.ListAgentBrowsers(api.WithAgentSession(t.Context(), agent))
+		if len(list.GetBrowsers()) != want || want == 1 && list.GetBrowsers()[0].GetId() != mine.GetBrowser().GetId() {
+			t.Fatalf("session %q lists %v, want only its own %d", agent, list, want)
+		}
+	}
 	for _, id := range []string{mine.GetBrowser().GetId(), owners.GetBrowser().GetId()} {
 		if st := f.m.state(id); st != browser.Ready {
 			t.Fatalf("a refused close changed browser %s to %s", id, st)

@@ -98,7 +98,7 @@ func TestBerthMCPOpensAndClosesAnAgentBrowser(t *testing.T) {
 	for _, tl := range list.Tools {
 		names = append(names, tl.Name)
 	}
-	if strings.Join(names, ",") != "browser_open,browser_close,secret_list,secret_request" {
+	if strings.Join(names, ",") != "browser_open,browser_close,browser_list,secret_list,secret_request" {
 		t.Fatalf("tools = %v", names)
 	}
 
@@ -114,6 +114,15 @@ func TestBerthMCPOpensAndClosesAnAgentBrowser(t *testing.T) {
 		t.Fatalf("listed %v", b)
 	}
 
+	// A model that lost the id after a restart finds it again, without the token.
+	var listed struct {
+		Browsers []map[string]string
+	}
+	var res struct{ Content []struct{ Text string } }
+	_ = json.Unmarshal(c.rpc(30, "tools/call", map[string]any{"name": "browser_list", "arguments": map[string]any{}}), &res)
+	if len(res.Content) != 1 || json.Unmarshal([]byte(res.Content[0].Text), &listed) != nil || len(listed.Browsers) != 1 || listed.Browsers[0]["id"] != opened["id"] {
+		t.Fatalf("browser_list = %+v", res)
+	}
 	if closed := c.tool(4, "browser_close", map[string]any{"id": opened["id"]}); closed["state"] != "closed" {
 		t.Fatalf("browser_close = %v", closed)
 	}

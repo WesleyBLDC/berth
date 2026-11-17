@@ -10,6 +10,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,13 +26,14 @@ import (
 
 // toolsSHA256 pins tools.json: a changed tool definition must change this on purpose, since MCP
 // clients may pin the definitions they approved.
-const toolsSHA256 = "f468861f38106b28a26e08c52a52d40108348e083d2e7391dc3d224682a63ac1"
+const toolsSHA256 = "4e1966c903f8022d3831ac44efec4bab729f391448a40c7aa4712afe6e0b78c2"
 
 // surface maps every agent method to the tool exposing it, or to why berth-mcp leaves it out, so
 // a newly marked agent method fails here until it is decided.
 var surface = map[string]string{
 	"berth.v1.BrowsersService.OpenAgentBrowser":  "browser_open",
 	"berth.v1.BrowsersService.CloseAgentBrowser": "browser_close",
+	"berth.v1.BrowsersService.ListAgentBrowsers": "browser_list",
 	"berth.v1.SecretsService.ListSecrets":        "secret_list",
 	"berth.v1.SecretsService.RequestSecret":      "secret_request",
 	"berth.v1.DaemonService.Handshake":           "-the client's connect sends it",
@@ -92,9 +94,17 @@ type fakeDaemon struct {
 	berthv1connect.UnimplementedSecretsServiceHandler
 	closeErr error
 	reason   string
+	opens    atomic.Int32
+}
+
+func (f *fakeDaemon) ListAgentBrowsers(context.Context, *berthv1.ListAgentBrowsersRequest) (*berthv1.ListAgentBrowsersResponse, error) {
+	return &berthv1.ListAgentBrowsersResponse{Browsers: []*berthv1.AgentBrowser{
+		{Id: "0123456789abcdef", State: berthv1.BrowserState_BROWSER_STATE_READY, CdpEndpoint: "http://127.0.0.1:4321"},
+	}}, nil
 }
 
 func (f *fakeDaemon) OpenAgentBrowser(context.Context, *berthv1.OpenAgentBrowserRequest) (*berthv1.OpenAgentBrowserResponse, error) {
+	f.opens.Add(1)
 	return &berthv1.OpenAgentBrowserResponse{
 		Browser:  &berthv1.AgentBrowser{Id: "0123456789abcdef", State: berthv1.BrowserState_BROWSER_STATE_READY, CdpEndpoint: "http://127.0.0.1:4321"},
 		CdpToken: cdpToken,
@@ -128,6 +138,12 @@ type session struct {
 
 func start(t *testing.T, fake *fakeDaemon) (*session, string) {
 	t.Helper()
+	s, dir, _ := startServer(t, fake)
+	return s, dir
+}
+
+func startServer(t *testing.T, fake *fakeDaemon) (*session, string, *Server) {
+	t.Helper()
 	server := connect.NewServer()
 	berthv1connect.RegisterBrowsersServiceHandler(server, fake)
 	berthv1connect.RegisterSecretsServiceHandler(server, fake)
@@ -138,8 +154,9 @@ func start(t *testing.T, fake *fakeDaemon) (*session, string) {
 	outR, outW := io.Pipe()
 	done := make(chan struct{})
 	go func() { _ = s.Serve(t.Context(), inR, outW); _ = outW.Close(); close(done) }()
-	t.Cleanup(func() { _ = inW.Close(); <-done })
-	return &session{t: t, in: inW, out: bufio.NewScanner(outR)}, dir
+	// Draining the output lets a failed test end even with replies it never read.
+	t.Cleanup(func() { _ = inW.Close(); go func() { _, _ = io.Copy(io.Discard, outR) }(); <-done })
+	return &session{t: t, in: inW, out: bufio.NewScanner(outR)}, dir, s
 }
 
 func (s *session) send(line string) {
@@ -212,7 +229,7 @@ func TestServeOverStdio(t *testing.T) {
 	}
 	s.send(`{"jsonrpc":"2.0","id":2,"method":"tools/list"}`)
 	var list struct{ Tools []struct{ Name string } }
-	if r := s.read(); json.Unmarshal(r.Result, &list) != nil || len(list.Tools) != 4 {
+	if r := s.read(); json.Unmarshal(r.Result, &list) != nil || len(list.Tools) != 5 {
 		t.Fatalf("tools/list = %s", r.Result)
 	}
 
@@ -225,6 +242,9 @@ func TestServeOverStdio(t *testing.T) {
 	b, _ := os.ReadFile(file)
 	if err != nil || st.Mode().Perm() != 0o600 || string(b) != cdpToken {
 		t.Fatalf("token file: %v %v", st, err)
+	}
+	if listed, isErr := s.call(40, "browser_list", `{}`); isErr || !strings.Contains(mustJSON(t, listed), `"id":"0123456789abcdef"`) || strings.Contains(mustJSON(t, listed), cdpToken) {
+		t.Fatalf("browser_list = %v", listed)
 	}
 	if closed, isErr := s.call(4, "browser_close", `{"id":"0123456789abcdef"}`); isErr || closed["state"] != "closed" {
 		t.Fatalf("browser_close = %v", closed)
@@ -278,5 +298,56 @@ func TestServeRemovesTokenFilesWhenItEnds(t *testing.T) {
 			t.Fatalf("token file %s in %s survived the server", file, dir)
 		}
 		time.Sleep(10 * time.Millisecond)
+	}
+}
+
+func mustJSON(t *testing.T, v any) string {
+	t.Helper()
+	b, err := json.Marshal(v)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
+}
+
+// A notification never runs a method: a tools/call without an id opens nothing and gets no reply.
+func TestNotificationsRunNothing(t *testing.T) {
+	fake := &fakeDaemon{}
+	s, _ := start(t, fake)
+	s.send(`{"jsonrpc":"2.0","method":"tools/call","params":{"name":"browser_open","arguments":{}}}`)
+	// A call that started after the notification and went through berthd too ends after it would.
+	s.send(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"browser_list","arguments":{}}}`)
+	if r := s.read(); string(r.ID) != "1" {
+		t.Fatalf("the first reply = %+v, want browser_list's", r)
+	}
+	if n := fake.opens.Load(); n != 0 {
+		t.Fatalf("a notification opened %d browsers", n)
+	}
+}
+
+// A line over 1 MiB gets an error reply, and the session goes on.
+func TestOversizedLineIsRefusedNotFatal(t *testing.T) {
+	s, _ := start(t, &fakeDaemon{})
+	go func() {
+		_, _ = io.WriteString(s.in, `{"jsonrpc":"2.0","id":1,"method":"ping","params":{"pad":"`+strings.Repeat("x", maxMessage)+`"}}`+"\n")
+	}()
+	if r := s.read(); r.Error == nil || r.Error.Code != -32600 {
+		t.Fatalf("an oversized line = %+v", r)
+	}
+	s.send(`{"jsonrpc":"2.0","id":2,"method":"ping"}`)
+	if r := s.read(); string(r.ID) != "2" || r.Error != nil {
+		t.Fatalf("after an oversized line, ping = %+v", r)
+	}
+}
+
+// Once closed (berth-mcp's signal path), no token file is written, so none outlives the process.
+func TestNoTokenFileAfterClose(t *testing.T) {
+	s, dir, srv := startServer(t, &fakeDaemon{})
+	srv.Close()
+	if got, isErr := s.call(1, "browser_open", `{}`); !isErr {
+		t.Fatalf("browser_open after Close = %v", got)
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Fatalf("token folders after Close: %v", entries)
 	}
 }

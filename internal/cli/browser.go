@@ -12,6 +12,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	berthv1 "berth/gen/berth/v1"
+	"berth/internal/client"
 )
 
 // launchTimeout covers berthd's own 30 second wait for the browser to answer over its pipe.
@@ -144,6 +145,9 @@ func browserList(ctx context.Context, args []string, env Env) int {
 	if !ok {
 		return ExitError
 	}
+	if env.Agent {
+		return agentBrowserList(ctx, c, *asJSON, env)
+	}
 	resp, err := c.Browsers.ListBrowsers(ctx, &berthv1.ListBrowsersRequest{IncludeClosed: *all})
 	if err != nil {
 		return reportError(env.Stderr, err, "", "")
@@ -166,6 +170,30 @@ func browserList(ctx context.Context, args []string, env Env) int {
 		}
 		fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\t%s\t%s\t%s\n", b.GetId(), b.GetProfile(), state, dash(b.GetSessionId()),
 			dash(b.GetAgentSessionId()), yesNo(b.GetHeadless()), dash(b.GetCdpEndpoint()), dash(shown(b.GetProduct())))
+	}
+	_ = w.Flush()
+	return ExitOK
+}
+
+// agentBrowserList lists only the caller's agent session's live browsers.
+func agentBrowserList(ctx context.Context, c *client.Client, asJSON bool, env Env) int {
+	resp, err := c.Browsers.ListAgentBrowsers(ctx, &berthv1.ListAgentBrowsersRequest{})
+	if err != nil {
+		return reportError(env.Stderr, err, "", "")
+	}
+	if asJSON {
+		b, err := protojson.MarshalOptions{Multiline: true}.Marshal(resp)
+		if err != nil {
+			fmt.Fprintln(env.Stderr, err)
+			return ExitError
+		}
+		fmt.Fprintf(env.Stdout, "%s\n", b)
+		return ExitOK
+	}
+	w := tabwriter.NewWriter(env.Stdout, 0, 0, 2, ' ', 0)
+	fmt.Fprintln(w, "ID\tSTATE\tENDPOINT\tPRODUCT")
+	for _, b := range resp.GetBrowsers() {
+		fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", b.GetId(), browserStateName(b.GetState()), dash(b.GetCdpEndpoint()), dash(shown(b.GetProduct())))
 	}
 	_ = w.Flush()
 	return ExitOK

@@ -19,6 +19,13 @@
     "annotations": {"readOnlyHint": false, "destructiveHint": true, "idempotentHint": true, "openWorldHint": false}
   },
   {
+    "name": "browser_list",
+    "title": "List my browsers",
+    "description": "List the open browsers of this agent session (ids, states, CDP endpoints), for example to find and close them after a restart. Tokens are not shown again.",
+    "inputSchema": {"type": "object", "properties": {}, "additionalProperties": false},
+    "annotations": {"readOnlyHint": true, "destructiveHint": false, "idempotentHint": true, "openWorldHint": false}
+  },
+  {
     "name": "secret_list",
     "title": "List secret names",
     "description": "List the names of the secrets stored in Berth. Values are never shown to agents.",

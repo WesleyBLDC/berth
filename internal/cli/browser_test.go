@@ -58,6 +58,12 @@ func (f *fakeBrowsers) CloseAgentBrowser(_ context.Context, req *berthv1.CloseAg
 	return &berthv1.CloseAgentBrowserResponse{Browser: &berthv1.AgentBrowser{Id: req.GetId(), State: berthv1.BrowserState_BROWSER_STATE_CLOSED}}, nil
 }
 
+func (f *fakeBrowsers) ListAgentBrowsers(context.Context, *berthv1.ListAgentBrowsersRequest) (*berthv1.ListAgentBrowsersResponse, error) {
+	return &berthv1.ListAgentBrowsersResponse{Browsers: []*berthv1.AgentBrowser{
+		{Id: "0123456789abcdef", State: berthv1.BrowserState_BROWSER_STATE_READY, CdpEndpoint: "http://127.0.0.1:4321"},
+	}}, nil
+}
+
 func (f *fakeBrowsers) CloseBrowser(_ context.Context, req *berthv1.CloseBrowserRequest) (*berthv1.CloseBrowserResponse, error) {
 	f.closed = append(f.closed, req.GetId())
 	return &berthv1.CloseBrowserResponse{Browser: &berthv1.ManagedBrowser{Id: req.GetId(), State: berthv1.BrowserState_BROWSER_STATE_CLOSED}}, nil
@@ -169,6 +175,10 @@ func TestAgentBrowserOpenAndClose(t *testing.T) {
 	r = invokeBrowsersAs(t, fake, true, "browser", "open", "--token-file", path)
 	if b, _ := os.ReadFile(path); r.code != ExitOK || strings.Contains(r.stdout+r.stderr, cliToken) || string(b) != cliToken+"\n" {
 		t.Fatalf("open --token-file: %d %q %q", r.code, r.stdout, r.stderr)
+	}
+	r = invokeBrowsersAs(t, fake, true, "browser", "ls")
+	if r.code != ExitOK || r.stdout != "ID                STATE  ENDPOINT               PRODUCT\n0123456789abcdef  ready  http://127.0.0.1:4321  -\n" {
+		t.Fatalf("agent ls: %d %q", r.code, r.stdout)
 	}
 	r = invokeBrowsersAs(t, fake, true, "browser", "close", "0123456789abcdef")
 	if r.code != ExitOK || r.stdout != "browser 0123456789abcdef is closed\n" || len(fake.agentClosed) != 1 || len(fake.closed) != 0 {

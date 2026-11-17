@@ -20,6 +20,7 @@ type Browsers interface {
 	// which is never empty when they are called.
 	OpenAgentBrowser(ctx context.Context, req *berthv1.OpenAgentBrowserRequest) (*berthv1.OpenAgentBrowserResponse, error)
 	CloseAgentBrowser(ctx context.Context, req *berthv1.CloseAgentBrowserRequest) (*berthv1.CloseAgentBrowserResponse, error)
+	ListAgentBrowsers(ctx context.Context) (*berthv1.ListAgentBrowsersResponse, error)
 }
 
 var (
@@ -93,6 +94,17 @@ func (h *handlers) CloseAgentBrowser(ctx context.Context, req *berthv1.CloseAgen
 		resp, err := h.d.Browsers.CloseAgentBrowser(ctx, req)
 		return resp, browserError(err)
 	})
+}
+
+func (h *handlers) ListAgentBrowsers(ctx context.Context, req *berthv1.ListAgentBrowsersRequest) (*berthv1.ListAgentBrowsersResponse, error) {
+	if err := validate(req); err != nil {
+		return nil, err
+	}
+	if AgentSession(ctx) == "" {
+		return nil, errNoAgentSession
+	}
+	resp, err := h.d.Browsers.ListAgentBrowsers(ctx)
+	return resp, browserError(err)
 }
 
 // errNoAgentSession answers the agent browser methods on the owner socket, where no call carries

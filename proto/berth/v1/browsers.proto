@@ -36,6 +36,11 @@ service BrowsersService {
   rpc CloseAgentBrowser(CloseAgentBrowserRequest) returns (CloseAgentBrowserResponse) {
     option (berth.v1.agent) = true;
   }
+  // ListAgentBrowsers lists the caller's agent session's live browsers, so an agent that lost
+  // their ids (a restarted MCP server) can find and close them. No other browser is listed.
+  rpc ListAgentBrowsers(ListAgentBrowsersRequest) returns (ListAgentBrowsersResponse) {
+    option (berth.v1.agent) = true;
+  }
 }
 
 // BrowserState mirrors the browser machine's states.
@@ -150,4 +155,10 @@ message CloseAgentBrowserRequest {
 
 message CloseAgentBrowserResponse {
   AgentBrowser browser = 1;
+}
+
+message ListAgentBrowsersRequest {}
+
+message ListAgentBrowsersResponse {
+  repeated AgentBrowser browsers = 1;
 }

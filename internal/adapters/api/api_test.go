@@ -97,6 +97,7 @@ func TestAgentSurface(t *testing.T) {
 	slices.Sort(agent)
 	want := []string{
 		"berth.v1.BrowsersService.CloseAgentBrowser",
+		"berth.v1.BrowsersService.ListAgentBrowsers",
 		"berth.v1.BrowsersService.OpenAgentBrowser",
 		"berth.v1.DaemonService.Handshake",
 		"berth.v1.SecretsService.AuthorizeProxy",
@@ -193,7 +194,7 @@ func TestNoFieldCarriesAValue(t *testing.T) {
 
 // TestMutatingMethodsTakeARequestID keeps every method that changes something idempotent.
 func TestMutatingMethodsTakeARequestID(t *testing.T) {
-	readOnly := []string{"Handshake", "Status", "GetState", "ListSecrets", "WatchProxySession", "ListSessions", "InspectSession", "WatchSessions", "ListAgentSessions", "ListBrowsers"}
+	readOnly := []string{"Handshake", "Status", "GetState", "ListSecrets", "WatchProxySession", "ListSessions", "InspectSession", "WatchSessions", "ListAgentSessions", "ListBrowsers", "ListAgentBrowsers"}
 	eachMethod(func(m protoreflect.MethodDescriptor) {
 		if slices.Contains(readOnly, string(m.Name())) {
 			return

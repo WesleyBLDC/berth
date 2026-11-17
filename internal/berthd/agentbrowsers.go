@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
+	"strings"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
@@ -93,6 +95,25 @@ func (m *managed) CloseAgentBrowser(ctx context.Context, req *berthv1.CloseAgent
 		return nil, err
 	}
 	return &berthv1.CloseAgentBrowserResponse{Browser: m.agentProto(b)}, nil
+}
+
+// ListAgentBrowsers lists the caller's agent session's live browsers, and no other.
+func (m *managed) ListAgentBrowsers(ctx context.Context) (*berthv1.ListAgentBrowsersResponse, error) {
+	agent := api.AgentSession(ctx)
+	m.mu.Lock()
+	var mine []*managedBrowser
+	for _, b := range m.live {
+		if agent != "" && b.agent == agent {
+			mine = append(mine, b)
+		}
+	}
+	m.mu.Unlock()
+	resp := &berthv1.ListAgentBrowsersResponse{}
+	for _, b := range mine {
+		resp.Browsers = append(resp.Browsers, m.agentProto(b))
+	}
+	slices.SortFunc(resp.Browsers, func(x, y *berthv1.AgentBrowser) int { return strings.Compare(x.GetId(), y.GetId()) })
+	return resp, nil
 }
 
 // closeAgent closes every browser of an agent session that ended. It runs on berthd's context,

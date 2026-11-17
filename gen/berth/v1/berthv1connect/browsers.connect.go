@@ -39,6 +39,9 @@ const (
 	// BrowsersServiceCloseAgentBrowserProcedure is the procedure name of the BrowsersService's
 	// CloseAgentBrowser RPC.
 	BrowsersServiceCloseAgentBrowserProcedure = "/berth.v1.BrowsersService/CloseAgentBrowser"
+	// BrowsersServiceListAgentBrowsersProcedure is the procedure name of the BrowsersService's
+	// ListAgentBrowsers RPC.
+	BrowsersServiceListAgentBrowsersProcedure = "/berth.v1.BrowsersService/ListAgentBrowsers"
 )
 
 var (
@@ -77,6 +80,13 @@ var (
 			Procedure:  BrowsersServiceCloseAgentBrowserProcedure,
 		}
 	})
+	browsersServiceListAgentBrowsersSpec = sync.OnceValue(func() connect.Spec {
+		return connect.Spec{
+			StreamType: connect.StreamTypeUnary,
+			Schema:     v1.File_berth_v1_browsers_proto.Services().ByName("BrowsersService").Methods().ByName("ListAgentBrowsers"),
+			Procedure:  BrowsersServiceListAgentBrowsersProcedure,
+		}
+	})
 )
 
 // BrowsersServiceClient is a client for the berth.v1.BrowsersService service.
@@ -99,6 +109,9 @@ type BrowsersServiceClient interface {
 	// CloseAgentBrowser closes one of the caller's agent session's browsers, as CloseBrowser does.
 	// Any other id, another session's or the owner's browser included, answers BROWSER_NOT_FOUND.
 	CloseAgentBrowser(context.Context, *v1.CloseAgentBrowserRequest) (*v1.CloseAgentBrowserResponse, error)
+	// ListAgentBrowsers lists the caller's agent session's live browsers, so an agent that lost
+	// their ids (a restarted MCP server) can find and close them. No other browser is listed.
+	ListAgentBrowsers(context.Context, *v1.ListAgentBrowsersRequest) (*v1.ListAgentBrowsersResponse, error)
 }
 
 // NewBrowsersServiceClient constructs a client for the berth.v1.BrowsersService service. Multiple
@@ -127,6 +140,9 @@ type BrowsersServiceHandler interface {
 	// CloseAgentBrowser closes one of the caller's agent session's browsers, as CloseBrowser does.
 	// Any other id, another session's or the owner's browser included, answers BROWSER_NOT_FOUND.
 	CloseAgentBrowser(context.Context, *v1.CloseAgentBrowserRequest) (*v1.CloseAgentBrowserResponse, error)
+	// ListAgentBrowsers lists the caller's agent session's live browsers, so an agent that lost
+	// their ids (a restarted MCP server) can find and close them. No other browser is listed.
+	ListAgentBrowsers(context.Context, *v1.ListAgentBrowsersRequest) (*v1.ListAgentBrowsersResponse, error)
 }
 
 // RegisterBrowsersServiceHandler registers svc as the berth.v1.BrowsersService implementation on
@@ -139,6 +155,7 @@ func RegisterBrowsersServiceHandler(server *connect.Server, svc BrowsersServiceH
 		connect.Method{Spec: browsersServiceCloseBrowserSpec(), Handler: adapter.closeBrowser},
 		connect.Method{Spec: browsersServiceOpenAgentBrowserSpec(), Handler: adapter.openAgentBrowser},
 		connect.Method{Spec: browsersServiceCloseAgentBrowserSpec(), Handler: adapter.closeAgentBrowser},
+		connect.Method{Spec: browsersServiceListAgentBrowsersSpec(), Handler: adapter.listAgentBrowsers},
 	)
 }
 
@@ -163,6 +180,10 @@ func (UnimplementedBrowsersServiceHandler) OpenAgentBrowser(context.Context, *v1
 
 func (UnimplementedBrowsersServiceHandler) CloseAgentBrowser(context.Context, *v1.CloseAgentBrowserRequest) (*v1.CloseAgentBrowserResponse, error) {
 	return nil, connect.NewError(connect.CodeUnimplemented, "berth.v1.BrowsersService.CloseAgentBrowser is not implemented")
+}
+
+func (UnimplementedBrowsersServiceHandler) ListAgentBrowsers(context.Context, *v1.ListAgentBrowsersRequest) (*v1.ListAgentBrowsersResponse, error) {
+	return nil, connect.NewError(connect.CodeUnimplemented, "berth.v1.BrowsersService.ListAgentBrowsers is not implemented")
 }
 
 type browsersServiceClient struct {
@@ -204,6 +225,14 @@ func (c *browsersServiceClient) OpenAgentBrowser(ctx context.Context, req *v1.Op
 func (c *browsersServiceClient) CloseAgentBrowser(ctx context.Context, req *v1.CloseAgentBrowserRequest) (*v1.CloseAgentBrowserResponse, error) {
 	var res v1.CloseAgentBrowserResponse
 	if err := c.client.CallUnary(ctx, browsersServiceCloseAgentBrowserSpec(), req, &res); err != nil {
+		return nil, err
+	}
+	return &res, nil
+}
+
+func (c *browsersServiceClient) ListAgentBrowsers(ctx context.Context, req *v1.ListAgentBrowsersRequest) (*v1.ListAgentBrowsersResponse, error) {
+	var res v1.ListAgentBrowsersResponse
+	if err := c.client.CallUnary(ctx, browsersServiceListAgentBrowsersSpec(), req, &res); err != nil {
 		return nil, err
 	}
 	return &res, nil
@@ -265,6 +294,18 @@ func (h browsersServiceHandler) closeAgentBrowser(ctx context.Context, _ connect
 		return err
 	}
 	res, err := h.svc.CloseAgentBrowser(ctx, &req)
+	if err != nil {
+		return err
+	}
+	return stream.Send(res)
+}
+
+func (h browsersServiceHandler) listAgentBrowsers(ctx context.Context, _ connect.Spec, stream connect.ServerStream) error {
+	var req v1.ListAgentBrowsersRequest
+	if err := stream.Receive(&req); err != nil {
+		return err
+	}
+	res, err := h.svc.ListAgentBrowsers(ctx, &req)
 	if err != nil {
 		return err
 	}

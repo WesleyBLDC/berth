@@ -85,7 +85,8 @@ const usage = `usage:
                                                 profile; prints its CDP proxy endpoint and the
                                                 token, which goes in the X-Berth-Token header
   berth browser ls [--all] [--json]             list the browsers Berth launched, with the agent
-                                                session of each agent browser
+                                                session of each agent browser; in agent mode, only
+                                                this agent session's open browsers
   berth browser close <browser id>              close one: Browser.close, then SIGKILL after 5 s
   berth browser open [--token-file <path>]      agent mode: open a headless browser for this agent
                                                 session on a fresh profile; prints its endpoint and

@@ -66,6 +66,11 @@ func (f *fakeBrowsers) CloseAgentBrowser(ctx context.Context, req *berthv1.Close
 	return &berthv1.CloseAgentBrowserResponse{Browser: &berthv1.AgentBrowser{Id: req.GetId(), State: berthv1.BrowserState_BROWSER_STATE_CLOSED}}, nil
 }
 
+func (f *fakeBrowsers) ListAgentBrowsers(ctx context.Context) (*berthv1.ListAgentBrowsersResponse, error) {
+	f.session = api.AgentSession(ctx)
+	return &berthv1.ListAgentBrowsersResponse{Browsers: []*berthv1.AgentBrowser{{Id: "0123456789abcdef"}}}, f.err
+}
+
 // asAgent marks every call as one from the agent session id, as AgentToken does past the token.
 func asAgent(id string) connect.ServerInterceptor {
 	return func(next connect.ServerFunc) connect.ServerFunc {
@@ -161,7 +166,10 @@ func TestAgentBrowserMethods(t *testing.T) {
 	if _, err := owner.CloseAgentBrowser(t.Context(), &berthv1.CloseAgentBrowserRequest{RequestId: "request-1", Id: "0123456789abcdef"}); connect.CodeOf(err) != connect.CodeFailedPrecondition {
 		t.Fatalf("close with no agent session = %v, want FailedPrecondition", err)
 	}
-	if fake.launches != 0 {
+	if _, err := owner.ListAgentBrowsers(t.Context(), &berthv1.ListAgentBrowsersRequest{}); connect.CodeOf(err) != connect.CodeFailedPrecondition {
+		t.Fatalf("list with no agent session = %v, want FailedPrecondition", err)
+	}
+	if fake.launches != 0 || fake.session != "" {
 		t.Fatal("a refused call reached the daemon")
 	}
 
@@ -196,6 +204,10 @@ func TestAgentBrowserMethods(t *testing.T) {
 		if connect.CodeOf(err) != tc.code || api.ReasonOf(err) != tc.reason {
 			t.Fatalf("open with %v = %v, want %v and %v", tc.err, err, tc.code, tc.reason)
 		}
+	}
+	fake.err = nil
+	if list, err := c.ListAgentBrowsers(t.Context(), &berthv1.ListAgentBrowsersRequest{}); err != nil || len(list.GetBrowsers()) != 1 || fake.session != "session-a" {
+		t.Fatalf("list = %v %v, session %q", list, err, fake.session)
 	}
 	fake.err = api.ErrBrowserNotFound
 	if _, err := c.CloseAgentBrowser(t.Context(), &berthv1.CloseAgentBrowserRequest{RequestId: "request-3", Id: "0123456789abcdef"}); api.ReasonOf(err) != berthv1.ErrorReason_ERROR_REASON_BROWSER_NOT_FOUND {

@@ -155,8 +155,12 @@ func TestAgentBrowserThroughTheAgentSocket(t *testing.T) {
 		if out, code := cliRunEnv(t, h, envA, &outputs, "browser", "close", owners.id); code != 1 || !strings.Contains(out, "no managed browser has id") {
 			t.Fatalf("an agent closing the owner's browser: %d %q", code, out)
 		}
-		if out, code := cliRunEnv(t, h, envA, &outputs, "browser", "ls"); code != 1 || !strings.Contains(out, "not for agents") {
-			t.Fatalf("an agent listing every browser: %d %q", code, out)
+		// An agent lists only its own session's browsers.
+		if out, code := cliRunEnv(t, h, envA, &outputs, "browser", "ls"); code != 0 || !strings.Contains(out, l.id) || strings.Contains(out, owners.id) {
+			t.Fatalf("session A's list: %d %q", code, out)
+		}
+		if out, code := cliRunEnv(t, h, envB, &outputs, "browser", "ls"); code != 0 || strings.Contains(out, l.id) || strings.Contains(out, owners.id) {
+			t.Fatalf("session B's list: %d %q", code, out)
 		}
 		berth(t, h, "browser", "close", owners.id)
 	})
