@@ -74,6 +74,7 @@ Configuration inside the repository (`.git/config`, git hooks, a project `.npmrc
 ### Item 1: the spike
 
 Needs the maintainer's admin password and creates a throwaway second user; it decides D3 and moves ADR 0018 from Proposed to accepted or revised.
+A guided spike script in the maintainer's scratch folder (not in this repository) creates and removes that user, runs a probe as it through each launch path, and measures the audit session and launchd domain, pasteboard and GUI access, reads of the owner's home, signals, `kern.procargs2`, `proc_pidinfo` and kqueue across users in both directions, a Playwright browser and `claude --version`, ending in a summary table.
 Questions, each answered with the command run and its output:
 
 1. For each launch path (`sudo -u`, `ssh berthagent@localhost`, a root LaunchDaemon that starts a process as the user, `launchctl asuser`): which audit session id (`asid` in the audit token) and launchd domain does the agent process land in, and can it read the owner's pasteboard (`pbpaste`), take a screenshot, or post events to the owner's windows?
