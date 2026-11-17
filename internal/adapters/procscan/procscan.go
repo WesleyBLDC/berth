@@ -119,15 +119,25 @@ func (s *Source) CPUTime(_ context.Context, p ports.ProcessRef) (time.Duration, 
 }
 
 func (*Source) WatchExit(ctx context.Context, p ports.ProcessRef) (<-chan struct{}, error) {
-	exited, err := WatchPID(ctx, p.PID)
+	watchCtx, cancel := context.WithCancel(ctx)
+	exited, err := WatchPID(watchCtx, p.PID)
 	if err != nil {
+		cancel()
 		return nil, ports.ErrProcessGone
 	}
 	// Checked after the watch is registered, so a pid reused before the watch is caught here
-	// and one reused after it fires the watch.
+	// and one reused after it fires the watch. A refused watch ends at once, kqueue and all.
 	if err := current(p); err != nil {
+		cancel()
 		return nil, err
 	}
+	go func() {
+		select {
+		case <-exited:
+		case <-watchCtx.Done():
+		}
+		cancel()
+	}()
 	return exited, nil
 }
 

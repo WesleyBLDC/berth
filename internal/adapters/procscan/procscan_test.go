@@ -8,8 +8,11 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
+	"syscall"
 	"testing"
 	"time"
+
+	"golang.org/x/sys/unix"
 
 	"berth/internal/core/ports"
 )
@@ -60,6 +63,35 @@ func TestListAndArgsOfOwnProcess(t *testing.T) {
 	}
 }
 
+// The kernel's layout for an empty argv[0]: a parser that skipped every NUL after the exec path
+// would read the environment as arguments.
+func TestEmptyArgvZeroFromTheKernel(t *testing.T) {
+	s := source(t)
+	pid, err := syscall.ForkExec("/bin/sleep", []string{"", "30"}, &syscall.ProcAttr{Env: []string{"BERTH_CANARY=env-canary"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = syscall.Kill(pid, syscall.SIGKILL)
+		var ws syscall.WaitStatus
+		_, _ = syscall.Wait4(pid, &ws, 0, nil)
+	})
+	ref := find(t, s, pid).ProcessRef
+	// The child may not have exec'd yet; its arguments settle within moments.
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		args, err := s.Args(t.Context(), ref)
+		if err == nil && slices.Equal(args, []string{"", "30"}) {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("args = %q, %v; want [\"\" \"30\"]", args, err)
+		}
+		time.Sleep(20 * time.Millisecond)
+		ref = find(t, s, pid).ProcessRef
+	}
+}
+
 func TestAnotherUsersArgumentsAreOpaque(t *testing.T) {
 	if os.Getuid() == 0 {
 		t.Skip("root reads every process's arguments")
@@ -86,6 +118,39 @@ func TestStaleRefIsGone(t *testing.T) {
 	}
 	if _, err := s.WatchExit(t.Context(), stale); !errors.Is(err, ports.ErrProcessGone) {
 		t.Fatalf("WatchExit with a stale start = %v", err)
+	}
+}
+
+// openFiles counts this process's open descriptors; /dev/fd shows only some of them on macOS.
+func openFiles(t *testing.T) int {
+	t.Helper()
+	n := 0
+	for fd := range 4096 {
+		if _, err := unix.FcntlInt(uintptr(fd), unix.F_GETFD, 0); err == nil {
+			n++
+		}
+	}
+	return n
+}
+
+// A refused watch must close its kqueue at once: a stream of stale refs would otherwise hold one
+// descriptor each until the watch noticed.
+func TestRefusedWatchesCloseTheirKqueue(t *testing.T) {
+	s := source(t)
+	self := find(t, s, os.Getpid())
+	stale := ports.ProcessRef{PID: self.PID, Start: self.Start.Add(-time.Second)}
+	before := openFiles(t)
+	for range 200 {
+		if _, err := s.WatchExit(t.Context(), stale); !errors.Is(err, ports.ErrProcessGone) {
+			t.Fatal(err)
+		}
+	}
+	deadline := time.Now().Add(200 * time.Millisecond)
+	for openFiles(t) > before+5 {
+		if time.Now().After(deadline) {
+			t.Fatalf("%d descriptors open after 200 refused watches, %d before", openFiles(t), before)
+		}
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 
