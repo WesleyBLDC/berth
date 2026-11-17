@@ -100,32 +100,60 @@ One loopback listener per ready browser, on `127.0.0.1:0`, started by `Spawn` on
 
 - **Endpoint:** `http://127.0.0.1:<port>`; `GET /json/version` (and `/json/version/`) returns `Browser`, `Protocol-Version` and `webSocketDebuggerUrl` = `ws://127.0.0.1:<port>/devtools/browser/<id>`, which is what Playwright's `connectOverCDP` and Puppeteer's `connect` read. Nothing else is served (`/json/list`, `/json/new` and the rest answer 404), so no target ids leak through HTTP.
 - **Token:** 32 random bytes, hex, minted per browser at launch; `berthd` keeps only its SHA-256 and compares in constant time. It travels only in the `X-Berth-Token` request header, never in the URL: a web page can open a WebSocket to loopback but cannot set a header, so the header alone also defeats cross site WebSocket and DNS rebinding attacks; and a URL ends up in logs and in process arguments. A request with an `Origin` header is refused too, since no CDP library sends one.
+- **Who can connect:** the port is on loopback, which every local user, including another macOS user such as E3's agent user, can reach; the token is the only gate, and there is no `Host` header check (the header token already stops a web page and DNS rebinding).
 - **One connection at a time** per browser; a second WebSocket gets HTTP 409 while the first is open. The proxy owns the agent side of the shared pipe, so one connection keeps the id spaces simple (agent ids below 1,000,000,000, Berth's above).
-- **Filter** (`internal/core/cdppolicy`, pure, stdlib only): every agent message must be a JSON object with an integer `id` and a string `method`; anything else closes the connection. A refused message gets a CDP error reply with the same `id` (code -32000, `refused by Berth: <method>`) and never reaches Chrome. Unknown domains are refused (fail closed), and every method that passes or is refused is counted, never logged with its parameters.
-- **Berth's own sessions:** the pipe records the `sessionId` of every target Berth itself attaches to (none in M4; M5's screencast and M6's fill will), and the proxy refuses any agent message that carries one, or names one in `Target.detachFromTarget` or `Target.sendMessageToTarget`, and drops every event and reply that carries one, so the agent can neither see nor drive Berth's sessions.
+- **Strict parsing** (`internal/core/cdppolicy`, pure, stdlib only): every agent message must be one JSON object with an integer `id` and a string `method`. Go's decoder matches keys without regard to case and lets the last duplicate win, while Chrome matches exactly, so a message with a duplicate key anywhere, or with a key that differs from one the filter reads only by case (`SessionId`, `Behavior`, `URL`, `Flatten`, `Files`, including Unicode folds such as the long s) at the levels the filter reads, is refused and ends the connection; nothing is re-encoded.
+- **Filter:** a refused message gets a CDP error reply with the same `id` (code -32000, `refused by Berth: <method>: <why>`) and never reaches Chrome. Every method that passes or is refused is counted, never logged with its parameters.
+- **Berth's own sessions:** the pipe records the `sessionId` of every target Berth itself attaches to (none in M4; M5's screencast and M6's fill will), and the proxy refuses any agent message that carries one or names one in `Target.detachFromTarget`, and drops every event and reply that carries one.
+- **Queues:** at most 1,024 messages and 128 MiB wait for one agent; past either the agent is dropped, so the pipe never waits on it.
 
-**Allowed domains** (every method, unless the deny list below names it): `Accessibility`, `Animation`, `Audits`, `BackgroundService`, `Browser`, `CSS`, `CacheStorage`, `Console`, `DOM`, `DOMDebugger`, `DOMSnapshot`, `DOMStorage`, `Database`, `Debugger`, `DeviceAccess`, `DeviceOrientation`, `Emulation`, `EventBreakpoints`, `FedCm`, `Fetch`, `FileSystem`, `HeadlessExperimental`, `HeapProfiler`, `IO`, `IndexedDB`, `Input`, `Inspector`, `LayerTree`, `Log`, `Media`, `Memory`, `Network`, `Overlay`, `Page`, `Performance`, `PerformanceTimeline`, `Preload`, `Profiler`, `Runtime`, `Schema`, `Security`, `ServiceWorker`, `Storage`, `Target`, `Tracing`, `WebAudio`, `WebAuthn`.
+Chrome runs as the person, so the filter tries to confine the token holder to web content in its own browser. Seven domains that reach files, other targets, permissions or the browser's life pass only method by method; the rest of the reviewed domains pass whole; every other domain, and every unlisted method of the seven, is refused, so what Chrome adds later fails closed.
 
-**Denied**, each because it reaches outside the agent's own session or its browser:
+**Allowed method by method** (what Playwright and Puppeteer use for normal automation; checked on 2026-11-17 against playwright-core 1.66.0-alpha-2026-11-09, 1.64.1 and 1.54.2 and puppeteer-core 24.43.1, by `test/e2e/playwright_test.go`: `connectOverCDP` or `connect` with the token header, a new context and page, a `data:` page's title, close; Playwright needed no method beyond these lists, and Puppeteer's one refusal, `WebMCP.enable`, it does without):
+
+| Domain | Methods |
+|---|---|
+| `Browser` | `getVersion`, `getWindowForTarget`, `getWindowBounds`, `setWindowBounds`, `cancelDownload` |
+| `Target` | `activateTarget`, `attachToTarget`, `closeTarget`, `createBrowserContext`, `createTarget`, `detachFromTarget`, `disposeBrowserContext`, `getBrowserContexts`, `getTargetInfo`, `getTargets`, `setAutoAttach`, `setDiscoverTargets` |
+| `Page` | `addScriptToEvaluateOnNewDocument`, `bringToFront`, `captureScreenshot`, `captureSnapshot`, `close`, `createIsolatedWorld`, `crash`, `disable`, `enable`, `getAppManifest`, `getFrameTree`, `getLayoutMetrics`, `getNavigationHistory`, `getResourceContent`, `getResourceTree`, `handleJavaScriptDialog`, `navigate`, `navigateToHistoryEntry`, `printToPDF`, `reload`, `removeScriptToEvaluateOnNewDocument`, `resetNavigationHistory`, `screencastFrameAck`, `setBypassCSP`, `setDocumentContent`, `setFontFamilies`, `setFontSizes`, `setInterceptFileChooserDialog`, `setLifecycleEventsEnabled`, `setWebLifecycleState`, `startScreencast`, `stopLoading`, `stopScreencast` |
+| `DOM` | `collectClassNamesFromSubtree`, `copyTo`, `describeNode`, `disable`, `discardSearchResults`, `enable`, `focus`, `getAttributes`, `getBoxModel`, `getContentQuads`, `getDocument`, `getFrameOwner`, `getNodeForLocation`, `getOuterHTML`, `getSearchResults`, `hideHighlight`, `highlightNode`, `markUndoableState`, `moveTo`, `performSearch`, `pushNodesByBackendIdsToFrontend`, `querySelector`, `querySelectorAll`, `redo`, `removeAttribute`, `removeNode`, `requestChildNodes`, `requestNode`, `resolveNode`, `scrollIntoViewIfNeeded`, `setAttributeValue`, `setAttributesAsText`, `setInspectedNode`, `setNodeName`, `setNodeValue`, `setOuterHTML`, `undo` |
+| `Input` | `cancelDragging`, `dispatchDragEvent`, `dispatchKeyEvent`, `dispatchMouseEvent`, `dispatchTouchEvent`, `emulateTouchFromMouseEvent`, `imeSetComposition`, `insertText`, `setIgnoreInputEvents`, `setInterceptDrags`, `synthesizePinchGesture`, `synthesizeScrollGesture`, `synthesizeTapGesture` |
+| `Network` | `clearAcceptedEncodingsOverride`, `clearBrowserCache`, `clearBrowserCookies`, `deleteCookies`, `disable`, `emulateNetworkConditions`, `enable`, `getAllCookies`, `getCookies`, `getRequestPostData`, `getResponseBody`, `getSecurityIsolationStatus`, `replayXHR`, `searchInResponseBody`, `setAcceptedEncodings`, `setAttachDebugStack`, `setBlockedURLs`, `setBypassServiceWorker`, `setCacheDisabled`, `setCookie`, `setCookies`, `setExtraHTTPHeaders`, `setUserAgentOverride` |
+| `Storage` | `clearCookies`, `clearDataForOrigin`, `clearDataForStorageKey`, `getCookies`, `getStorageKeyForFrame`, `getUsageAndQuota`, `setCookies`, `trackCacheStorageForOrigin`, `trackIndexedDBForOrigin`, `untrackCacheStorageForOrigin`, `untrackIndexedDBForOrigin` |
+| `IO` | `close`, `read`, `resolveBlob` (streams Chrome made, never a path) |
+| `Tracing` | `getCategories`, `recordClockSyncMarker`, `requestMemoryDump` (not `start` or `end`: a trace's metadata holds the command line, the profile path and machine facts) |
+
+**Allowed whole:** `Accessibility`, `Animation`, `Audits`, `BackgroundService`, `CSS`, `CacheStorage`, `Console`, `DOMDebugger`, `DOMSnapshot`, `DOMStorage`, `Database`, `Debugger`, `DeviceOrientation`, `Emulation`, `EventBreakpoints`, `FedCm`, `Fetch`, `FileSystem`, `HeadlessExperimental`, `HeapProfiler`, `IndexedDB`, `Inspector`, `LayerTree`, `Log`, `Media`, `Memory`, `Overlay`, `Performance`, `PerformanceTimeline`, `Preload`, `Profiler`, `Runtime`, `Schema`, `Security`, `ServiceWorker`, `WebAudio`, `WebAuthn`.
+
+**Parameter rules on allowed methods:**
+
+| Method | Passes only when |
+|---|---|
+| `Page.navigate`, `Target.createTarget` (empty `url` allowed), `Fetch.continueRequest` (when it sets `url`) | The URL is `http`, `https`, `data`, `blob` or exactly `about:blank`, after stripping what Chrome's parser strips (C0 controls and spaces at either end, tabs and newlines anywhere); `file`, `filesystem`, `chrome`, `chrome-extension`, `devtools`, `view-source`, `javascript` and anything without a scheme are refused |
+| `Target.attachToTarget`, `Target.setAutoAttach` | `flatten` is exactly `true`, so every message of the new session is a top level message the filter sees; `Target.autoAttachRelated` has no `flatten` parameter, so the filter cannot tell, and it is not listed (no driver tested needs it) |
+| `Target.detachFromTarget` | Its `sessionId` is not Berth's |
+| `Target.createBrowserContext` | It sets no `proxyServer` or `proxyBypassList` |
+| `Input.dispatchKeyEvent` | No editing command names the clipboard (paste, copy, cut) |
+| `Input.dispatchDragEvent` | `data.files` is absent or empty |
+
+**Answered by the proxy:** `Browser.setDownloadBehavior` and `Page.setDownloadBehavior` get an empty success from the proxy and never reach Chrome. Playwright sends `Browser.setDownloadBehavior` for every context when it connects and fails if it is refused, while downloads stay in `<profile>/Downloads`, which `berthd` writes into the profile's `Preferences` before every launch, with no prompt, so a headful download never lands in `~/Downloads`.
+
+**Denied by name**, with why:
 
 | Method or domain | Why |
 |---|---|
-| `Browser.close`, `Browser.crash`, `Browser.crashGpuProcess` | The browser's life belongs to Berth (and to other users of it in M5); the agent ends its session through Berth |
-| `Browser.setDownloadBehavior`, `Page.setDownloadBehavior` unless `behavior` is `deny` or `default` | Writes files to any path the agent names, outside the profile; E3 item 8 may allow a workspace folder |
-| `Browser.getBrowserCommandLine` | Shows Berth's launch flags and profile path |
-| `Browser.executeBrowserCommand` | Runs browser UI commands outside any page |
-| `SystemInfo.*` | Machine facts: GPU, hardware, and the browser's process list with pids |
-| `Target.exposeDevToolsProtocol` | Hands CDP to page JavaScript, so a web page could drive the browser |
-| `Target.setRemoteLocations` | Makes the browser connect out to other debugging targets |
-| `Target.attachToTarget`, `Target.detachFromTarget`, `Target.sendMessageToTarget` naming a Berth session or target | Cross session: Berth's own live view and fill sessions |
-| `Tethering.*` | Binds TCP ports on the Mac |
-| `Extensions.*` | Loads code from disk into the browser |
-| `PWA.*` | Installs and launches apps outside the browser |
-| `Cast.*` | Talks to cast devices on the network |
-| `Autofill.*` | Triggers autofill, which M6 must own |
-| Any domain not in the allowed list | Fail closed; new Chrome domains are reviewed before they pass |
+| `Browser.close`, `Browser.crash`, `Browser.crashGpuProcess` | The browser's life belongs to Berth; the agent ends its session through Berth |
+| `Browser.grantPermissions`, `Browser.setPermission`, `Browser.resetPermissions` | Permissions such as clipboard reading stay at their defaults |
+| `Browser.getBrowserCommandLine`, `Browser.executeBrowserCommand` | Berth's flags and profile path; browser commands outside any page |
+| `Target.sendMessageToTarget` | A nested message would pass unchecked; flattened sessions do the same job |
+| `Target.attachToBrowserTarget` | A browser level session is Berth's |
+| `Target.exposeDevToolsProtocol`, `Target.setRemoteLocations` | CDP for page JavaScript; connections out to other targets |
+| `DOM.setFileInputFiles`, `DOM.getFileInfo` | Hands local files to a page; shows local paths |
+| `Network.loadNetworkResource` | Loads any URL, local files included |
+| `SystemInfo.*`, `Tethering.*`, `Extensions.*`, `PWA.*`, `Cast.*`, `Autofill.*` | Machine facts, ports on the Mac, code from disk, apps outside the browser, network devices, autofill (M6's) |
+| `DeviceAccess.*` | Picks nearby Bluetooth and USB devices with no person in the loop |
 
-Methods that read the profile (`Network.getCookies`, `Storage.getCookies`, `Runtime.evaluate`, screenshots) are allowed on purpose: the agent already holds everything in its own profile through `Runtime.evaluate`, so refusing them would only look safe (see the honest limits).
+Methods that read the profile (`Network.getCookies`, `Storage.getCookies`, `Runtime.evaluate`, screenshots) are allowed on purpose: the token holder already reaches everything in its own profile through `Runtime.evaluate`, so refusing them would only look safe.
 
 ### How agents get the endpoint
 
@@ -137,6 +165,7 @@ Agents never get the pipe, the profile path or a debugging port: only the proxy 
 | `OpenAgentBrowser` (planned, item 7) | **Yes** | Launches, or returns, the one browser of the caller's agent session (from `api.AgentSession(ctx)`), on an ephemeral profile `agent-<session id>`, and returns its endpoint and a fresh token once; the token is never kept in the request log |
 | `CloseAgentBrowser` (planned, item 7) | **Yes** | Closes only the caller's own browser; another session's id answers `BROWSER_NOT_FOUND`, so ids cannot be probed |
 
+- Agent browsers are headless only until M5, since a headful window on the person's screen is not the agent's to drive or see until live view and takeover exist.
 - A token minted by `OpenAgentBrowser` dies with the browser, and the browser closes when its agent session ends (`Revoked`, `Expired` or `Ended`).
 - `LaunchBrowserResponse.cdp_token` is set only in the first reply, like `CreateAgentSession`'s token: the request log keeps the reply without it, so a retry gets the browser but no token.
 - Persistent named profiles for agents wait for M6's hard limits per profile.
@@ -220,9 +249,13 @@ Items 3 and 4 can run in parallel after the contract; 5 joins them; 6 needs 5's 
 
 ## Honest limits
 
-- **Anything with CDP access can read everything in that browser profile.** `Runtime.evaluate` reads every page, cookies and storage; `Network.getCookies` reads them directly; a screenshot shows the screen. The filter keeps an agent inside its own session and its own browser, never safe from itself: whatever is logged in on its profile is the agent's. That is why agents get ephemeral profiles and why M6 puts credentials behind the atomic fill.
-- **The token is a bearer secret** in whatever process the agent hands it to (Playwright MCP's flags or environment). It works only on loopback, only for that browser, and dies when the browser closes; until E3, a same user process can read it from that process's environment, and from a command line if the agent passes it as `--cdp-header`.
-- **The filter is by method name and a few parameters,** not by effect. Domains Chrome adds later are refused until reviewed, but an allowed method that gains a dangerous parameter passes until the policy learns it.
+- **Chrome runs as the person, so any filter gap reaches the person's files.** The filter tries to confine the token holder to web content in its own browser: web URLs only, no file pickers, drops, downloads or file loading, the riskiest domains method by method. A method Chrome lets reach the disk that the filter wrongly allows would read `~/.ssh` or `$BERTH_HOME` with the person's rights; running Chrome as E3's runner user is what would make a gap cost less.
+- **`file:` is out of reach of web pages only by Chrome's own navigation policy.** The filter refuses file URLs in the methods that load one, but a page's own script asking for a file URL is stopped by Chrome, not by Berth.
+- **A headful click can open the native file picker.** In a window on the person's screen, a click on a file input the agent dispatches opens the macOS open panel, where a person's choice hands a file to the page; headful browsers are owner only until M5, and agent browsers are headless.
+- **Inside the browser the token holder sees everything.** `Runtime.evaluate` reads every page, cookie and stored value of its profile; a screenshot shows the page. The filter never makes an agent's own session safe from itself: whatever is logged in on its profile is the agent's. That is why agent browsers get ephemeral profiles and why M6 puts credentials behind the atomic fill.
+- **The token is the only gate for other local users.** The proxy listens on loopback, which every local uid reaches, and checks no `Host` header; a process that learns the token (from the agent's environment or a `--cdp-header` command line) drives the browser until it closes.
+- **Playwright's download API sees no downloads.** The proxy answers `setDownloadBehavior` without forwarding it, so Chrome never sends Playwright the download events it asked for; files land in `<profile>/Downloads`, where only the person (or a later Berth method) can reach them.
+- **The filter is by method name and a few parameters,** not by effect: unknown domains and unlisted methods of the seven listed domains are refused, but a method allowed today that gains a dangerous parameter passes until the policy learns it.
 - **One CDP connection at a time.** Two agents (or an agent and a DevTools window) cannot share a browser; M5's takeover goes through Berth's own pipe session, not a second proxy connection.
 - **The proxy parses agent controlled input inside `berthd`:** WebSocket frames (`coder/websocket`) and JSON (`encoding/json`), only after the token check. A bug there is a bug in `berthd`; see decision 3.
 - **Chrome for Testing outlives a crashed `berthd`** until the next boot finds it by its profile folder and stops it; a browser that someone moves out of `$BERTH_HOME/profiles` escapes that.
@@ -239,8 +272,33 @@ Defaults taken while he was away; each is cheap to reverse before M4 closes.
 4. **`github.com/coder/websocket` v1.8.15** for the WebSocket server and the e2e client: no dependencies of its own, spike proven with Playwright MCP, and a hand written RFC 6455 server would be the riskier code in `berthd`. No CDP library.
 5. **The token only in a header** (`X-Berth-Token`, the spike's name), never in the URL path, and requests with `Origin` refused.
 6. **One proxy connection per browser.**
-7. **Cookie and storage reads are allowed** (see the honest limits); only cross session and outside the browser methods are refused, and unknown domains fail closed.
+7. **Cookie and storage reads are allowed** (see the honest limits). Decided in review on 2026-11-17: the permission methods and clipboard editing commands are denied, both `setDownloadBehavior` methods are answered by the proxy with an empty success and never forwarded, downloads go to `<profile>/Downloads` through the profile's preferences, and agent browsers are headless only until M5.
 8. **Profiles live under `$BERTH_HOME/profiles/<name>`** and are kept after a close, so a profile can hold logins across launches; agent profiles (item 7) are ephemeral and deleted at close.
 9. **Executable choice:** the `-browser` flag, then Chrome for Testing, Playwright's Chromium, then the apps in `/Applications`; a named executable must classify as a Chromium family browser.
 10. **Error reasons 19 to 21,** after E3 item 4's 16 to 18.
 11. **No Touch ID to launch or close** a managed browser: it starts a fresh process on a Berth profile and touches nothing of the person's.
+
+## Exit notes (2026-11-17)
+
+Built on branch `m4`, rebased onto `main` at a5e8259 (E3 item 4 merged): items 1 to 6 and the end to end half of item 9, each with its own commit, then `ARCHITECTURE.md`, with `make check` passing.
+Items 7 (agent methods) and 8 (`berth-mcp`) remain; E3 item 4 is now on `main`, so item 7 can start.
+
+- **Contract.** As planned; reasons 19 to 21 after E3's 16 to 18, `buf breaking` clean against `main`. `LaunchBrowserResponse.cdp_token` joins `CreateAgentSessionResponse.token` in `TestNoFieldCarriesAValue`'s list of deliberate one time tokens.
+- **Driver** (`internal/adapters/cdppipe`): a fake Chrome (the test binary re-run with the pipe flags) covers framing, id routing and Berth's own sessions; the real test drives Playwright's headless shell 1248: `Browser.getVersion`, `Target.createTarget`, `Target.attachToTarget`, `Page.navigate` to a `data:` URL, the title read back, and `Kill` empties the process group. `procscan.Ref` gives the launched process's start time.
+- **Browser machine** (`internal/core/browser`): 10 legal pairs, pinned, names pinned.
+- **Daemon** (`internal/berthd/managed.go`): the actors kit's `final` became a list on `main` while M4 was built; the browser machine passes `[]browser.State{browser.Closed}`.
+- **Proxy** (`internal/adapters/cdpproxy`, `internal/core/cdppolicy`): `github.com/coder/websocket` v1.8.15 is the one new module; `govulncheck` finds nothing.
+- **Review fixes (2026-11-17):** strict parsing refuses duplicate and case variant keys; `Target.sendMessageToTarget` is refused and attaches must be flattened; URLs to load must be web URLs; file pickers, file drops, `loadNetworkResource` and file touching `IO` and `Tracing` methods are refused; seven domains are listed method by method; queued bytes per connection are capped at 128 MiB; `--token-file` is created with `O_EXCL` and `O_NOFOLLOW`; `ProfileInUse` and boot's `StopUnder` compare resolved absolute paths; `Kill` signals the process group only while its leader is unreaped, and the reaper, on kqueue `NOTE_EXIT`, kills the group first and reaps after, under the same lock, so helpers that outlive the leader die while its pid still pins the group (a helper that inherited the pipe would otherwise also keep the pipe open); an exit watch refused for another reason than a zombie leader falls back to a plain wait and the group kill after it, instead of killing a live browser. Re-review fixes: `DeviceAccess` is denied, `Tracing.start` and `end`, `Browser.setDockTile` and `Target.autoAttachRelated` are no longer listed. Playwright and Puppeteer drive a managed browser through the proxy in `test/e2e/playwright_test.go`, which finds the newest `playwright-core` and `puppeteer-core` in npx's cache (or `BERTH_E2E_PLAYWRIGHT_CORE` and `BERTH_E2E_PUPPETEER_CORE`), installs nothing, and fails if the proxy refused anything Playwright sent. Each fix has a test that fails without it.
+- **End to end** (`test/e2e/browser_test.go`): passes with Playwright's headless shell (the default pick) and with Chrome for Testing 154 through `BERTH_E2E_CHROME`, and skips with `BERTH_E2E_CHROME=/nonexistent`.
+- **Not built from the plan's text:** refusing `Target.attachToTarget` by a Berth owned target id (Berth owns no target in M4; sessions are refused), and a non headless launch has not been run.
+
+### Agent safety checklist (M4, items 1 to 6)
+
+1. No agent method was added; `BrowsersService` is not marked, so the agent socket refuses it, and `TestAgentSurface` is unchanged.
+2. No secret value is touched; Chrome runs as the person, so the filter keeps agents to web URLs and off local files (see the honest limits). The CDP token never reaches a log, an event note, the request log or the database: `berthd` keeps its hash, the end to end canary checks the log and every database file, and the API test checks the stored reply.
+3. Canary: as above, plus `--token-file` keeps the token out of the CLI's output.
+4. No power action was added (decision 11); launch and close touch only Berth's profiles and the processes Berth started.
+5. Text a process chose (the product string) is clipped and printed through `shown`; refusal replies echo the agent's own method name only to that agent; the proxy logs counts only.
+6. `LaunchBrowser` and `CloseBrowser` take a `request_id`; a retried launch gets the browser and no token.
+7. Failures are typed (`PROFILE_BUSY`, `BROWSER_NOT_FOUND`, `BROWSER_LAUNCH_FAILED`), and a failed launch is a `Closed` browser with its reason.
+8. OWASP agentic risks: ASI02 gains the CDP method filter and ASI07 the per browser token; the new limits are in the honest limits above and in `ARCHITECTURE.md`.
