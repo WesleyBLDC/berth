@@ -6,7 +6,8 @@ import "google/protobuf/descriptor.proto";
 
 extend google.protobuf.MethodOptions {
   // agent marks a method that agents may call with a session token.
-  // The MCP shim and the agent commands expose exactly these methods.
+  // The MCP shim and the agent commands expose exactly these methods, and the agent socket
+  // serves only these.
   bool agent = 50001;
 }
 
@@ -40,6 +41,8 @@ enum ErrorReason {
   ERROR_REASON_BAD_PROXY_TARGET = 11;
   // GRANT_NOT_FOUND means no grant has that id.
   ERROR_REASON_GRANT_NOT_FOUND = 12;
+  // NOT_AGENT_METHOD refuses, on the agent socket, every method not marked agent.
+  ERROR_REASON_NOT_AGENT_METHOD = 13;
 }
 
 message ErrorInfo {

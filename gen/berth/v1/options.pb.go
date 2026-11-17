@@ -54,6 +54,8 @@ const (
 	ErrorReason_ERROR_REASON_BAD_PROXY_TARGET ErrorReason = 11
 	// GRANT_NOT_FOUND means no grant has that id.
 	ErrorReason_ERROR_REASON_GRANT_NOT_FOUND ErrorReason = 12
+	// NOT_AGENT_METHOD refuses, on the agent socket, every method not marked agent.
+	ErrorReason_ERROR_REASON_NOT_AGENT_METHOD ErrorReason = 13
 )
 
 // Enum value maps for ErrorReason.
@@ -72,6 +74,7 @@ var (
 		10: "ERROR_REASON_BUSY",
 		11: "ERROR_REASON_BAD_PROXY_TARGET",
 		12: "ERROR_REASON_GRANT_NOT_FOUND",
+		13: "ERROR_REASON_NOT_AGENT_METHOD",
 	}
 	ErrorReason_value = map[string]int32{
 		"ERROR_REASON_UNSPECIFIED":          0,
@@ -87,6 +90,7 @@ var (
 		"ERROR_REASON_BUSY":                 10,
 		"ERROR_REASON_BAD_PROXY_TARGET":     11,
 		"ERROR_REASON_GRANT_NOT_FOUND":      12,
+		"ERROR_REASON_NOT_AGENT_METHOD":     13,
 	}
 )
 
@@ -175,7 +179,8 @@ var file_berth_v1_options_proto_extTypes = []protoimpl.ExtensionInfo{
 // Extension fields to descriptorpb.MethodOptions.
 var (
 	// agent marks a method that agents may call with a session token.
-	// The MCP shim and the agent commands expose exactly these methods.
+	// The MCP shim and the agent commands expose exactly these methods, and the agent socket
+	// serves only these.
 	//
 	// optional bool agent = 50001;
 	E_Agent = &file_berth_v1_options_proto_extTypes[0]
@@ -187,7 +192,7 @@ const file_berth_v1_options_proto_rawDesc = "" +
 	"\n" +
 	"\x16berth/v1/options.proto\x12\bberth.v1\x1a google/protobuf/descriptor.proto\":\n" +
 	"\tErrorInfo\x12-\n" +
-	"\x06reason\x18\x01 \x01(\x0e2\x15.berth.v1.ErrorReasonR\x06reason*\xb9\x03\n" +
+	"\x06reason\x18\x01 \x01(\x0e2\x15.berth.v1.ErrorReasonR\x06reason*\xdc\x03\n" +
 	"\vErrorReason\x12\x1c\n" +
 	"\x18ERROR_REASON_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eERROR_REASON_PROTOCOL_MISMATCH\x10\x01\x12\"\n" +
@@ -202,7 +207,8 @@ const file_berth_v1_options_proto_rawDesc = "" +
 	"\x11ERROR_REASON_BUSY\x10\n" +
 	"\x12!\n" +
 	"\x1dERROR_REASON_BAD_PROXY_TARGET\x10\v\x12 \n" +
-	"\x1cERROR_REASON_GRANT_NOT_FOUND\x10\f:6\n" +
+	"\x1cERROR_REASON_GRANT_NOT_FOUND\x10\f\x12!\n" +
+	"\x1dERROR_REASON_NOT_AGENT_METHOD\x10\r:6\n" +
 	"\x05agent\x12\x1e.google.protobuf.MethodOptions\x18ц\x03 \x01(\bR\x05agentBy\n" +
 	"\fcom.berth.v1B\fOptionsProtoP\x01Z\x1aberth/gen/berth/v1;berthv1\xa2\x02\x03BXX\xaa\x02\bBerth.V1\xca\x02\bBerth\\V1\xe2\x02\x14Berth\\V1\\GPBMetadata\xea\x02\tBerth::V1b\x06proto3"
 

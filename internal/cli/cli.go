@@ -253,6 +253,8 @@ func reportError(w io.Writer, err error, name, target string) int {
 		line = fmt.Sprintf("berthd will not proxy to %s: use a DNS host name, not an IP address or localhost", target)
 	case berthv1.ErrorReason_ERROR_REASON_GRANT_NOT_FOUND:
 		line = fmt.Sprintf("no grant has id %s; berth secret ls lists the grants", target)
+	case berthv1.ErrorReason_ERROR_REASON_NOT_AGENT_METHOD:
+		line = "this command is for the person, not for agents; agents reach berthd only through the agent socket's methods"
 	case berthv1.ErrorReason_ERROR_REASON_UNSPECIFIED:
 		line = err.Error()
 	}

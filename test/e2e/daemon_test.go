@@ -67,9 +67,9 @@ func home(t *testing.T) string {
 	return h
 }
 
-func start(t *testing.T, h string) *daemonProc {
+func start(t *testing.T, h string, args ...string) *daemonProc {
 	t.Helper()
-	cmd := exec.CommandContext(context.WithoutCancel(t.Context()), filepath.Join(binDir, "berthd"))
+	cmd := exec.CommandContext(context.WithoutCancel(t.Context()), filepath.Join(binDir, "berthd"), args...)
 	cmd.Env = append(os.Environ(), "BERTH_HOME="+h)
 	logFile, _ := os.Create(filepath.Join(h, "berthd.log"))
 	cmd.Stdout, cmd.Stderr = logFile, logFile

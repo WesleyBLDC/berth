@@ -12,6 +12,7 @@ import (
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connectproto"
 	"google.golang.org/protobuf/proto"
+	"google.golang.org/protobuf/reflect/protoreflect"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	berthv1 "berth/gen/berth/v1"
@@ -48,13 +49,31 @@ type handlers struct {
 	inFlight map[string]chan struct{}
 }
 
-// Register mounts every service on server.
-func Register(server *connect.Server, d Deps) {
+// Register mounts every service on each server. The servers share one set of handlers, so a
+// request ID in flight on one socket holds back its retry on the other.
+func Register(d Deps, servers ...*connect.Server) {
 	h := &handlers{d: d, inFlight: map[string]chan struct{}{}}
-	berthv1connect.RegisterDaemonServiceHandler(server, h)
-	berthv1connect.RegisterDebugServiceHandler(server, h)
-	if d.Secrets != nil {
-		berthv1connect.RegisterSecretsServiceHandler(server, h)
+	for _, server := range servers {
+		berthv1connect.RegisterDaemonServiceHandler(server, h)
+		berthv1connect.RegisterDebugServiceHandler(server, h)
+		if d.Secrets != nil {
+			berthv1connect.RegisterSecretsServiceHandler(server, h)
+		}
+	}
+}
+
+// AgentOnly refuses every method the schema does not mark (berth.v1.agent), for the server
+// behind the agent socket. It reads the mark from the method itself, so nothing else has to
+// list the agent surface.
+func AgentOnly() connect.ServerInterceptor {
+	return func(next connect.ServerFunc) connect.ServerFunc {
+		return func(ctx context.Context, spec connect.Spec, stream connect.ServerStream) error {
+			if md, ok := spec.Schema.(protoreflect.MethodDescriptor); ok && proto.GetExtension(md.Options(), berthv1.E_Agent).(bool) {
+				return next(ctx, spec, stream)
+			}
+			return withReason(connect.Errorf(connect.CodePermissionDenied, "%s is not open to agents", spec.Procedure),
+				berthv1.ErrorReason_ERROR_REASON_NOT_AGENT_METHOD)
+		}
 	}
 }
 

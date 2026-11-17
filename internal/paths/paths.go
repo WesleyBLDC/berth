@@ -4,6 +4,7 @@ package paths
 import (
 	"os"
 	"path/filepath"
+	"strconv"
 )
 
 // Home is $BERTH_HOME, or ~/Library/Application Support/Berth.
@@ -20,6 +21,13 @@ func Home() (string, error) {
 
 func Socket(home string) string   { return filepath.Join(home, "berthd.sock") }
 func Database(home string) string { return filepath.Join(home, "berth.db") }
+
+// AgentSocket is where berthd serves the agent user by default. It sits outside the owner's
+// home, whose ~/Library is 0700, so another user can reach it; one folder per owner keeps two
+// owners on one Mac apart.
+func AgentSocket(ownerUID int) string {
+	return filepath.Join("/Users/Shared/Berth", strconv.Itoa(ownerUID), "agent.sock")
+}
 
 // Beside returns name in the folder of the running executable, with symlinks resolved, so a
 // helper installed next to berthd or berth is found wherever the pair was put.

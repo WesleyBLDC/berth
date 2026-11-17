@@ -37,11 +37,11 @@ func setup(t *testing.T) *fixture {
 	t.Cleanup(func() { _ = store.Close() })
 	f := &fixture{}
 	server := connect.NewServer()
-	api.Register(server, api.Deps{
+	api.Register(api.Deps{
 		Version: "test", PID: 1, StartedAt: time.Now(), Socket: "/tmp/x.sock",
 		Store: store, Requests: store, Clock: testutil.NewClock(),
 		RequestStop: func(context.Context) error { f.stops++; return nil },
-	})
+	}, server)
 	client := connect.NewClient(connectinprocess.New(server))
 	f.daemon = berthv1connect.NewDaemonServiceClient(client)
 	f.debug = berthv1connect.NewDebugServiceClient(client)
@@ -106,6 +106,27 @@ func TestAgentSurface(t *testing.T) {
 	}
 	if !slices.Equal(agent, want) {
 		t.Fatalf("agent methods = %v, want %v", agent, want)
+	}
+
+	// The agent socket's server must serve exactly that list and refuse the rest.
+	var served []string
+	gate := api.AgentOnly()(func(context.Context, connect.Spec, connect.ServerStream) error { return nil })
+	eachMethod(func(m protoreflect.MethodDescriptor) {
+		spec := connect.Spec{Schema: m, Procedure: "/" + string(m.Parent().FullName()) + "/" + string(m.Name())}
+		err := gate(t.Context(), spec, nil)
+		switch {
+		case err == nil:
+			served = append(served, string(m.FullName()))
+		case connect.CodeOf(err) != connect.CodePermissionDenied || api.ReasonOf(err) != berthv1.ErrorReason_ERROR_REASON_NOT_AGENT_METHOD:
+			t.Errorf("%s refused with %v (%v), want PermissionDenied and NOT_AGENT_METHOD", m.FullName(), err, api.ReasonOf(err))
+		}
+	})
+	slices.Sort(served)
+	if !slices.Equal(served, want) {
+		t.Fatalf("agent socket serves %v, want %v", served, want)
+	}
+	if err := gate(t.Context(), connect.Spec{Procedure: "/berth.v1.Unknown/Method"}, nil); connect.CodeOf(err) != connect.CodePermissionDenied {
+		t.Fatalf("a procedure without a schema got %v, want PermissionDenied", err)
 	}
 }
 

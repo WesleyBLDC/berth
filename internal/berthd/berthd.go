@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"math"
 	"net"
 	"net/http"
 	"os"
@@ -48,18 +49,50 @@ type Config struct {
 	// AllowLocalProxyTargets lets a proxy grant name localhost or an IP literal; only binaries
 	// built with -tags berth_e2e set it, for the test servers on loopback.
 	AllowLocalProxyTargets bool
+	// Agent turns on the agent socket; nil leaves it off.
+	Agent *AgentSocket
+}
+
+// AgentSocket is the second socket, for the agent user: only peers with UID connect, and only
+// methods marked (berth.v1.agent) are served. GID is the group that may reach the socket file,
+// and the daemon's user must belong to it.
+type AgentSocket struct {
+	Path string
+	UID  uint32
+	GID  uint32
+}
+
+// NewAgentSocket checks berthd's agent flags, where -1 means unset; with none set the agent
+// socket is off and it returns nil. An empty path means the default under /Users/Shared.
+func NewAgentSocket(uid, gid int, path string) (*AgentSocket, error) {
+	switch {
+	case uid < 0 && gid < 0 && path == "":
+		return nil, nil
+	case uid < 0:
+		return nil, errors.New("-agent-gid and -agent-socket need -agent-uid")
+	case uid == 0:
+		return nil, errors.New("the agent user cannot be root")
+	case gid < 0:
+		return nil, errors.New("-agent-uid needs -agent-gid")
+	case uid > math.MaxUint32 || gid > math.MaxUint32:
+		return nil, errors.New("user and group IDs must fit in 32 bits")
+	}
+	if path == "" {
+		path = paths.AgentSocket(os.Getuid())
+	}
+	return &AgentSocket{Path: path, UID: uint32(uid), GID: uint32(gid)}, nil
 }
 
 type shell struct {
-	cfg    Config
-	log    *slog.Logger
-	store  *sqlite.Store
-	actor  *machine.Actor[daemon.State, daemon.Event, daemon.Effect]
-	server *http.Server
-	ln     net.Listener
-	sock   string
-	exit   chan int
-	start  time.Time
+	cfg     Config
+	log     *slog.Logger
+	store   *sqlite.Store
+	actor   *machine.Actor[daemon.State, daemon.Event, daemon.Effect]
+	servers []*http.Server
+	sockets []string
+	sock    string
+	exit    chan int
+	start   time.Time
 	// machineCtx outlives the signal context so background sends can still reach the actor.
 	machineCtx context.Context
 	secrets    *secrets
@@ -144,14 +177,16 @@ func (s *shell) run(ctx context.Context, effect daemon.Effect) ([]daemon.Event, 
 		if !s.secrets.stop(stopPromptsTimeout) {
 			s.log.Warn("open prompts or proxy sessions did not record an ending in time")
 		}
-		if s.server != nil {
-			shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-			defer cancel()
-			if err := s.server.Shutdown(shutdownCtx); err != nil {
+		shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		defer cancel()
+		for _, server := range s.servers {
+			if err := server.Shutdown(shutdownCtx); err != nil {
 				s.log.Warn("forced server close", "err", err)
-				_ = s.server.Close()
+				_ = server.Close()
 			}
-			_ = os.Remove(s.sock)
+		}
+		for _, sock := range s.sockets {
+			_ = os.Remove(sock)
 		}
 		return []daemon.Event{{Kind: daemon.Drained}}, nil
 	case daemon.Exit:
@@ -205,21 +240,40 @@ func (s *shell) serve(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	server := connect.NewServer()
-	api.Register(server, api.Deps{
+	owner := connect.NewServer()
+	servers := []*connect.Server{owner}
+	var agentLn net.Listener
+	var agent *connect.Server
+	if a := s.cfg.Agent; a != nil {
+		if agentLn, err = socket.ListenShared(ctx, a.Path, a.UID, a.GID, socket.KernelPeerUID, s.log); err != nil {
+			_ = ln.Close()
+			return fmt.Errorf("agent socket: %w", err)
+		}
+		agent = connect.NewServer(api.AgentOnly())
+		servers = append(servers, agent)
+	}
+	api.Register(api.Deps{
 		Version: s.cfg.Version, PID: os.Getpid(), StartedAt: s.start, Socket: s.sock,
 		Store: s.store, Requests: s.store, Clock: clock.System{},
 		RequestStop: func(ctx context.Context) error {
 			return s.actor.Send(ctx, daemon.Event{Kind: daemon.StopRequested, Note: "Shutdown call"})
 		},
 		Secrets: s.secrets,
-	})
+	}, servers...)
+	s.listen(ln, s.sock, owner)
+	if agent != nil {
+		s.listen(agentLn, s.cfg.Agent.Path, agent)
+	}
+	return nil
+}
+
+func (s *shell) listen(ln net.Listener, sock string, server *connect.Server) {
 	mux := http.NewServeMux()
 	connecthttp.Mount(mux, server, connecthttp.WithGRPC(), connecthttp.WithProtoJSON())
 	protocols := new(http.Protocols)
 	protocols.SetUnencryptedHTTP2(true)
 	protocols.SetHTTP1(true)
-	s.server = &http.Server{
+	hs := &http.Server{
 		Handler: mux, Protocols: protocols, ReadHeaderTimeout: 5 * time.Second,
 		ConnContext: func(ctx context.Context, c net.Conn) context.Context {
 			if uc, ok := c.(*net.UnixConn); ok {
@@ -232,12 +286,12 @@ func (s *shell) serve(ctx context.Context) error {
 			return ctx
 		},
 	}
-	s.ln = ln
+	s.servers = append(s.servers, hs)
+	s.sockets = append(s.sockets, sock)
 	go func() {
-		if err := s.server.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		if err := hs.Serve(ln); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			_ = s.actor.Send(s.machineCtx, daemon.Event{Kind: daemon.Failed, Note: "server: " + err.Error()})
 		}
 	}()
-	s.log.Info("serving", "socket", s.sock)
-	return nil
+	s.log.Info("serving", "socket", sock)
 }

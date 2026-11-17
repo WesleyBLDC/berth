@@ -95,6 +95,91 @@ func Listen(ctx context.Context, path string, uid uint32, peer PeerUID, log *slo
 	if err := os.Chmod(filepath.Dir(path), 0o700); err != nil { //nolint:gosec // a folder needs the execute bit; 0700 is owner only
 		return nil, err
 	}
+	ln, err := bind(ctx, path, 0o600, -1)
+	if err != nil {
+		return nil, err
+	}
+	return &listener{Listener: ln, uid: uid, peer: peer, log: log}, nil
+}
+
+// ListenShared creates a socket another user can reach: mode 0660 with group gid, inside a 0710
+// folder with the same group, so members can connect but not list it. Only peers with user ID
+// uid are served. The daemon's user must belong to gid. It refuses a folder another user owns
+// or could replace, since berthd changes its mode and group and agents trust what answers there.
+func ListenShared(ctx context.Context, path string, uid, gid uint32, peer PeerUID, log *slog.Logger) (net.Listener, error) {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(filepath.Dir(dir), 0o755); err != nil { //nolint:gosec // the parent only has to be traversable
+		return nil, err
+	}
+	if err := checkAncestors(filepath.Dir(dir)); err != nil {
+		return nil, err
+	}
+	if err := os.Mkdir(dir, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+		return nil, err
+	}
+	if err := shareFolder(dir, gid); err != nil {
+		return nil, err
+	}
+	ln, err := bind(ctx, path, 0o660, int(gid))
+	if err != nil {
+		return nil, err
+	}
+	return &listener{Listener: ln, uid: uid, peer: peer, log: log}, nil
+}
+
+// ErrUnsafeFolder means another user owns or could replace a folder on the socket's path.
+var ErrUnsafeFolder = errors.New("unsafe socket folder")
+
+// checkAncestors walks the real path of dir up to the root: each folder must belong to this user
+// or root, and only a root owned folder with the sticky bit (like /tmp) may be writable by others.
+func checkAncestors(dir string) error {
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		return err
+	}
+	self := uint32(os.Getuid()) //nolint:gosec // user IDs fit in 32 bits
+	for p := real; ; p = filepath.Dir(p) {
+		var st unix.Stat_t
+		if err := unix.Lstat(p, &st); err != nil {
+			return err
+		}
+		sticky := st.Mode&unix.S_ISVTX != 0
+		switch {
+		case st.Uid != self && st.Uid != 0:
+			return fmt.Errorf("%w: %s belongs to user %d", ErrUnsafeFolder, p, st.Uid)
+		case st.Mode&0o022 != 0 && (st.Uid != 0 || !sticky):
+			return fmt.Errorf("%w: others can write %s", ErrUnsafeFolder, p)
+		}
+		if p == filepath.Dir(p) {
+			return nil
+		}
+	}
+}
+
+// shareFolder sets dir to 0710 with group gid through a descriptor opened without following
+// symlinks, so the change lands on the folder that was checked and nowhere else.
+func shareFolder(dir string, gid uint32) error {
+	fd, err := unix.Open(dir, unix.O_RDONLY|unix.O_DIRECTORY|unix.O_NOFOLLOW|unix.O_CLOEXEC, 0)
+	if err != nil {
+		return fmt.Errorf("%w: open %s: %w", ErrUnsafeFolder, dir, err)
+	}
+	defer func() { _ = unix.Close(fd) }()
+	var st unix.Stat_t
+	if err := unix.Fstat(fd, &st); err != nil {
+		return err
+	}
+	if st.Uid != uint32(os.Getuid()) { //nolint:gosec // user IDs fit in 32 bits
+		return fmt.Errorf("%w: %s belongs to user %d", ErrUnsafeFolder, dir, st.Uid)
+	}
+	if err := unix.Fchown(fd, -1, int(gid)); err != nil {
+		return fmt.Errorf("give %s to group %d: %w", dir, gid, err)
+	}
+	return unix.Fchmod(fd, 0o710)
+}
+
+// bind listens at path, removing a stale socket file but refusing a live one, then sets the
+// socket's mode and, when gid is not -1, its group.
+func bind(ctx context.Context, path string, mode os.FileMode, gid int) (net.Listener, error) {
 	if _, err := os.Lstat(path); err == nil {
 		d := net.Dialer{Timeout: 300 * time.Millisecond}
 		if c, err := d.DialContext(ctx, "unix", path); err == nil {
@@ -110,11 +195,17 @@ func Listen(ctx context.Context, path string, uid uint32, peer PeerUID, log *slo
 	if err != nil {
 		return nil, err
 	}
-	if err := os.Chmod(path, 0o600); err != nil {
+	if gid != -1 {
+		if err := os.Lchown(path, -1, gid); err != nil {
+			_ = ln.Close()
+			return nil, err
+		}
+	}
+	if err := os.Chmod(path, mode); err != nil {
 		_ = ln.Close()
 		return nil, err
 	}
-	return &listener{Listener: ln, uid: uid, peer: peer, log: log}, nil
+	return ln, nil
 }
 
 type listener struct {

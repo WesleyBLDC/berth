@@ -82,12 +82,12 @@ func setupSecrets(t *testing.T, fake *fakeSecrets) secretsFixture {
 	}
 	t.Cleanup(func() { _ = store.Close() })
 	server := connect.NewServer()
-	api.Register(server, api.Deps{
+	api.Register(api.Deps{
 		Version: "test", PID: 1, StartedAt: time.Now(), Socket: "/tmp/x.sock",
 		Store: store, Requests: store, Clock: testutil.NewClock(),
 		RequestStop: func(context.Context) error { return nil },
 		Secrets:     fake,
-	})
+	}, server)
 	client := connect.NewClient(connectinprocess.New(server))
 	return secretsFixture{
 		secrets: berthv1connect.NewSecretsServiceClient(client),
