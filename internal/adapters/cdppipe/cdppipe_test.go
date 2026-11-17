@@ -300,3 +300,56 @@ func TestRealChromiumOverThePipe(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 	}
 }
+
+// Downloads go to the profile's own folder with no prompt, and Chrome's other preferences stay.
+func TestPrepareProfilePointsDownloadsAtTheProfile(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(dir, "Default"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "Default", "Preferences"), []byte(`{"browser":{"x":1},"download":{"default_directory":"/Users/you/Downloads","prompt_for_download":true}}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := cdppipe.PrepareProfile(dir); err != nil {
+		t.Fatal(err)
+	}
+	b, _ := os.ReadFile(filepath.Join(dir, "Default", "Preferences"))
+	var prefs struct {
+		Browser  map[string]any
+		Download struct {
+			DefaultDirectory  string `json:"default_directory"`
+			PromptForDownload bool   `json:"prompt_for_download"`
+		}
+		Savefile struct {
+			DefaultDirectory string `json:"default_directory"`
+		}
+	}
+	if err := json.Unmarshal(b, &prefs); err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Join(dir, "Downloads")
+	if prefs.Download.DefaultDirectory != want || prefs.Download.PromptForDownload || prefs.Savefile.DefaultDirectory != want || prefs.Browser["x"] != float64(1) {
+		t.Fatalf("preferences = %s", b)
+	}
+	if st, err := os.Stat(want); err != nil || !st.IsDir() || st.Mode().Perm() != 0o700 {
+		t.Fatalf("downloads folder: %v %v", st, err)
+	}
+}
+
+// Kill after the browser was reaped must signal nothing: the pid may already name another
+// process group.
+func TestKillAfterTheReapSignalsNothing(t *testing.T) {
+	c := launchFake(t)
+	kills, restore := cdppipe.WatchKills()
+	defer restore()
+	if err := c.Kill(); err != nil {
+		t.Fatal(err)
+	}
+	<-c.Done()
+	if err := c.Kill(); err != nil {
+		t.Fatalf("a second Kill after the reap = %v", err)
+	}
+	if got := kills(); len(got) != 1 || got[0] != c.Process().PID {
+		t.Fatalf("groups signalled = %v, want only the live one", got)
+	}
+}

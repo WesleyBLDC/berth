@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"sync"
 	"syscall"
 
@@ -26,6 +27,9 @@ const (
 	// maxMessage bounds one message, so a runaway page cannot make berthd buffer without limit.
 	maxMessage = 64 << 20
 )
+
+// killGroup sends SIGKILL to a process group; tests watch it.
+var killGroup = func(pgid int) error { return syscall.Kill(-pgid, syscall.SIGKILL) }
 
 // Driver starts browsers. It holds no state of its own.
 type Driver struct{}
@@ -52,6 +56,9 @@ func Args(l ports.BrowserLaunch) []string {
 func (Driver) Launch(ctx context.Context, l ports.BrowserLaunch) (ports.BrowserConn, error) {
 	if l.Executable == "" || l.ProfileDir == "" {
 		return nil, errors.New("a browser launch needs an executable and a profile folder")
+	}
+	if err := PrepareProfile(l.ProfileDir); err != nil {
+		return nil, fmt.Errorf("prepare profile: %w", err)
 	}
 	chromeReads, toChrome, err := os.Pipe()
 	if err != nil {
@@ -82,7 +89,7 @@ func (Driver) Launch(ctx context.Context, l ports.BrowserLaunch) (ports.BrowserC
 		// It exited at once; the reaper below still runs so nothing is left behind.
 		ref = ports.ProcessRef{PID: cmd.Process.Pid}
 	}
-	return newConn(cmd, ref, toChrome, fromChrome), nil
+	return newConn(ctx, cmd, ref, toChrome, fromChrome), nil
 }
 
 type reply struct {
@@ -94,6 +101,9 @@ type conn struct {
 	cmd  *exec.Cmd
 	ref  ports.ProcessRef
 	done chan struct{}
+
+	reapMu sync.Mutex
+	reaped bool
 
 	writeMu sync.Mutex
 	w       *os.File
@@ -108,7 +118,7 @@ type conn struct {
 	gone      bool
 }
 
-func newConn(cmd *exec.Cmd, ref ports.ProcessRef, w, r *os.File) *conn {
+func newConn(ctx context.Context, cmd *exec.Cmd, ref ports.ProcessRef, w, r *os.File) *conn {
 	c := &conn{
 		cmd: cmd, ref: ref, done: make(chan struct{}), w: w, next: FirstOwnID,
 		pending: map[int64]chan reply{}, attaching: map[int64]bool{}, own: map[string]bool{},
@@ -119,7 +129,15 @@ func newConn(cmd *exec.Cmd, ref ports.ProcessRef, w, r *os.File) *conn {
 		c.read(r)
 	}()
 	go func() {
+		// Wait for the exit without reaping, then reap under reapMu: while the leader is an
+		// unreaped zombie its pid, and so the group id Kill signals, cannot name anything else.
+		if exited, err := procscan.WatchPID(context.WithoutCancel(ctx), cmd.Process.Pid); err == nil {
+			<-exited
+		}
+		c.reapMu.Lock()
 		_ = cmd.Wait()
+		c.reaped = true
+		c.reapMu.Unlock()
 		<-readDone
 		_ = w.Close()
 		close(c.done)
@@ -130,8 +148,14 @@ func newConn(cmd *exec.Cmd, ref ports.ProcessRef, w, r *os.File) *conn {
 func (c *conn) Process() ports.ProcessRef { return c.ref }
 func (c *conn) Done() <-chan struct{}     { return c.done }
 
+// Kill signals the group only while its leader is unreaped, so a reused pid never names it.
 func (c *conn) Kill() error {
-	if err := syscall.Kill(-c.cmd.Process.Pid, syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
+	c.reapMu.Lock()
+	defer c.reapMu.Unlock()
+	if c.reaped {
+		return nil
+	}
+	if err := killGroup(c.cmd.Process.Pid); err != nil && !errors.Is(err, syscall.ESRCH) {
 		return err
 	}
 	return nil
@@ -308,4 +332,48 @@ func (c *conn) route(raw []byte) {
 		// The scanner reuses its buffer, so the sink gets its own copy.
 		sink(bytes.Clone(raw))
 	}
+}
+
+// PrepareProfile points the profile's downloads at its own Downloads folder, with no prompt, so a
+// download never lands in the person's ~/Downloads; agents cannot change it, since the proxy
+// refuses setDownloadBehavior. It keeps every other preference Chrome wrote.
+func PrepareProfile(dir string) error {
+	downloads := filepath.Join(dir, "Downloads")
+	if err := os.MkdirAll(downloads, 0o700); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Join(dir, "Default"), 0o700); err != nil {
+		return err
+	}
+	path := filepath.Join(dir, "Default", "Preferences")
+	prefs := map[string]any{}
+	if b, err := os.ReadFile(path); err == nil { //nolint:gosec // the profile folder is Berth's own
+		// Unreadable preferences are replaced; Chrome would reset them anyway.
+		_ = json.Unmarshal(b, &prefs)
+		if prefs == nil {
+			prefs = map[string]any{}
+		}
+	}
+	section := func(name string) map[string]any {
+		m, _ := prefs[name].(map[string]any)
+		if m == nil {
+			m = map[string]any{}
+			prefs[name] = m
+		}
+		return m
+	}
+	download := section("download")
+	download["default_directory"] = downloads
+	download["prompt_for_download"] = false
+	download["directory_upgrade"] = true
+	section("savefile")["default_directory"] = downloads
+	b, err := json.Marshal(prefs)
+	if err != nil {
+		return err
+	}
+	tmp := path + ".berth"
+	if err := os.WriteFile(tmp, b, 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
