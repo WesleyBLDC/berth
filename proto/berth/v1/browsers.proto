@@ -1,0 +1,95 @@
+syntax = "proto3";
+
+package berth.v1;
+
+import "buf/validate/validate.proto";
+import "google/protobuf/timestamp.proto";
+
+// BrowsersService launches and closes the browsers Berth manages itself: Chromium started by
+// berthd over a private CDP pipe, on a profile folder under $BERTH_HOME/profiles, with no
+// debugging port. Each ready browser has a loopback CDP proxy that needs the browser's token in
+// the X-Berth-Token header and refuses methods outside the agent's own session. No method is on
+// the agent surface: these name any profile and see or close every managed browser.
+service BrowsersService {
+  // LaunchBrowser starts a browser on the named profile and answers once it is ready or failed.
+  // One live browser per profile: a held profile answers PROFILE_BUSY. The CDP token is set only
+  // in the first reply; the request log keeps the reply without it.
+  rpc LaunchBrowser(LaunchBrowserRequest) returns (LaunchBrowserResponse);
+  rpc ListBrowsers(ListBrowsersRequest) returns (ListBrowsersResponse);
+  // CloseBrowser asks the browser to close over its pipe, kills its process group after 5
+  // seconds, and answers once it is closed or 10 seconds have passed. Closing a closed browser
+  // answers its state.
+  rpc CloseBrowser(CloseBrowserRequest) returns (CloseBrowserResponse);
+}
+
+// BrowserState mirrors the browser machine's states.
+enum BrowserState {
+  BROWSER_STATE_UNSPECIFIED = 0;
+  BROWSER_STATE_LAUNCHING = 1;
+  BROWSER_STATE_READY = 2;
+  BROWSER_STATE_CLOSING = 3;
+  BROWSER_STATE_CLOSED = 4;
+}
+
+message ManagedBrowser {
+  // id is 16 lowercase hex characters.
+  string id = 1;
+  // profile is the profile name; its folder is $BERTH_HOME/profiles/<profile>.
+  string profile = 2;
+  BrowserState state = 3;
+  // session_id is the observed session of the same process (<pid>-<start time in microseconds>),
+  // as berth ps lists it; empty until the process started.
+  string session_id = 4;
+  string executable = 5;
+  bool headless = 6;
+  // product is what the browser answered to Browser.getVersion, such as HeadlessChrome/156.0.
+  string product = 7;
+  // cdp_endpoint is the proxy's http://127.0.0.1:<port>, set while the browser is ready.
+  string cdp_endpoint = 8;
+  google.protobuf.Timestamp state_since = 9;
+  // close_reason is a fixed phrase saying why a closed browser closed.
+  string close_reason = 10;
+}
+
+message LaunchBrowserRequest {
+  // request_id makes the call idempotent: a retry with the same id returns the first result.
+  string request_id = 1 [(buf.validate.field).string = {
+    min_len: 8
+    max_len: 128
+  }];
+  string profile = 2 [(buf.validate.field).string.pattern = "^[a-z0-9][a-z0-9._-]{0,63}$"];
+  bool headless = 3;
+  // executable is a Chromium family browser to run; empty lets berthd pick one. It must be a
+  // Chrome, Chrome for Testing, Chromium or headless shell executable.
+  string executable = 4 [(buf.validate.field).string = {
+    max_len: 1024
+    pattern: "^(/.*)?$"
+  }];
+}
+
+message LaunchBrowserResponse {
+  ManagedBrowser browser = 1;
+  // cdp_token is the proxy's token, set only in the first reply; berthd keeps only its hash.
+  string cdp_token = 2;
+}
+
+message ListBrowsersRequest {
+  // include_closed adds browsers that closed since berthd started.
+  bool include_closed = 1;
+}
+
+message ListBrowsersResponse {
+  repeated ManagedBrowser browsers = 1;
+}
+
+message CloseBrowserRequest {
+  string request_id = 1 [(buf.validate.field).string = {
+    min_len: 8
+    max_len: 128
+  }];
+  string id = 2 [(buf.validate.field).string.pattern = "^[0-9a-f]{16}$"];
+}
+
+message CloseBrowserResponse {
+  ManagedBrowser browser = 1;
+}

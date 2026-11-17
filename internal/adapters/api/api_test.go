@@ -152,6 +152,7 @@ func TestNoFieldCarriesAValue(t *testing.T) {
 		"berth.v1.AuthorizeUseResponse.cdhash",
 		"berth.v1.AuthorizeUseResponse.ticket",
 		"berth.v1.CreateAgentSessionResponse.token",
+		"berth.v1.LaunchBrowserResponse.cdp_token",
 		"berth.v1.ProxyTarget.value_prefix",
 		"berth.v1.ProxyTarget.value_suffix",
 		"berth.v1.ProxyTicket.ticket",
@@ -189,7 +190,7 @@ func TestNoFieldCarriesAValue(t *testing.T) {
 
 // TestMutatingMethodsTakeARequestID keeps every method that changes something idempotent.
 func TestMutatingMethodsTakeARequestID(t *testing.T) {
-	readOnly := []string{"Handshake", "Status", "GetState", "ListSecrets", "WatchProxySession", "ListSessions", "InspectSession", "WatchSessions", "ListAgentSessions"}
+	readOnly := []string{"Handshake", "Status", "GetState", "ListSecrets", "WatchProxySession", "ListSessions", "InspectSession", "WatchSessions", "ListAgentSessions", "ListBrowsers"}
 	eachMethod(func(m protoreflect.MethodDescriptor) {
 		if slices.Contains(readOnly, string(m.Name())) {
 			return

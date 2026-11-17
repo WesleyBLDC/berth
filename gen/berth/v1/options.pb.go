@@ -70,6 +70,13 @@ const (
 	ErrorReason_ERROR_REASON_RATE_LIMITED ErrorReason = 17
 	// AGENT_SESSION_NOT_FOUND means no agent session has that id.
 	ErrorReason_ERROR_REASON_AGENT_SESSION_NOT_FOUND ErrorReason = 18
+	// PROFILE_BUSY refuses a browser launch on a profile a live browser already uses.
+	ErrorReason_ERROR_REASON_PROFILE_BUSY ErrorReason = 19
+	// BROWSER_NOT_FOUND means no managed browser has that id.
+	ErrorReason_ERROR_REASON_BROWSER_NOT_FOUND ErrorReason = 20
+	// BROWSER_LAUNCH_FAILED means the browser did not start or did not answer over its pipe, or
+	// the named executable is not a Chromium family browser.
+	ErrorReason_ERROR_REASON_BROWSER_LAUNCH_FAILED ErrorReason = 21
 )
 
 // Enum value maps for ErrorReason.
@@ -94,6 +101,9 @@ var (
 		16: "ERROR_REASON_AGENT_TOKEN_INVALID",
 		17: "ERROR_REASON_RATE_LIMITED",
 		18: "ERROR_REASON_AGENT_SESSION_NOT_FOUND",
+		19: "ERROR_REASON_PROFILE_BUSY",
+		20: "ERROR_REASON_BROWSER_NOT_FOUND",
+		21: "ERROR_REASON_BROWSER_LAUNCH_FAILED",
 	}
 	ErrorReason_value = map[string]int32{
 		"ERROR_REASON_UNSPECIFIED":             0,
@@ -115,6 +125,9 @@ var (
 		"ERROR_REASON_AGENT_TOKEN_INVALID":     16,
 		"ERROR_REASON_RATE_LIMITED":            17,
 		"ERROR_REASON_AGENT_SESSION_NOT_FOUND": 18,
+		"ERROR_REASON_PROFILE_BUSY":            19,
+		"ERROR_REASON_BROWSER_NOT_FOUND":       20,
+		"ERROR_REASON_BROWSER_LAUNCH_FAILED":   21,
 	}
 )
 
@@ -216,7 +229,7 @@ const file_berth_v1_options_proto_rawDesc = "" +
 	"\n" +
 	"\x16berth/v1/options.proto\x12\bberth.v1\x1a google/protobuf/descriptor.proto\":\n" +
 	"\tErrorInfo\x12-\n" +
-	"\x06reason\x18\x01 \x01(\x0e2\x15.berth.v1.ErrorReasonR\x06reason*\x97\x05\n" +
+	"\x06reason\x18\x01 \x01(\x0e2\x15.berth.v1.ErrorReasonR\x06reason*\x82\x06\n" +
 	"\vErrorReason\x12\x1c\n" +
 	"\x18ERROR_REASON_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eERROR_REASON_PROTOCOL_MISMATCH\x10\x01\x12\"\n" +
@@ -237,7 +250,10 @@ const file_berth_v1_options_proto_rawDesc = "" +
 	"\"ERROR_REASON_SESSION_NOT_STOPPABLE\x10\x0f\x12$\n" +
 	" ERROR_REASON_AGENT_TOKEN_INVALID\x10\x10\x12\x1d\n" +
 	"\x19ERROR_REASON_RATE_LIMITED\x10\x11\x12(\n" +
-	"$ERROR_REASON_AGENT_SESSION_NOT_FOUND\x10\x12:6\n" +
+	"$ERROR_REASON_AGENT_SESSION_NOT_FOUND\x10\x12\x12\x1d\n" +
+	"\x19ERROR_REASON_PROFILE_BUSY\x10\x13\x12\"\n" +
+	"\x1eERROR_REASON_BROWSER_NOT_FOUND\x10\x14\x12&\n" +
+	"\"ERROR_REASON_BROWSER_LAUNCH_FAILED\x10\x15:6\n" +
 	"\x05agent\x12\x1e.google.protobuf.MethodOptions\x18ц\x03 \x01(\bR\x05agentBy\n" +
 	"\fcom.berth.v1B\fOptionsProtoP\x01Z\x1aberth/gen/berth/v1;berthv1\xa2\x02\x03BXX\xaa\x02\bBerth.V1\xca\x02\bBerth\\V1\xe2\x02\x14Berth\\V1\\GPBMetadata\xea\x02\tBerth::V1b\x06proto3"
 
