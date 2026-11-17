@@ -2,7 +2,13 @@
 
 Berth is a local app for macOS that lists every browser your agents, tests and scrapers have open, lets you watch and take over any of them, and decides which Keychain passwords and which runbook each one gets.
 
-Status: planning. No code yet.
+Status: planned and ready for M0 (the spike). No code yet.
+
+- Design and plan: https://wiki.wesleybldc.com/wiki-artifacts/berth
+- Decisions: `docs/adr/`
+- Next milestones: `docs/plans/m0-spike.md`, `docs/plans/m1-skeleton.md`
+- Setup: `docs/setup.md`
+- Rules for coding agents: `AGENTS.md`
 
 ## Shape
 
