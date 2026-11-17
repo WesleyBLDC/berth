@@ -70,10 +70,10 @@ type Scanner struct {
 	// keeps only the processes it listed, so a process that is gone is forgotten.
 	sigs map[instance]classified
 	args map[instance][]string
-	// exes holds each listed process's last known path, so a running browser whose file was
-	// replaced or deleted, for which the kernel gives no path, is not taken for one that exited.
-	// The kernel bounds a path at 4 KiB.
-	exes map[running]string
+	// listed holds every process the last scan listed, with its last known path, so a running
+	// browser whose file was replaced or deleted, for which the kernel gives no path, is not
+	// taken for one that exited. The kernel bounds a path at 4 KiB.
+	listed map[running]string
 }
 
 // running keys a process instance by pid and start time alone.
@@ -104,16 +104,14 @@ func (s *Scanner) Scan(ctx context.Context) ([]Observed, error) {
 	if err != nil {
 		return nil, err
 	}
-	exes := make(map[running]string, len(procs))
+	listed := make(map[running]string, len(procs))
 	for i := range procs {
 		p := &procs[i]
 		r := running{p.PID, p.Start.UnixNano()}
-		if last, ok := s.exes[r]; ok && p.Executable == "" {
+		if last := s.listed[r]; last != "" && p.Executable == "" {
 			p.Executable, p.ExecutableChanged = last, true
 		}
-		if p.Executable != "" {
-			exes[r] = p.Executable
-		}
+		listed[r] = p.Executable
 	}
 	byPID := make(map[int]ports.ProcessInfo, len(procs))
 	children := make(map[int][]int)
@@ -176,8 +174,14 @@ func (s *Scanner) Scan(ctx context.Context) ([]Observed, error) {
 		}
 		out = append(out, observe(ctx, s.src, c, byPID, children, ancestorArgs, s.uid))
 	}
-	s.sigs, s.args, s.exes = sigs, args, exes
+	s.sigs, s.args, s.listed = sigs, args, listed
 	return out, nil
+}
+
+// Running reports whether the last scan listed the process instance p.
+func (s *Scanner) Running(p ports.ProcessRef) bool {
+	_, ok := s.listed[running{p.PID, p.Start.UnixNano()}]
+	return ok
 }
 
 func key(p ports.ProcessInfo) instance {
@@ -276,19 +280,18 @@ type Tracked struct {
 	// Unsaved means the machine has no row for this session yet, so its first observation sends
 	// session.Seen before anything else.
 	Unsaved bool
-	// Parent and Owner are the processes above the browser when it was first seen; either
-	// changing means the process that started it exited.
-	Parent ports.ProcessRef
-	Owner  ports.ProcessRef
-	CPU    time.Duration
+	// Owner is the owner process when the browser was first seen; zero for the person and none.
+	Owner ports.ProcessRef
+	CPU   time.Duration
 	// CPUGrewAt is when CPU last grew by BusyCPU, or the first observation.
 	CPUGrewAt time.Time
 }
 
 // Events is the pure step for one session: given what the shell tracked, this scan's observation
-// (nil when the browser is gone) and the time, it returns the updated facts and the events the
-// machine accepts in its current state, so a steady browser produces none.
-func Events(t Tracked, o *Observed, now time.Time) (Tracked, []session.Event) {
+// (nil when the browser is gone), whether a process instance is still running and the time, it
+// returns the updated facts and the events the machine accepts in its current state, so a steady
+// browser produces none.
+func Events(t Tracked, o *Observed, running func(ports.ProcessRef) bool, now time.Time) (Tracked, []session.Event) {
 	live := t.State != session.Stopped
 	if o == nil {
 		if live {
@@ -299,19 +302,21 @@ func Events(t Tracked, o *Observed, now time.Time) (Tracked, []session.Event) {
 	var first []session.Event
 	if !t.Seen {
 		t.Seen, t.CPU, t.CPUGrewAt = true, o.CPU, now
-		t.Parent = parentRef(o)
 		t.Owner = o.Owner.Process.ProcessRef
 		if t.Unsaved && t.State == session.Discovered {
 			first = []session.Event{{Kind: session.Seen}}
 		}
 		t.Unsaved = false
 	}
-	next, events := step(t, o, now)
+	next, events := step(t, o, running, now)
 	return next, append(first, events...)
 }
 
-// step returns the one event, if any, that this observation of a live browser calls for.
-func step(t Tracked, o *Observed, now time.Time) (Tracked, []session.Event) {
+// step returns the one event, if any, that this observation of a live browser calls for. Only the
+// owner itself exiting makes a leftover: an ancestor between it and the browser exiting, or an
+// ancestor's file being replaced, leaves a live agent's browser alone, since leftovers --stop
+// would kill it.
+func step(t Tracked, o *Observed, running func(ports.ProcessRef) bool, now time.Time) (Tracked, []session.Event) {
 	busy := o.CPU-t.CPU >= BusyCPU
 	if busy {
 		t.CPUGrewAt = now
@@ -319,11 +324,9 @@ func step(t Tracked, o *Observed, now time.Time) (Tracked, []session.Event) {
 	t.CPU = o.CPU
 	observing := t.State == session.Discovered || t.State == session.Active || t.State == session.Idle
 	switch {
-	case observing && o.Owner.Kind == ownerchain.None:
+	case observing && t.Owner.PID == 0 && o.Owner.Kind == ownerchain.None:
 		return t, []session.Event{{Kind: session.OwnerExited, Note: "no owner above the browser"}}
-	case observing && !parentRef(o).Same(t.Parent):
-		return t, []session.Event{{Kind: session.OwnerExited, Note: "the browser's parent exited"}}
-	case observing && !o.Owner.Process.Same(t.Owner):
+	case observing && t.Owner.PID != 0 && !running(t.Owner):
 		return t, []session.Event{{Kind: session.OwnerExited, Note: "the owner exited"}}
 	case busy && (t.State == session.Discovered || t.State == session.Idle):
 		return t, []session.Event{{Kind: session.Busy}}
@@ -331,11 +334,4 @@ func step(t Tracked, o *Observed, now time.Time) (Tracked, []session.Event) {
 		return t, []session.Event{{Kind: session.Quiet}}
 	}
 	return t, nil
-}
-
-func parentRef(o *Observed) ports.ProcessRef {
-	if len(o.Chain) == 0 {
-		return ports.ProcessRef{}
-	}
-	return o.Chain[0].ProcessRef
 }

@@ -257,7 +257,7 @@ Built on branch `m2a` from `main` at 6de1d7b: items 1 to 10, each with its own c
 - **Signature registry** (`internal/core/browsersig`): also recognises the Chrome Beta, Dev and Canary bundles as Chrome, and `chrome-devtools-mcp` profiles as Puppeteer. A CDP port wins over a pipe when both flags are set, since any local process can reach a port.
 - **Session machine** (`internal/core/session`): 17 legal pairs, pinned.
 - **Owner chain** (`internal/core/ownerchain`): terminals are matched by their app bundle (Warp's executable is called `stable`) and multiplexers by executable.
-- **Discovery** (`internal/core/discovery`): a session also becomes `Leftover` when the browser's parent at first sight is gone (it was reparented), not only when the owner is; that is what a crashed test runner looks like.
+- **Discovery** (`internal/core/discovery`): a session becomes `Leftover` only when its owner at first sight is gone, by pid and start time, or when it already hangs from launchd with driver evidence at first sight. An earlier rule also took the browser's parent exiting, which caught a crashed test runner under a live terminal, but it also turned a live agent's browser into a leftover when a middle ancestor exited, and `leftovers --stop` then killed it, so the audit dropped it.
 - **Scan loop** (`internal/berthd/sessions.go`): sessions that never saw an event have no database row, since `Discovered` is the initial state; `debug state session/<id>` shows a session only after its first transition.
 - **End to end** (`test/e2e/sessions_test.go`): passes with Playwright's `chrome-headless-shell` 1248 on this Mac, and skips cleanly with `BERTH_E2E_CHROME=/nonexistent`.
 

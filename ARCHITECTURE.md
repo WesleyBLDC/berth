@@ -340,7 +340,7 @@ stateDiagram-v2
 
 - `Seen` comes on a session's first observation when it has no row yet, before anything else that scan saw, so every session has a row from first sight and `WatchSessions` sees it appear; it changes nothing.
 - `Busy` comes when the session's CPU time grew by 20 ms or more since the last scan, `Quiet` after 60 seconds without that; the shell sends only events the table accepts in the current state, so a steady browser writes no rows.
-- `OwnerExited` comes when the owner process, or the browser's parent at first sight, is gone, or when a browser with driver evidence (a Playwright or Puppeteer install or profile, headless, or a CDP pipe; a CDP port alone is not) already hangs from launchd. `Leftover` is sticky until the browser exits or is stopped.
+- `OwnerExited` comes when the owner process found at first sight is gone, by pid and start time, or when a browser with driver evidence (a Playwright or Puppeteer install or profile, headless, or a CDP pipe; a CDP port alone is not) already hangs from launchd at first sight. An ancestor between the owner and the browser exiting, or an ancestor's file being replaced, is not enough, since `leftovers --stop` would kill a live agent's browser. `Leftover` is sticky until the browser exits or is stopped.
 - `SignalTerm` sends SIGTERM to the browser and starts a 5 second timer whose `StopTimedOut` makes `SignalKill` kill every process of the session; a signal to a process already gone is no failure, since the scan or `NOTE_EXIT` sends `Exited`.
 - Boot recovery scans once, then sends `Exited` with the note `gone at boot` to every live session row the scan did not find.
 

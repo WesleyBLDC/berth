@@ -245,7 +245,7 @@ func (b *browsers) state(ctx context.Context, entity string) (session.State, err
 // apply runs one session's pure step and sends what it returns; o is nil when the browser is gone.
 func (b *browsers) apply(ctx context.Context, id string, t *tracked, o *discovery.Observed, now time.Time) {
 	b.mu.Lock()
-	next, events := discovery.Events(t.disc, o, now)
+	next, events := discovery.Events(t.disc, o, b.scanner.Running, now)
 	t.disc = next
 	if o != nil {
 		t.obs = *o

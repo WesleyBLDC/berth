@@ -123,7 +123,12 @@ func TestReusedPidIsANewSession(t *testing.T) {
 
 func step(t *testing.T, tr discovery.Tracked, o *discovery.Observed, at time.Duration, want ...session.EventKind) discovery.Tracked {
 	t.Helper()
-	next, events := discovery.Events(tr, o, t0.Add(at))
+	return stepWith(t, func(ports.ProcessRef) bool { return true }, tr, o, at, want...)
+}
+
+func stepWith(t *testing.T, running func(ports.ProcessRef) bool, tr discovery.Tracked, o *discovery.Observed, at time.Duration, want ...session.EventKind) discovery.Tracked {
+	t.Helper()
+	next, events := discovery.Events(tr, o, running, t0.Add(at))
 	var kinds []session.EventKind
 	for _, e := range events {
 		kinds = append(kinds, e.Kind)
@@ -148,16 +153,74 @@ func TestBusyThenQuiet(t *testing.T) {
 	step(t, tr, &o, 2*discovery.QuietAfter)
 }
 
+// scanner scans rows again and again with one Scanner, as berthd does.
+type scanner struct {
+	t   *testing.T
+	src *testutil.Processes
+	s   *discovery.Scanner
+}
+
+func newScanner(t *testing.T) *scanner {
+	src := &testutil.Processes{}
+	return &scanner{t: t, src: src, s: discovery.NewScanner(src, me)}
+}
+
+// scan returns the Playwright session.
+func (sc *scanner) scan(rows []testutil.FakeProcess) *discovery.Observed {
+	sc.t.Helper()
+	sc.src.Set(rows...)
+	got, err := sc.s.Scan(sc.t.Context())
+	if err != nil {
+		sc.t.Fatal(err)
+	}
+	i := slices.IndexFunc(got, func(o discovery.Observed) bool { return o.Root.PID == 100 })
+	if i < 0 {
+		sc.t.Fatal("no Playwright session")
+	}
+	return &got[i]
+}
+
 func TestOwnerExits(t *testing.T) {
 	rows := table()
-	o := scan(t, rows)[100]
-	tr := step(t, discovery.Tracked{State: session.Active}, &o, 0)
-	rows[3].Start = rows[3].Start.Add(time.Hour) // the test runner exited and its pid was reused
-	o = scan(t, rows)[100]
-	tr = step(t, tr, &o, 2*time.Second, session.OwnerExited)
+	sc := newScanner(t)
+	o := sc.scan(rows)
+	tr := stepWith(t, sc.s.Running, discovery.Tracked{State: session.Active}, o, 0)
+	rows[1].Start = rows[1].Start.Add(time.Hour) // the terminal exited and its pid was reused
+	o = sc.scan(rows)
+	tr = stepWith(t, sc.s.Running, tr, o, 2*time.Second, session.OwnerExited)
 	tr.State = session.Leftover
 	o.CPU += time.Second
-	step(t, tr, &o, 4*time.Second)
+	stepWith(t, sc.s.Running, tr, o, 4*time.Second)
+}
+
+// agentTable runs the Playwright browser under a claude agent, through a shell and node.
+func agentTable() []testutil.FakeProcess {
+	rows := table()
+	rows[2].PPID = 35 // zsh now runs under claude
+	return append(rows, proc(35, 30, me, "/Users/u/.local/share/claude/versions/2.1.322", "claude"))
+}
+
+// An ancestor between the owner and the browser exiting, or the owner's file being replaced by
+// an update, leaves a live agent's browser alone: leftovers --stop would kill it.
+func TestALiveOwnersBrowserIsNeverALeftover(t *testing.T) {
+	rows := agentTable()
+	sc := newScanner(t)
+	o := sc.scan(rows)
+	if o.Owner.Kind != ownerchain.Agent || o.Owner.Process.PID != 35 {
+		t.Fatalf("owner %+v", o.Owner)
+	}
+	tr := stepWith(t, sc.s.Running, discovery.Tracked{State: session.Active}, o, 0)
+	rows[len(rows)-1].Executable = "/Users/u/.local/share/claude/versions/2.1.322.old"
+	tr = stepWith(t, sc.s.Running, tr, sc.scan(rows), 2*time.Second)
+	rows = slices.Delete(rows, 2, 3) // zsh exits, so node is reparented to launchd
+	rows[2].PPID = 1
+	o = sc.scan(rows)
+	if o.Owner.Process.PID == 35 {
+		t.Fatalf("owner %+v is still the agent", o.Owner)
+	}
+	tr = stepWith(t, sc.s.Running, tr, o, 4*time.Second)
+	rows = slices.DeleteFunc(rows, func(r testutil.FakeProcess) bool { return r.PID == 35 })
+	stepWith(t, sc.s.Running, tr, sc.scan(rows), 6*time.Second, session.OwnerExited)
 }
 
 func TestReparentedToLaunchdIsLeftoverAtOnce(t *testing.T) {
