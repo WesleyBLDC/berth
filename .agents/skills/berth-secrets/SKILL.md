@@ -17,7 +17,9 @@ You store and use secrets; you never read them.
 - Never try to read a value: no `security find-generic-password -w` or `-g`, no printing the variable `berth run` sets, no writing it to a file. A hook blocks the Keychain reads.
 - Never put a value on a command line (`security add-generic-password ... -w <value>`, `export TOKEN=...`).
 - Output from `berth run` shows the value as `****`; that is expected, not a bug to work around.
-- When you run as Berth's agent user, the person sets `BERTH_AGENT_SOCKET` and `BERTH_AGENT_TOKEN_FILE`, and `berth` sends your session token for you. Never print, copy or move the token file, and never pass the token on a command line; a token used from outside your process tree is refused. If `berth` says it refused the agent token, ask the person for a new session.
+- When you run as Berth's agent user, the person sets `BERTH_AGENT_SOCKET` and `BERTH_AGENT_TOKEN_FILE`, and `berth` sends your session token for you. Never print, copy or move the token file, and never pass the token on a command line; a token used from outside your process tree is refused. If `berth` says it refused the agent token, ask the person for a new session (`berth agent session new` is theirs to run).
+- In an agent session only `berth secret request`, `berth secret ls` and `berth run --proxy` work. `berth run --env` does not work there yet, and granting, revoking, removing and rotating are the person's; a command that says it is not open to agents will not start working by retrying.
+- An agent session may have 3 store dialogs open and start 10 an hour, and may run 4 proxies at once and start 30 an hour. Past a limit `berth` refuses and says so: wait, do not loop.
 
 ## Store a secret
 
@@ -53,6 +55,7 @@ berth run --proxy openai-api-key -- curl -sS https://api.openai.com/v1/models
 The command gets your environment plus `HTTPS_PROXY`, `SSL_CERT_FILE`, `REQUESTS_CA_BUNDLE`, `CURL_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS` and `NODE_USE_ENV_PROXY=1`, with `NO_PROXY`, `HTTP_PROXY` and `ALL_PROXY` removed.
 If the grant names a placeholder variable (for example `OPENAI_API_KEY`), the command sees a stand in value there, so tools that refuse to start without a key still start; the proxy replaces whatever header the tool sends with the real one.
 Repeat `--proxy` for more secrets; `--proxy` and `--env` cannot be combined.
+In an agent session the proxy is started by `berthd`, not by you; the command line and the result are the same, and the proxy stops when your command ends or your session does.
 
 - Works with tools that honour `HTTPS_PROXY` and those CA variables; tested with `curl` and Node 24 `fetch`.
 - Does not work with tools that use only the macOS trust store: Go binaries and Swift `URLSession`. Use `--env` for those, with a grant to that exact tool.
@@ -84,7 +87,6 @@ A grant pins the file's hash, so after the tool is upgraded the person grants it
 | 4 | The store, grant, rotate or remove failed | Read the message, then ask the person |
 | 5 | `run`: no grant lets this executable use the secret with these arguments; nothing started | Ask the person to run the `berth secret grant` line the error prints |
 | 6 | `run`: the executable changed since it was granted; nothing started | Ask the person to grant it again with the printed line |
-
 | 7 | The secret is busy: a store, rotate or remove dialog, or a grant's Touch ID, is waiting for the person | Wait until the person finishes, then try once more |
 | 8 | `run --proxy`: the proxy did not start; nothing started. Usually no active proxy grant for a name (the message says so), or the secret was removed | `berth secret ls`; ask the person to grant the proxy with the `berth secret proxy` line above |
 

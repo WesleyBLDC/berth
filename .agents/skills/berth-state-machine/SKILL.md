@@ -20,8 +20,14 @@ Berth has no implicit state: no flags whose combinations mean something, no time
    - `func Transition(s State, e Event) (State, []Effect, error)`: a `switch e.Kind` with a nested `switch s` where needed; no `default:` (the `exhaustive` linter must see every case); end with `return s, nil, machine.Illegal(s, e)`.
    - `var _ machine.Transition[State, Event, Effect] = Transition`.
 2. Test file: `machinetest.Walk(t, States, AllEvents, Transition)` with the legal pair count pinned in the assertion, plus one test per rule that matters (the happy path, each guard, each effect's fields).
-3. Shell: create the actor with `machine.NewActor` in the shell that owns it (today `internal/berthd`), with a `Run` function whose `switch effect.Kind` covers every kind and returns follow up events instead of mutating state.
-4. Timeouts are events: a scheduler sends `IdleTimeout`; never compare times inside a transition.
+3. Shell: run the machine through the actors kit in `internal/berthd/actors.go` (`actors[S, E, F]` and `step`), with a `run` function whose `switch effect.Kind` covers every kind and returns follow up events instead of mutating state.
+   - **`final`** lists the states no event leaves. An actor stops once a saved transition reaches one, and none is started for an entity already in one, so an ended entity holds no goroutine. Every machine with an end state sets it, with a test that churns entities and checks `count()` stays bounded.
+   - **`saved`** is told of every saved transition, on the actor's goroutine, so it must not block: hand work to a goroutine. It is where an ended entity's timers, exit watches, slots, child processes and dependants (for example the proxy sessions of an agent session) are freed, with `berthd`'s own context, never the caller's, so a caller that cancels leaves nothing half stopped.
+   - A `step` on an entity whose actor stopped returns `errActorStopped`; read the state and turn it into `machine.ErrIllegal` when the entity is final, and into `api.ErrUnavailable` otherwise, as `agents.step` does. Callers treat `ErrIllegal` as "someone else got there first".
+   - Facts beside the machine (what a scan saw, a process handle) live in memory in the shell, bounded: keep at most a fixed number of ended entities, clip every kept string, and write a churn test.
+   - Boot recovery finds live rows by kind (`ports.EntityLister`) and sends each the event that is true now (`Exited` with `gone at boot`, `ProxyLost`, `Expire`), then arms timers and watches again.
+4. Timeouts are events: a timer on `berthd`'s context sends them (`Expire`, `StopTimedOut`, `CloseTimedOut`); never compare times inside a transition, and cancel the timer from the `saved` hook.
+5. Process exits are events too: watch with kqueue `NOTE_EXIT` (`procscan.WatchExit` by pid and start time, `procscan.WatchPID` for an unreaped child), never by polling a pid.
 
 ## Changing a machine
 
@@ -35,3 +41,5 @@ Berth has no implicit state: no flags whose combinations mean something, no time
 - Effects run only after the transition is saved (the actor does this; never call effect code from a transition).
 - An effect that can fail returns a failure event (for example `Failed` with a note), so failure is a state, not a silent retry.
 - No secret ever appears in an event, note, effect field or state name.
+- A note is fixed text or a count, never text an agent or a process chose.
+- A final state has an actor that stops and a hook that frees what it held; a new machine without `final` is a goroutine leak.
