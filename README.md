@@ -12,8 +12,10 @@ Berth is a local app for macOS that lists every browser your agents, tests and s
 Status: pre release, in active development, with no releases yet.
 M0 (spike) and M1 (skeleton) are done.
 E2a (terminal secrets) is done: the maintainer's manual check passed on 2026-11-17.
-E2b (header proxy and secret lifecycle) is built and awaits the maintainer's manual check.
-E3 (isolated agents) is next, then M2 (see every browser).
+E2b (header proxy and secret lifecycle), M2 (see every browser, `berth ps`) and M3 (the live terminal view, `berth top`) are built and await the maintainer's manual checks.
+E3 (isolated agents) is in progress: the agent socket, session tokens and `berthd` starting the proxy of agent sessions are built, and the separate macOS user waits for a spike that needs the maintainer.
+M4 (managed Chromium) is in progress: `berth browser launch`, the private CDP pipe, profile locks and the token gated CDP proxy are built, and the agent browser methods and `berth-mcp` are still to come.
+M5 (the Mac app) is next.
 The full status is in [ARCHITECTURE.md](ARCHITECTURE.md#milestones).
 
 - Architecture, what is built and what is planned: [ARCHITECTURE.md](ARCHITECTURE.md)
@@ -30,11 +32,12 @@ The maintainer keeps extra design notes privately; everything needed to understa
 ## Shape
 
 - `berthd`: a Go daemon that holds all state, runs explicit state machines and serves one Connect API on a Unix socket.
-- `berth`: one shot commands today, and a full screen terminal view later.
+- `berth`: one shot commands, and `berth top`, a full screen terminal view of every browser session.
 - `berth-native`: a small signed Swift helper, the only Berth process that reads secret values from the Keychain (Touch ID).
 - `berth-proxy`: a signed loopback HTTPS proxy, one per `berth run --proxy`, that writes a granted API key header so the command never holds the key.
-- `Berth.app`: a native SwiftUI window and menu bar item (planned).
-- `berth-mcp`: a thin MCP shim for agents without a shell (planned).
+- Chromium: browsers `berthd` launches itself over a private CDP pipe, which agents reach only through a token gated, filtering CDP proxy.
+- `Berth.app`: a native SwiftUI window and menu bar item (planned, M5).
+- `berth-mcp`: a thin MCP shim for agents without a shell (planned, M4).
 
 ## Development
 
