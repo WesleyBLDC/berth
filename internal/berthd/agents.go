@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -39,18 +40,36 @@ type agentsDeps struct {
 	Code ports.CodeInspector
 	// AgentUID is the agent socket's user; a session binds to that user's processes only.
 	AgentUID uint32
-	// StopProxies stops the proxy sessions authorized through an agent session that ended.
+	// StopProxies stops the proxy sessions authorized through an agent session that ended. It
+	// runs on berthd's own context, never a caller's.
 	StopProxies func(ctx context.Context, agentSession string)
+	// WatchExit returns a channel closed when the process instance exits (kqueue NOTE_EXIT), or
+	// ports.ErrProcessGone when it already has.
+	WatchExit func(ctx context.Context, p ports.ProcessRef) (<-chan struct{}, error)
+	// After runs f once d has passed and returns a function that cancels it; nil means
+	// time.AfterFunc.
+	After func(d time.Duration, f func()) (cancel func())
 }
 
 // agents issues agent sessions, checks their tokens on every agent socket call and limits their
 // store dialogs. It implements api.Agents; the state of each session is in its machine.
 type agents struct {
 	agentsDeps
+	// ctx is berthd's own, so the timers, the root watches and the stops they cause outlive the
+	// call that set them up.
+	ctx      context.Context
 	sessions *actors[agentsession.State, agentsession.Event, agentsession.Effect]
 
 	mu     sync.Mutex
 	stores map[string]*storeSlots
+	// watches cancels each live session's expiry timer and root watch.
+	watches map[string]*sessionWatch
+}
+
+type sessionWatch struct {
+	stopTimer func()
+	// stopRoot ends the root watch; nil until the session is bound.
+	stopRoot context.CancelFunc
 }
 
 // storeSlots is one session's store dialog use, kept in memory only: a restart of berthd forgets
@@ -63,7 +82,10 @@ type storeSlots struct {
 var _ api.Agents = (*agents)(nil)
 
 func newAgents(ctx context.Context, d agentsDeps) *agents {
-	a := &agents{agentsDeps: d, stores: map[string]*storeSlots{}}
+	a := &agents{agentsDeps: d, ctx: ctx, stores: map[string]*storeSlots{}, watches: map[string]*sessionWatch{}}
+	if a.After == nil {
+		a.After = func(d time.Duration, f func()) func() { return func() { time.AfterFunc(d, f).Stop() } }
+	}
 	a.sessions = &actors[agentsession.State, agentsession.Event, agentsession.Effect]{
 		ctx: ctx, log: d.Log, store: d.Store, clock: d.Clock,
 		kind: agentsession.Kind, initial: agentsession.Initial, transition: agentsession.Transition,
@@ -72,8 +94,117 @@ func newAgents(ctx context.Context, d agentsDeps) *agents {
 			return func(context.Context, agentsession.Effect) ([]agentsession.Event, error) { return nil, nil }
 		},
 		live: map[string]*slot[agentsession.State, agentsession.Event, agentsession.Effect]{},
+		saved: func(rec ports.TransitionRecord) {
+			// On the actor's goroutine: hand the work off, so the agent actor never waits on the
+			// proxy actors, and use berthd's context, so a caller that gave up stops nothing short.
+			if !agentsession.Live(agentsession.State(rec.To)) {
+				go a.ended(strings.TrimPrefix(rec.Entity, "agent/"))
+			}
+		},
 	}
 	return a
+}
+
+// ended frees what a session held once its final state is saved: its timer, its root watch, its
+// store slots and its proxy sessions. A second call finds nothing left and stops nothing new.
+func (a *agents) ended(id string) {
+	a.mu.Lock()
+	delete(a.stores, id)
+	w := a.watches[id]
+	delete(a.watches, id)
+	a.mu.Unlock()
+	if w != nil {
+		w.stopTimer()
+		if w.stopRoot != nil {
+			w.stopRoot()
+		}
+	}
+	if a.StopProxies != nil {
+		a.StopProxies(a.ctx, id)
+	}
+}
+
+// watchExpiry sends Expire at the session's expiry, so a session nobody calls still ends and
+// its proxies stop on time.
+func (a *agents) watchExpiry(rec ports.AgentSessionRecord) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if _, ok := a.watches[rec.ID]; ok {
+		return
+	}
+	a.watches[rec.ID] = &sessionWatch{stopTimer: a.After(rec.ExpiresAt.Sub(a.Clock.Now()), func() {
+		a.background(rec.ID, agentsession.Event{Kind: agentsession.Expire})
+	})}
+}
+
+// watchRoot sends RootExited when the bound root process exits (kqueue NOTE_EXIT, which checks
+// the start time, so a reused pid never counts).
+func (a *agents) watchRoot(id string, root ports.ProcessRef) {
+	if a.WatchExit == nil {
+		return
+	}
+	a.mu.Lock()
+	w := a.watches[id]
+	if w == nil || w.stopRoot != nil {
+		a.mu.Unlock()
+		return
+	}
+	ctx, cancel := context.WithCancel(a.ctx)
+	w.stopRoot = cancel
+	a.mu.Unlock()
+	ev := agentsession.Event{Kind: agentsession.RootExited, Note: "root pid " + strconv.Itoa(root.PID)}
+	exited, err := a.WatchExit(ctx, root)
+	if err != nil {
+		a.background(id, ev)
+		return
+	}
+	go func() {
+		select {
+		case <-exited:
+			a.background(id, ev)
+		case <-ctx.Done():
+		}
+	}()
+}
+
+// background applies an event no caller waits for; one the session can no longer take is fine.
+func (a *agents) background(id string, ev agentsession.Event) {
+	if err := a.step(a.ctx, id, ev); err != nil && !errors.Is(err, machine.ErrIllegal) {
+		a.Log.Error("cannot record an agent session event", "session", id, "event", ev.Kind, "err", err)
+	}
+}
+
+// recover runs at boot: it ends sessions that expired or lost their root while berthd was down,
+// re-arms the timers and root watches of the others, and stops any proxy session still open for
+// a session that already ended.
+func (a *agents) recover(ctx context.Context) error {
+	recs, err := a.Records.AgentSessions(ctx)
+	if err != nil {
+		return err
+	}
+	for _, rec := range recs {
+		st, err := a.state(ctx, rec.ID)
+		if err != nil {
+			return err
+		}
+		if !agentsession.Live(st) {
+			if a.StopProxies != nil {
+				a.StopProxies(a.ctx, rec.ID) //nolint:contextcheck // the stop must outlive the boot step, so it uses berthd's context
+			}
+			continue
+		}
+		if st, err = a.refresh(ctx, rec, true); err != nil {
+			return err
+		}
+		if !agentsession.Live(st) {
+			continue
+		}
+		a.watchExpiry(rec)
+		if st == agentsession.Bound && rec.Root != (ports.ProcessRef{}) {
+			a.watchRoot(rec.ID, rec.Root) //nolint:contextcheck // the watch outlives this call and runs on berthd's context
+		}
+	}
+	return nil
 }
 
 func (a *agents) CreateAgentSession(ctx context.Context, req *berthv1.CreateAgentSessionRequest) (*berthv1.CreateAgentSessionResponse, error) {
@@ -95,6 +226,7 @@ func (a *agents) CreateAgentSession(ctx context.Context, req *berthv1.CreateAgen
 	if err := a.Records.AddAgentSession(ctx, rec); err != nil {
 		return nil, err
 	}
+	a.watchExpiry(rec)
 	return &berthv1.CreateAgentSessionResponse{Session: agentSessionProto(rec, agentsession.Initial), Token: token}, nil
 }
 
@@ -188,6 +320,7 @@ func (a *agents) Authenticate(ctx context.Context, token string, peer ports.Peer
 		if now != agentsession.Bound {
 			return "", a.refuse("session "+string(now), rec.ID, peer)
 		}
+		a.watchRoot(rec.ID, root) //nolint:contextcheck // the watch outlives this call and runs on berthd's context
 	}
 	if !agentsession.Descends(lineage, root) {
 		rec.Root = root
@@ -264,27 +397,19 @@ func (a *agents) running(ctx context.Context, p ports.ProcessRef) bool {
 	return err == nil && lineage[0].Same(p)
 }
 
-// step applies one event. Once a session ends it frees its store slots and stops the proxy
-// sessions authorized through it; the actor stops by itself in a final state. An event the
+// step applies one event; what an ended session held is freed by the saved hook. An event the
 // session can no longer take, including one whose actor stopped because another step ended the
-// session first, is machine.ErrIllegal.
+// session first, is machine.ErrIllegal; an actor that stopped for any other reason (a failed
+// save, berthd stopping) is api.ErrUnavailable, so no caller mistakes it for an outcome.
 func (a *agents) step(ctx context.Context, id string, ev agentsession.Event) error {
-	rec, _, err := step(ctx, a.sessions, agentsession.Entity(id), ev, nil, ev.Kind)
+	_, _, err := step(ctx, a.sessions, agentsession.Entity(id), ev, nil, ev.Kind)
 	if errors.Is(err, errActorStopped) {
-		return fmt.Errorf("%w: %s in agent session %s", machine.ErrIllegal, ev.Kind, id)
-	}
-	if err != nil {
-		return err
-	}
-	if !agentsession.Live(agentsession.State(rec.To)) {
-		a.mu.Lock()
-		delete(a.stores, id)
-		a.mu.Unlock()
-		if a.StopProxies != nil {
-			a.StopProxies(ctx, id)
+		if st, serr := a.state(ctx, id); serr == nil && !agentsession.Live(st) {
+			return fmt.Errorf("%w: %s in agent session %s", machine.ErrIllegal, ev.Kind, id)
 		}
+		return api.ErrUnavailable
 	}
-	return nil
+	return err
 }
 
 // live reports whether the session still serves calls; a store error counts as not live.

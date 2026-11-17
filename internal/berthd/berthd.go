@@ -139,7 +139,7 @@ func Run(ctx context.Context, cfg Config) (int, error) {
 	}
 	s.agents = newAgents(machineCtx, agentsDeps{
 		Log: cfg.Log, Store: store, Records: store, Clock: clock.System{}, Lineage: procs, Code: peer.NewCode(), AgentUID: agentUID,
-		StopProxies: s.secrets.stopAgentSessions,
+		StopProxies: s.secrets.stopAgentSessions, WatchExit: procs.WatchExit,
 	})
 	s.secrets.AgentLive = s.agents.live
 	s.browsers = newBrowsers(machineCtx, browsersDeps{
@@ -179,6 +179,11 @@ func Run(ctx context.Context, cfg Config) (int, error) {
 func (s *shell) run(ctx context.Context, effect daemon.Effect) ([]daemon.Event, error) {
 	switch effect.Kind {
 	case daemon.Recover:
+		// Agent sessions first, so a proxy session of one that ended gets its explicit stop
+		// before secrets recovery marks every open proxy session Lost.
+		if err := s.agents.recover(ctx); err != nil {
+			return []daemon.Event{{Kind: daemon.Failed, Note: "recover agent sessions: " + err.Error()}}, nil
+		}
 		if err := s.secrets.recover(ctx); err != nil {
 			return []daemon.Event{{Kind: daemon.Failed, Note: "recover secrets: " + err.Error()}}, nil
 		}

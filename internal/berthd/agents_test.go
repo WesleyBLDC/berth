@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -35,6 +36,8 @@ func (l anyLive) Live(ctx context.Context, p ports.Peer) (ports.LiveCode, error)
 type agentsFixture struct {
 	a       *agents
 	stopped chan string
+	timers  *fakeTimers
+	exits   *fakeExits
 	store   *sqlite.Store
 	clock   *testutil.Clock
 	procs   *testutil.Processes
@@ -69,13 +72,99 @@ func newAgentsFixture(t *testing.T) *agentsFixture {
 	procs.Set(agentTable...)
 	var log bytes.Buffer
 	clock := testutil.NewClock()
-	a := newAgents(t.Context(), agentsDeps{
-		Log: slog.New(slog.NewTextHandler(&log, nil)), Store: store, Records: store, Clock: clock,
-		Lineage: procs, Code: anyLive{procs}, AgentUID: agentUID,
-	})
-	f := &agentsFixture{a: a, store: store, clock: clock, procs: procs, log: &log, dir: dir, stopped: make(chan string, 8)}
-	a.StopProxies = func(_ context.Context, id string) { f.stopped <- id }
+	f := &agentsFixture{
+		store: store, clock: clock, procs: procs, log: &log, dir: dir, stopped: make(chan string, 8),
+		timers: &fakeTimers{}, exits: &fakeExits{byPID: map[int]chan struct{}{}},
+	}
+	f.a = f.newAgents(t, store)
 	return f
+}
+
+// newAgents builds an agents over store, as a fresh berthd would at boot.
+func (f *agentsFixture) newAgents(t *testing.T, store ports.Store) *agents {
+	t.Helper()
+	records := f.store
+	return newAgents(t.Context(), agentsDeps{
+		Log: slog.New(slog.NewTextHandler(f.log, nil)), Store: store, Records: records, Clock: f.clock,
+		Lineage: f.procs, Code: anyLive{f.procs}, AgentUID: agentUID,
+		// A stop must run on berthd's context, never a caller's that may be cancelled.
+		StopProxies: func(ctx context.Context, id string) {
+			if ctx.Err() != nil {
+				id = "cancelled context: " + id
+			}
+			f.stopped <- id
+		},
+		WatchExit: f.exits.watch, After: f.timers.after,
+	})
+}
+
+// waitStopped waits for the proxies of id to be stopped.
+func (f *agentsFixture) waitStopped(t *testing.T, id string) {
+	t.Helper()
+	select {
+	case got := <-f.stopped:
+		if got != id {
+			t.Fatalf("stopped %q, want %s", got, id)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the session's proxies were never stopped")
+	}
+}
+
+// fakeTimers records each timer, so a test fires it instead of waiting.
+type fakeTimers struct {
+	mu  sync.Mutex
+	fns []func()
+	ds  []time.Duration
+}
+
+func (ft *fakeTimers) after(d time.Duration, f func()) func() {
+	ft.mu.Lock()
+	defer ft.mu.Unlock()
+	cancelled := false
+	ft.ds = append(ft.ds, d)
+	ft.fns = append(ft.fns, func() {
+		ft.mu.Lock()
+		c := cancelled
+		ft.mu.Unlock()
+		if !c {
+			f()
+		}
+	})
+	return func() { ft.mu.Lock(); cancelled = true; ft.mu.Unlock() }
+}
+
+func (ft *fakeTimers) fire(i int) {
+	ft.mu.Lock()
+	f := ft.fns[i]
+	ft.mu.Unlock()
+	f()
+}
+
+// fakeExits is a WatchExit whose processes exit when the test says so.
+type fakeExits struct {
+	mu    sync.Mutex
+	byPID map[int]chan struct{}
+}
+
+func (e *fakeExits) watch(_ context.Context, p ports.ProcessRef) (<-chan struct{}, error) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if _, ok := e.byPID[p.PID]; !ok {
+		e.byPID[p.PID] = make(chan struct{})
+	}
+	return e.byPID[p.PID], nil
+}
+
+func (e *fakeExits) exit(t *testing.T, pid int) {
+	t.Helper()
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	ch, ok := e.byPID[pid]
+	if !ok {
+		t.Fatalf("nothing watches pid %d", pid)
+	}
+	close(ch)
 }
 
 func (f *agentsFixture) create(t *testing.T, ttl uint32) (string, string) {
@@ -323,14 +412,7 @@ func TestEndedAgentSessionHoldsNoSlotsAndStopsItsProxies(t *testing.T) {
 	if _, err := f.a.RevokeAgentSession(t.Context(), &berthv1.RevokeAgentSessionRequest{RequestId: "revoke-0001", Id: id}); err != nil {
 		t.Fatal(err)
 	}
-	select {
-	case got := <-f.stopped:
-		if got != id {
-			t.Fatalf("stopped the proxies of %s, want %s", got, id)
-		}
-	default:
-		t.Fatal("revoking did not stop the session's proxies")
-	}
+	f.waitStopped(t, id)
 	release()
 	if _, err := f.a.AdmitStore(t.Context(), id); !errors.Is(err, api.ErrAgentTokenInvalid) {
 		t.Fatalf("a store slot for an ended session: %v", err)
@@ -345,8 +427,10 @@ func TestEndedAgentSessionHoldsNoSlotsAndStopsItsProxies(t *testing.T) {
 	if _, err := f.a.RevokeAgentSession(t.Context(), &berthv1.RevokeAgentSessionRequest{RequestId: "revoke-0002", Id: id}); err != nil {
 		t.Fatal(err)
 	}
-	if len(f.stopped) != 0 {
-		t.Fatal("a second revoke stopped the proxies again")
+	select {
+	case got := <-f.stopped:
+		t.Fatalf("a second revoke stopped %s again", got)
+	case <-time.After(100 * time.Millisecond):
 	}
 }
 
@@ -358,5 +442,118 @@ func TestStepAfterTheEndIsIllegal(t *testing.T) {
 	}
 	if err := f.a.step(t.Context(), id, agentsession.Event{Kind: agentsession.Bind}); !errors.Is(err, machine.ErrIllegal) {
 		t.Fatalf("Bind after the end: %v", err)
+	}
+}
+
+// cancellingStore cancels the caller's context just before it saves an agent session's event,
+// as a person who gives up on berth agent session revoke would.
+type cancellingStore struct {
+	ports.Store
+	cancel func()
+}
+
+func (c *cancellingStore) SaveTransition(ctx context.Context, rec ports.TransitionRecord) error {
+	if strings.HasPrefix(rec.Entity, "agent/") {
+		c.cancel()
+	}
+	return c.Store.SaveTransition(ctx, rec)
+}
+
+func TestCancelledRevokeStillStopsTheProxies(t *testing.T) {
+	f := newAgentsFixture(t)
+	ctx, cancel := context.WithCancel(t.Context())
+	f.a = f.newAgents(t, &cancellingStore{Store: f.store, cancel: cancel})
+	id, _ := f.create(t, 0)
+	_, _ = f.a.RevokeAgentSession(ctx, &berthv1.RevokeAgentSessionRequest{RequestId: "revoke-0001", Id: id})
+	f.waitStopped(t, id)
+	if f.state(t, id) != agentsession.Revoked {
+		t.Fatalf("state %s, want Revoked", f.state(t, id))
+	}
+}
+
+func TestExpiryWithNoCallsStopsTheProxies(t *testing.T) {
+	f := newAgentsFixture(t)
+	id, token := f.create(t, 60)
+	if err := f.auth(t, token, 21); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.timers.ds) != 1 || f.timers.ds[0] != time.Minute {
+		t.Fatalf("expiry timers %v, want one of 1m", f.timers.ds)
+	}
+	f.clock.Advance(time.Minute)
+	f.timers.fire(0)
+	f.waitStopped(t, id)
+	if f.state(t, id) != agentsession.Expired {
+		t.Fatalf("state %s, want Expired", f.state(t, id))
+	}
+}
+
+func TestRootExitWithNoCallsStopsTheProxies(t *testing.T) {
+	f := newAgentsFixture(t)
+	id, token := f.create(t, 0)
+	if err := f.auth(t, token, 22); err != nil {
+		t.Fatal(err)
+	}
+	f.exits.exit(t, 20)
+	f.waitStopped(t, id)
+	if f.state(t, id) != agentsession.Ended {
+		t.Fatalf("state %s, want Ended", f.state(t, id))
+	}
+	// The expiry timer of the ended session is cancelled: firing it changes nothing.
+	f.timers.fire(0)
+	select {
+	case got := <-f.stopped:
+		t.Fatalf("a cancelled timer stopped %s", got)
+	case <-time.After(100 * time.Millisecond):
+	}
+}
+
+func TestBootStopsProxiesOfEndedSessionsAndRearmsTheRest(t *testing.T) {
+	f := newAgentsFixture(t)
+	ended, _ := f.create(t, 0)
+	if _, err := f.a.RevokeAgentSession(t.Context(), &berthv1.RevokeAgentSessionRequest{RequestId: "revoke-0001", Id: ended}); err != nil {
+		t.Fatal(err)
+	}
+	f.waitStopped(t, ended)
+	live, token := f.create(t, 0)
+	if err := f.auth(t, token, 21); err != nil {
+		t.Fatal(err)
+	}
+
+	// berthd restarts.
+	f.timers = &fakeTimers{}
+	f.exits = &fakeExits{byPID: map[int]chan struct{}{}}
+	f.a = f.newAgents(t, f.store)
+	if err := f.a.recover(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+	f.waitStopped(t, ended)
+	if len(f.timers.ds) != 1 {
+		t.Fatalf("re-armed %d timers, want 1", len(f.timers.ds))
+	}
+	f.exits.exit(t, 20)
+	f.waitStopped(t, live)
+}
+
+// failingStore refuses to save an agent session's event, which stops its actor.
+type failingStore struct{ ports.Store }
+
+func (s failingStore) SaveTransition(ctx context.Context, rec ports.TransitionRecord) error {
+	if strings.HasPrefix(rec.Entity, "agent/") {
+		return errors.New("disk full")
+	}
+	return s.Store.SaveTransition(ctx, rec)
+}
+
+func TestRevokeThatCannotBeSavedIsUnavailable(t *testing.T) {
+	f := newAgentsFixture(t)
+	f.a = f.newAgents(t, failingStore{f.store})
+	id, _ := f.create(t, 0)
+	_, err := f.a.RevokeAgentSession(t.Context(), &berthv1.RevokeAgentSessionRequest{RequestId: "revoke-0001", Id: id})
+	if !errors.Is(err, api.ErrUnavailable) {
+		t.Fatalf("a revoke that was not saved answered %v, want ErrUnavailable", err)
+	}
+	if f.state(t, id) != agentsession.Issued {
+		t.Fatalf("state %s", f.state(t, id))
 	}
 }

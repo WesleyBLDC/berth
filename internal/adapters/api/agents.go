@@ -32,6 +32,8 @@ var (
 	ErrAgentTokenInvalid    = errors.New("agent token invalid")
 	ErrRateLimited          = errors.New("rate limited")
 	ErrAgentSessionNotFound = errors.New("agent session not found")
+	// ErrUnavailable means berthd could not record the outcome (a failed save, or it is stopping).
+	ErrUnavailable = errors.New("berthd unavailable")
 )
 
 type sessionKey struct{}
@@ -137,6 +139,9 @@ func agentsError(err error) error {
 	case errors.Is(err, ErrAgentSessionNotFound):
 		return withReason(connect.NewError(connect.CodeNotFound, "no agent session has this id"),
 			berthv1.ErrorReason_ERROR_REASON_AGENT_SESSION_NOT_FOUND)
+	case errors.Is(err, ErrUnavailable):
+		return withReason(connect.NewError(connect.CodeUnavailable, "berthd could not record the outcome; try again once berth status shows Serving"),
+			berthv1.ErrorReason_ERROR_REASON_NOT_SERVING)
 	case errors.Is(err, context.Canceled), errors.Is(err, context.DeadlineExceeded):
 		return connect.NewError(connect.CodeCanceled, "the call ended before berthd had an outcome")
 	}

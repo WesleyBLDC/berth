@@ -480,7 +480,8 @@ const (
 	ProxyStopReason_PROXY_STOP_REASON_SECRET_REMOVED  ProxyStopReason = 2
 	ProxyStopReason_PROXY_STOP_REASON_DAEMON_STOPPING ProxyStopReason = 3
 	// AGENT_SESSION_ENDED means the agent session the proxy was authorized through was revoked,
-	// expired or lost its root process.
+	// reached its expiry or lost its root process; berthd sends it as soon as that end is saved,
+	// whether or not anyone calls.
 	ProxyStopReason_PROXY_STOP_REASON_AGENT_SESSION_ENDED ProxyStopReason = 4
 )
 
