@@ -93,3 +93,10 @@ stderr carries short diagnostics and never a value.
 - An event `Note` never holds the requester's reason, because an agent controls that text.
 - `UseRefused` goes on the grant entity when a grant exists, else on the secret entity.
 - The grant machine has no Failed state; item 3 decides where `GrantFailed` goes.
+
+## Notes for the integration item (item 6)
+
+- From item 3: two `RequestSecret` calls with different request IDs for the same Pending secret would open two dialogs; the shell must hold one prompt per secret at a time (single flight keyed by name) and answer the second caller with the first outcome.
+- From item 3: send secret `UseRefused` only to a Stored secret with no grant; a name that is not Stored is `SECRET_NOT_FOUND`, never an event.
+- From item 3: `GrantSecret` always creates a new grant row and entity; `GrantFailed` ends in Denied.
+- Add the secret and grant state diagrams to the wiki architecture page.
