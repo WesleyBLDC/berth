@@ -106,3 +106,4 @@ stderr carries short diagnostics and never a value.
 - From item 5: wire `cli.Env.Read` in `cmd/berth/main.go` to `native.Read`.
 - From item 5: a terminal Ctrl-C reaches a child twice (process group plus forwarding); forward SIGINT only when the child is in its own process group.
 - Safety checklist, known limit: the executable can change between `AuthorizeUse` hashing it and `berth run` starting it. Record it; closing it needs exec by file descriptor or a signed binary requirement, which is E2b.
+- The `berth-native` store and confirm dialog uses the brand palette from `brand/colors/tokens.json` (navy background, Mist text, brass only on the confirm button) and the app icon from `brand/app-icon/` where macOS shows one.

@@ -82,6 +82,26 @@ Paste its last lines in your report; a failure is investigated to its root cause
 - prek runs these as git hooks and only sees tracked files; `make lint` also lints untracked Go and Protobuf.
 - Claude Code hooks (`.claude/settings.json`) format and lint each file after an edit and refuse Bash commands that would print a Keychain secret.
 
+## Brand
+
+The kit lives in `brand/` (logo "Sleeping key", app icon, menu bar template, favicons, `colors/tokens.json` and `tokens.css`); `brand/README.md` is the source of truth.
+
+| Name | Hex | Role |
+|---|---|---|
+| Navy 800 | `#16263F` | Background, top of the gradient |
+| Navy 900 | `#0A1424` | Deepest background, bottom of the gradient |
+| Mist | `#F4F7FA` | Logo and main text on navy (secondary `#C9D2DC`) |
+| Brass | `#F2C46D` | The key; the one accent |
+| Cream | `#FBFAF6` | Light background |
+| Ink | `#14213D` | Logo and main text on cream (secondary `#4A5568`) |
+| Deep brass | `#B7791F` | The key on light backgrounds |
+
+- Fonts: Space Grotesk (wordmark 700, headings 600), Inter (UI and body), JetBrains Mono or system mono (code, keys).
+- Dark first: app backgrounds use the navy gradient `linear-gradient(180deg, #16263F 0%, #0A1424 100%)`.
+- Brass is one accent per screen, only for the key or the primary action; deep brass is never small body text on cream.
+- The wordmark is always lowercase "berth" and is never re-typeset; use the SVG files.
+- The menu bar uses `brand/menubar/berthTemplate.png` as a template image, so macOS tints it.
+
 ## Writing style
 
 - No dashes as punctuation in docs, comments or messages; hyphens inside words are fine.

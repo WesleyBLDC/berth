@@ -1,0 +1,14 @@
+:root {
+  --berth-navy-800: #16263F;
+  --berth-navy-900: #0A1424;
+  --berth-mist: #F4F7FA;
+  --berth-brass: #F2C46D;
+  --berth-cream: #FBFAF6;
+  --berth-ink: #14213D;
+  --berth-brass-deep: #B7791F;
+  --berth-on-dark-secondary: #C9D2DC;
+  --berth-on-light-secondary: #4A5568;
+  --berth-gradient: linear-gradient(180deg, #16263F 0%, #0A1424 100%);
+  --berth-font-display: 'Space Grotesk', system-ui, sans-serif;
+  --berth-font-body: 'Inter', system-ui, sans-serif;
+}
