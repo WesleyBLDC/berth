@@ -10,7 +10,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connecthttp"
@@ -113,9 +115,12 @@ func main() {
 		os.Exit(1)
 	}
 
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	srv := &server{}
 	if *chrome {
-		sc, err := startScreencaster(context.Background())
+		sc, err := startScreencaster(ctx)
 		if err != nil {
 			slog.Error("chrome", "err", err)
 			os.Exit(1)
@@ -131,9 +136,13 @@ func main() {
 	protocols := new(http.Protocols)
 	protocols.SetUnencryptedHTTP2(true)
 	hs := &http.Server{Handler: mux, Protocols: protocols}
+	go func() {
+		<-ctx.Done()
+		slog.Info("stopping")
+		_ = hs.Close()
+	}()
 	slog.Info("serving", "socket", *sock)
-	if err := hs.Serve(peerCheckListener{Listener: ln, uid: os.Getuid()}); err != nil {
+	if err := hs.Serve(peerCheckListener{Listener: ln, uid: os.Getuid()}); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		slog.Error("serve", "err", err)
-		os.Exit(1)
 	}
 }

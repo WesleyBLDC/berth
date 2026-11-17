@@ -27,5 +27,13 @@ let package = Package(
                 .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
             ]
         ),
+        .executableTarget(
+            name: "ScreenProof",
+            dependencies: [
+                "SpikeProto",
+                .product(name: "GRPCCore", package: "grpc-swift-2"),
+                .product(name: "GRPCNIOTransportHTTP2", package: "grpc-swift-nio-transport"),
+            ]
+        ),
     ]
 )

@@ -6,6 +6,7 @@ Run on macOS 26.5, Go 1.27.4, Swift 6.3.3, Xcode 26.6, Chrome 157.
 |---|---|---|
 | 1 | Swift streams from Connect in Go over a Unix socket | Pass |
 | 2 | Playwright MCP through the token gated CDP proxy | Pass |
+| 3 | Chrome screencast frames shown in SwiftUI | Pass |
 
 ## 1. Swift streaming over the Unix socket
 
@@ -35,3 +36,16 @@ Findings for the real build:
 - Passing the token as a command line flag exposes it to `ps`. The real `berth-mcp` shim or launcher must hand it over through an environment variable or a file only the agent can read.
 - Playwright MCP's `browser_click` now takes `target` instead of `ref`; anything Berth ships that drives MCP tools should read the tool schema, not hard code argument names.
 - Berth's own calls use a separate id range (from 1,000,000,000) on the same pipe, which proof 3 relies on.
+
+## 3. Chrome screencast frames in SwiftUI
+
+- The Go server launches headless Chrome over the pipe, opens an animated canvas page at 1440x900, and runs `Page.startScreencast` (JPEG, quality 70) on its own CDP session and id range.
+- Frames go to clients over `WatchScreen`, a server stream on the same Unix socket API. Each watcher has a one frame buffer; a new frame replaces an unsent one, so a slow client drops frames instead of lagging.
+- A SwiftUI window (`NSHostingView`, `Image(nsImage:)`) showed **601 frames in 9.9 s = 60.6 fps** at 1440x900, with send to display latency of 0.3 ms (p50) and 0.5 ms (p95).
+
+Findings for the real build:
+
+- Chrome sends the next frame only after `Page.screencastFrameAck`; ack before decoding.
+- Headless Chrome only sends frames when the page repaints, so a still page sends almost none. Live view must keep the last frame and not treat silence as a failure.
+- The daemon must handle SIGTERM (launchd sends it) and stop every Chrome process group it owns. Without a handler, a killed server left Chrome running; with `signal.NotifyContext` the group is gone after SIGTERM.
+- Not measured yet: CPU cost of 60 fps decode in the app; the real app should let the client choose a frame rate.
