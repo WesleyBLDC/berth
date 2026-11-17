@@ -223,13 +223,23 @@ func current(p ports.ProcessRef) error {
 	if p.PID <= 0 {
 		return ports.ErrProcessGone
 	}
-	k, err := unix.SysctlKinfoProc(processSysctlPID, p.PID)
-	// An exited pid comes back as an empty record rather than an error.
-	if err != nil || int(k.Proc.P_pid) != p.PID || !start(k).Equal(p.Start) {
+	k, err := kinfoProc(processSysctlPID, p.PID)
+	switch {
+	// The kernel answers an exited pid with an empty record, which x/sys reports as EIO, its
+	// error for a record of the wrong size.
+	case errors.Is(err, unix.ESRCH), errors.Is(err, unix.EIO):
+		return ports.ErrProcessGone
+	case err != nil:
+		// Any other failure says nothing about the process, so it must not end what it stands for.
+		return fmt.Errorf("%s %d: %w", processSysctlPID, p.PID, err)
+	case int(k.Proc.P_pid) != p.PID || !start(k).Equal(p.Start):
 		return ports.ErrProcessGone
 	}
 	return nil
 }
+
+// kinfoProc is unix.SysctlKinfoProc, replaced in tests.
+var kinfoProc = unix.SysctlKinfoProc
 
 func start(k *unix.KinfoProc) time.Time {
 	return time.Unix(k.Proc.P_starttime.Sec, int64(k.Proc.P_starttime.Usec)*1000)

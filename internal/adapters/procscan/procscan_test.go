@@ -292,3 +292,18 @@ func TestLineageStopsAtAReusedParentPID(t *testing.T) {
 		t.Fatalf("missing pid: %v", err)
 	}
 }
+
+// Only a missing process is gone: a sysctl that fails for another reason must not end what the
+// process stands for, such as an agent session whose root watch checks the process first.
+func TestCurrentReportsOnlyAMissingProcessAsGone(t *testing.T) {
+	t.Cleanup(func() { kinfoProc = unix.SysctlKinfoProc })
+	self := ports.ProcessRef{PID: os.Getpid()}
+	kinfoProc = func(string, ...int) (*unix.KinfoProc, error) { return nil, unix.ENOMEM }
+	if err := current(self); err == nil || errors.Is(err, ports.ErrProcessGone) {
+		t.Fatalf("ENOMEM gave %v, want an error that is not ErrProcessGone", err)
+	}
+	kinfoProc = func(string, ...int) (*unix.KinfoProc, error) { return nil, unix.ESRCH }
+	if err := current(self); !errors.Is(err, ports.ErrProcessGone) {
+		t.Fatalf("ESRCH gave %v, want ErrProcessGone", err)
+	}
+}
