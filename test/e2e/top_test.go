@@ -90,6 +90,8 @@ func TestTopSeesABrowserAppearAndStopsIt(t *testing.T) {
 	d.until(t, "connected", func(v string) bool { return strings.Contains(v, "  watching") })
 
 	_, args := chromeArgs(t)
+	const canary = "berth-top-canary-5c21d8"
+	args = append(args[:len(args)-1], "--berth-e2e-canary="+canary, args[len(args)-1])
 	browser := exec.CommandContext(t.Context(), chrome, args...)
 	if err := browser.Start(); err != nil {
 		t.Fatal(err)
@@ -113,7 +115,11 @@ func TestTopSeesABrowserAppearAndStopsIt(t *testing.T) {
 		return false
 	})
 
-	d.press(append(strings.Split("/"+prefix, ""), "enter", "a")...)
+	d.press(append(strings.Split("/"+prefix, ""), "enter", "a", "i")...)
+	d.until(t, "inspected the browser", func(v string) bool { return strings.Contains(v, " ancestor ") })
+	if strings.Contains(d.view(), canary) {
+		t.Fatalf("an argument reached berth top:\n%s", d.view())
+	}
 	if row := rowOf(d.view(), id); !strings.HasPrefix(row, "> "+id) || !strings.Contains(row, "headless shell") {
 		t.Fatalf("the filtered list does not select the browser: %q\n%s", row, d.view())
 	}

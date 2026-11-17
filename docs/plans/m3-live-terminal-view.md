@@ -181,3 +181,24 @@ Defaults taken while he was away; each is cheap to reverse before M3 closes.
 6. **Stuck clients are not cut off:** they cost one goroutine each, within the 16 stream limit.
 7. **Not on the agent surface,** like every M2 method.
 8. **The TUI asks before every stop,** and offers a forced stop for the person's and apps' browsers in the same confirmation, naming it as forced, instead of a separate key.
+
+## Exit notes (2026-11-17)
+
+Built on branch `m3`, rebased onto `main` at 3bf6db5: the plan, `WatchSessions` and `berth top`, each with its own commit, then `ARCHITECTURE.md`, with `make check` passing.
+
+- **Contract.** As planned; no `ErrorReason` added. `buf breaking` is clean against `main`.
+- **`Seen`** makes the session machine 18 legal pairs; `discovery.Tracked.Unsaved` is set by the shell when `LoadState` finds no row.
+- **Streams** live in `internal/berthd/sessions.go`; the actors kit gained a `saved` hook that the session actors use to wake the watchers. M2's review moved the stop of a session's actor into the kit (`final`), and the hook runs before it.
+- **`berth top`** lives in `internal/cli/top.go`; the stream loop is `watchLoop`, and `NewTop` is exported for the end to end test, which drives the model the way Bubble Tea does, without a terminal.
+- **Verified by hand** in a pseudo terminal against a temporary `berthd`: `berth top` opens on the alternate screen, shows the empty list, and `q` exits 0. A populated list in a real terminal is covered only by the end to end test, which reads the model's view.
+
+### Agent safety checklist (M3)
+
+1. No agent method was added; `WatchSessions` has no `(berth.agent)` option, and the agent socket end to end test now names it among the refused methods.
+2. No secret value is touched: a stream message carries the same `Session` facts as `ListSessions` and the fixed event names.
+3. Canary: the TUI end to end test plants one in the browser's arguments and checks the inspected view never shows it; M2's canary test still covers `ps`, `inspect`, the log and the database.
+4. No power action was added; stop from the TUI follows `berth stop`'s rules.
+5. Process chosen text (paths, profile folders, owner names) and error text are quoted with escapes in the TUI, as in the CLI; `TestTopEscapesProcessChosenText` plants ESC, CR, LF, BEL, DEL, U+202E and U+0085 and checks no ESC byte reaches the view.
+6. `WatchSessions` is read only; stop from the TUI sends a fresh `request_id`.
+7. A stream that falls behind gets a typed `BEHIND` snapshot, an unknown cursor `UNKNOWN_CURSOR`, too many streams `RESOURCE_EXHAUSTED`; a TUI whose stream ends shows `reconnecting` with the error and resumes.
+8. OWASP agentic risks: unchanged; the new limits are listed above.
