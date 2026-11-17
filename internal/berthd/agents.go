@@ -146,6 +146,9 @@ func (a *agents) watchExpiry(rec ports.AgentSessionRecord) {
 	})}
 }
 
+// rootRetry is how long a session whose root could not be watched waits to try again.
+const rootRetry = 30 * time.Second
+
 // watchRoot sends RootExited when the bound root process exits (kqueue NOTE_EXIT, which checks
 // the start time, so a reused pid never counts). It reports false when the root was already gone
 // and RootExited was applied at once.
@@ -170,7 +173,8 @@ func (a *agents) watchRoot(id string, root ports.ProcessRef) bool {
 	}
 	if err != nil {
 		// The root may still run, as when berthd is out of descriptors, so the session goes on
-		// unwatched and the next call tries again.
+		// and the watch is tried again after rootRetry, or sooner by the session's next call; a
+		// session that ended meanwhile has no watch entry, so the retry does nothing.
 		a.Log.Warn("cannot watch an agent session's root", "session", id, "pid", root.PID, "err", err)
 		cancel()
 		a.mu.Lock()
@@ -178,6 +182,7 @@ func (a *agents) watchRoot(id string, root ports.ProcessRef) bool {
 			w.stopRoot = nil
 		}
 		a.mu.Unlock()
+		a.After(rootRetry, func() { a.watchRoot(id, root) })
 		return true
 	}
 	go func() {

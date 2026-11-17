@@ -167,13 +167,14 @@ func (e *fakeExits) watch(_ context.Context, p ports.ProcessRef) (<-chan struct{
 	return e.byPID[p.PID], nil
 }
 
-func (e *fakeExits) exit(t *testing.T, pid int) {
+// exitRoot ends pid 20, the root every bound test session in agentTable has.
+func (e *fakeExits) exitRoot(t *testing.T) {
 	t.Helper()
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	ch, ok := e.byPID[pid]
+	ch, ok := e.byPID[20]
 	if !ok {
-		t.Fatalf("nothing watches pid %d", pid)
+		t.Fatal("nothing watches the root, pid 20")
 	}
 	close(ch)
 }
@@ -505,7 +506,7 @@ func TestRootExitWithNoCallsStopsTheProxies(t *testing.T) {
 	if err := f.auth(t, token, 22); err != nil {
 		t.Fatal(err)
 	}
-	f.exits.exit(t, 20)
+	f.exits.exitRoot(t)
 	f.waitStopped(t, id)
 	if f.state(t, id) != agentsession.Ended {
 		t.Fatalf("state %s, want Ended", f.state(t, id))
@@ -542,7 +543,7 @@ func TestBootStopsProxiesOfEndedSessionsAndRearmsTheRest(t *testing.T) {
 	if len(f.timers.ds) != 1 {
 		t.Fatalf("re-armed %d timers, want 1", len(f.timers.ds))
 	}
-	f.exits.exit(t, 20)
+	f.exits.exitRoot(t)
 	f.waitStopped(t, live)
 }
 
@@ -621,7 +622,36 @@ func TestAgentRootWatchFailureIsNotAnExit(t *testing.T) {
 	if err := f.auth(t, token, 22); err != nil {
 		t.Fatalf("second call: %v", err)
 	}
-	f.exits.exit(t, 20)
+	f.exits.exitRoot(t)
+	f.waitStopped(t, id)
+	if st := f.state(t, id); st != agentsession.Ended {
+		t.Fatalf("after the root exited the session is %s", st)
+	}
+}
+
+// A failed root watch is retried from a timer, so a root that dies with no further calls still
+// ends the session.
+func TestAgentRootWatchIsRetriedWithoutACall(t *testing.T) {
+	f := newAgentsFixture(t)
+	id, token := f.create(t, 0)
+	f.exits.mu.Lock()
+	f.exits.err = syscall.EMFILE
+	f.exits.mu.Unlock()
+	if err := f.auth(t, token, 22); err != nil {
+		t.Fatalf("first call: %v", err)
+	}
+	f.exits.mu.Lock()
+	f.exits.err = nil
+	f.exits.mu.Unlock()
+	f.timers.mu.Lock()
+	retry := len(f.timers.fns) - 1
+	d := f.timers.ds[retry]
+	f.timers.mu.Unlock()
+	if d != rootRetry {
+		t.Fatalf("last timer waits %v, want the root retry %v", d, rootRetry)
+	}
+	f.timers.fire(retry)
+	f.exits.exitRoot(t)
 	f.waitStopped(t, id)
 	if st := f.state(t, id); st != agentsession.Ended {
 		t.Fatalf("after the root exited the session is %s", st)
