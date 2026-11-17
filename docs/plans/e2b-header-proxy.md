@@ -107,3 +107,10 @@ It cannot read the value, send it to another host, send it over cleartext, keep 
 - `proxy_sessions` stores the proxy pid and counts only.
 - Stubs to replace: `internal/adapters/native/lifecycle_stub.go` (item 4), `internal/berthd/proxy_stub.go` (item 6). Item 6 sets `Consumer.kind` for exe grants too.
 - `berth-proxy` reads each value through the existing `native.Read` adapter (socketpair on fd 3); `berth-native` must accept a proxy parent for tickets whose `consumer_kind` is PROXY.
+
+## Notes for the integration item (item 6)
+
+- From item 2: secret machine has 17 legal pairs, proxy session 9; update both diagrams in `ARCHITECTURE.md`.
+- From item 2: answer BUSY or SECRET_EXISTS before sending RotateRequested, RemoveRequested or StoreRequested in a state where the table refuses them; fire RevokeAll only from RemoveSucceeded; boot recovery sends RotateFailed or RemoveFailed with note "interrupted" and revokes grants of Removed secrets in the shell.
+- From item 2: a second StopRequested on a Stopping session is illegal, so revoke and remove racing on one session must tolerate it; `EndProxySession` records once per session, and ProxyLost records zero counts.
+- From item 2: exe grants read back with Kind `exe`; set `Consumer.kind` from the record.
