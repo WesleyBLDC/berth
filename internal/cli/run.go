@@ -14,6 +14,7 @@ import (
 
 	berthv1 "berth/gen/berth/v1"
 	"berth/internal/core/envpolicy"
+	"berth/internal/mask"
 )
 
 var envKey = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -133,7 +134,7 @@ func startChild(ctx context.Context, exe string, argv, childEnv []string, bindin
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = env.Stdin, env.Stdout, env.Stderr
 	// Without values there is nothing to mask, and the child keeps berth's terminal as its own.
 	if len(values) > 0 {
-		stdout, stderr := newMasker(env.Stdout, values), newMasker(env.Stderr, values)
+		stdout, stderr := mask.NewWriter(env.Stdout, values), mask.NewWriter(env.Stderr, values)
 		defer func() { _ = stdout.Close(); _ = stderr.Close() }()
 		cmd.Stdout, cmd.Stderr = stdout, stderr
 	}

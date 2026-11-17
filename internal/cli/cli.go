@@ -16,6 +16,7 @@ import (
 	berthv1 "berth/gen/berth/v1"
 	"berth/internal/adapters/api"
 	"berth/internal/client"
+	"berth/internal/mask"
 )
 
 // Exit codes. berth run, once its command has started, exits with the command's own code instead.
@@ -32,7 +33,7 @@ const (
 	connectTimeout  = 5 * time.Second
 	statusTimeout   = 5 * time.Second
 	addReason       = "added by you from the terminal"
-	maskReplacement = "****"
+	maskReplacement = mask.Replacement
 )
 
 const usage = `usage:

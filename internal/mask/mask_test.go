@@ -1,4 +1,4 @@
-package cli
+package mask
 
 import (
 	"bytes"
@@ -13,7 +13,7 @@ func maskAll(t *testing.T, values []string, chunks ...string) string {
 	for i, v := range values {
 		vs[i] = []byte(v)
 	}
-	m := newMasker(&out, vs)
+	m := NewWriter(&out, vs)
 	for _, c := range chunks {
 		if n, err := m.Write([]byte(c)); err != nil || n != len(c) {
 			t.Fatalf("write %q: %d, %v", c, n, err)
@@ -25,7 +25,7 @@ func maskAll(t *testing.T, values []string, chunks ...string) string {
 	return out.String()
 }
 
-func TestMaskerSplitAtEveryBoundary(t *testing.T) {
+func TestWriterSplitAtEveryBoundary(t *testing.T) {
 	values := []string{"s3cr3t-value", "abc", "abcdef"}
 	stream := "x s3cr3t-value y abcdef z abc abcd s3cr3t-valu s3cr3t-value"
 	want := "x **** y **** z **** ****d s3cr3t-valu ****"
@@ -46,7 +46,7 @@ func TestMaskerSplitAtEveryBoundary(t *testing.T) {
 	}
 }
 
-func TestMaskerLeavesOtherOutputAlone(t *testing.T) {
+func TestWriterLeavesOtherOutputAlone(t *testing.T) {
 	values := []string{"s3cr3t-value"}
 	for _, stream := range []string{"", "plain output\n", "almost s3cr3t-valu", "ends with a prefix s3cr3t"} {
 		if got := maskAll(t, values, strings.Split(stream, "")...); got != stream {
@@ -55,11 +55,27 @@ func TestMaskerLeavesOtherOutputAlone(t *testing.T) {
 	}
 }
 
-func TestMaskerZeroesItsCopies(t *testing.T) {
-	m := newMasker(&bytes.Buffer{}, [][]byte{[]byte("s3cr3t")})
+func TestWriterZeroesItsCopies(t *testing.T) {
+	m := NewWriter(&bytes.Buffer{}, [][]byte{[]byte("s3cr3t")})
 	held := m.values[0]
 	_ = m.Close()
 	if !bytes.Equal(held, make([]byte, len(held))) {
 		t.Fatalf("value copy not zeroed: %q", held)
+	}
+}
+
+func TestSameLengthKeepsLengthAndBorrows(t *testing.T) {
+	value := []byte("s3cr3t")
+	var out bytes.Buffer
+	m := NewSameLength(&out, [][]byte{value})
+	for _, c := range []string{"a s3c", "r3t b s3cr3", "t"} {
+		_, _ = m.Write([]byte(c))
+	}
+	_ = m.Close()
+	if got, want := out.String(), "a ****** b ******"; got != want {
+		t.Fatalf("got %q, want %q", got, want)
+	}
+	if string(value) != "s3cr3t" {
+		t.Fatal("a borrowed value must be left for its owner to zero")
 	}
 }
