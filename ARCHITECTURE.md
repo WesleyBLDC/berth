@@ -11,7 +11,7 @@ It borrows Docker's model: a browser and whoever drives it is a session, a saved
 It runs only on your own Mac, talks only over a Unix socket, and has no telemetry.
 
 Berth is in pre release development.
-Terminal secrets (E2a) are done: the maintainer's manual check with real signing and Touch ID passed on 2026-11-17. The header proxy with the secret lifecycle (E2b) is built and wired and awaits the maintainer's manual check; isolated agents (E3) are in progress, starting with the agent socket, and the browser features start at M2.
+Terminal secrets (E2a) are done: the maintainer's manual check with real signing and Touch ID passed on 2026-11-17. The header proxy with the secret lifecycle (E2b) is built and wired and awaits the maintainer's manual check; isolated agents (E3) are in progress, starting with the agent socket; seeing every browser (M2) is in progress, with discovery, `berth ps`, `inspect`, `stop` and `leftovers` built and awaiting the maintainer's check.
 See [Milestones](#milestones) for the exact status.
 
 ## Processes
@@ -38,7 +38,7 @@ flowchart LR
 | Process | Language | Status | Job |
 |---|---|---|---|
 | `berthd` | Go | Built | The daemon: owns all state, runs the state machines, serves the API, decides every security question; `make build` signs it, since `berth`, `berth-proxy` and `berth-native` talk only to the signed daemon |
-| `berth` | Go | Built | The command line client: `status`, `debug state`, `secret request`, `secret add`, `secret ls`, `secret grant`, `secret proxy`, `secret revoke`, `secret rm`, `secret rotate`, `run`; `make build` signs it, since `berthd` gives use tickets only to the signed CLI |
+| `berth` | Go | Built | The command line client: `status`, `debug state`, `secret request`, `secret add`, `secret ls`, `secret grant`, `secret proxy`, `secret revoke`, `secret rm`, `secret rotate`, `run`, `ps`, `inspect`, `stop`, `leftovers`; `make build` signs it, since `berthd` gives use tickets only to the signed CLI |
 | `berth-proxy` | Go | Built | A loopback HTTPS proxy, one per `berth run --proxy`, that writes one granted header into requests to the granted hosts and tunnels everything else; standard library only; `make build` signs it, since `berthd` authorizes only the signed proxy ([the E2b plan](docs/plans/e2b-header-proxy.md)) |
 | `berth-native` | Swift | Built | The only Berth process that reads secret values from the Keychain: add, read, replace and delete, Touch ID, the secure input dialog; `berth-proxy` holds a value only after reading it through this helper |
 | `Berth.app` | Swift | Planned (M5) | Window and menu bar, live view and takeover, notifications, registers `berthd` as a login item |
@@ -61,7 +61,8 @@ Swift does the native work because Keychain, Touch ID and ScreenCaptureKit are A
 | `DaemonService` | `Handshake`, `Status`, `Shutdown` | Built |
 | `DebugService` | `GetState` (state and recent transitions of any entity) | Built |
 | `SecretsService` | `RequestSecret`, `ListSecrets`, `GrantSecret`, `AuthorizeUse`, `RedeemUseTicket`, `GrantProxy`, `RevokeGrant`, `RemoveSecret`, `RotateSecret`, `AuthorizeProxy`, `WatchProxySession` (server stream), `EndProxySession` | Built |
-| Sessions, Profiles, Runbooks, Policies | `ListSessions`, `WatchSessions`, `LaunchSession`, `WatchScreen`, `SendInput`, `FillLogin` and more | Planned (M2 to M6) |
+| `SessionsService` | `ListSessions`, `InspectSession`, `StopSession` (none on the agent surface) | Built (M2) |
+| Sessions, Profiles, Runbooks, Policies | `WatchSessions`, `LaunchSession`, `WatchScreen`, `SendInput`, `FillLogin` and more | Planned (M3 to M6) |
 
 ### The native helper protocol (built)
 
@@ -130,14 +131,15 @@ flowchart LR
 
 | Layer | Path | May import | Holds |
 |---|---|---|---|
-| Ports | `internal/core/ports/` | stdlib only | `Store`, `Clock`, `RequestLog`, `ExecIdentity`, `PeerFacts`, `CodeInspector`, `Approver`, `TicketSource`, `SecretRecords`, `ProxySessionRecords` and their domain types |
+| Ports | `internal/core/ports/` | stdlib only | `Store`, `Clock`, `RequestLog`, `ExecIdentity`, `PeerFacts`, `CodeInspector`, `Approver`, `TicketSource`, `SecretRecords`, `ProxySessionRecords`, `ProcessSource`, `EntityLister` and their domain types |
 | Machine kit | `internal/core/machine/` | ports | `Transition`, `Actor`, `machinetest.Walk` |
-| Machines | `internal/core/{daemon,secret,grant,proxysession}/` | machine, ports | One transition table each |
+| Machines | `internal/core/{daemon,secret,grant,proxysession,session}/` | machine, ports | One transition table each |
 | Policies | `internal/core/{envpolicy,hostpolicy}/` | stdlib only | Pure rules the daemon and its clients must apply alike: which variables a consumer gets, which proxy hosts are local |
-| Adapters | `internal/adapters/{sqlite,socket,api,clock,native,execid,peer,ticket}/` | core, gen | Implementations of the ports and the API handlers |
+| Discovery | `internal/core/{browsersig,ownerchain,discovery}/` | ports, session | Pure rules that recognise a browser, pick its owner, group processes into sessions and derive their events |
+| Adapters | `internal/adapters/{sqlite,socket,api,clock,native,execid,peer,ticket,procscan}/` | core, gen | Implementations of the ports and the API handlers |
 | Shell | `internal/berthd/` | everything | Wires adapters, runs actors, performs effects |
 | Clients | `internal/client/`, `internal/cli/`, `internal/proxy/`, `internal/peertrust/`, `internal/spawn/`, `cmd/` | gen, api, adapters | The Go client, the CLI logic, the `berth-proxy` logic, the shared rule for trusting signed Berth peers and the signed `berthd` (release or `berth_e2e`), the suspended start and live cdhash read for `berth run`, thin entry points |
-| Fakes | `internal/testutil/` | ports | In memory store, fake clock, scriptable secrets fakes |
+| Fakes | `internal/testutil/` | ports | In memory store, fake clock, scriptable secrets fakes, a scriptable process table |
 
 The rules are enforced by `golangci-lint`, not by convention:
 
@@ -145,7 +147,7 @@ The rules are enforced by `golangci-lint`, not by convention:
 - `forbidigo` bans `time.Now` and `fmt.Print` in `internal/core`, so time comes only from the `Clock` port.
 - `exhaustive` fails the build when a `switch` over states, events or effects misses a case.
 
-Ports named in ADR 0005 that do not exist yet: `ProcessSource` (M2), `BrowserDriver` (M4), `SecretStore` (M6), `Notifier` (M5).
+Ports named in ADR 0005 that do not exist yet: `BrowserDriver` (M4), `SecretStore` (M6), `Notifier` (M5).
 
 ## State machines (built)
 
@@ -276,18 +278,62 @@ stateDiagram-v2
 - The shell keeps no ready flag beside the machine: readiness is the session's state. It keeps one connection fact, whether a watch stream was ever opened, so a second stream is refused.
 - Fails closed: a `STOP` or a broken stream makes the proxy zero its values and exit, and a session `berthd` marks `Lost` while its proxy still listens has its stream ended, so the proxy exits too.
 
+### Session machine (built, 17 legal pairs)
+
+Source: [`internal/core/session/session.go`](internal/core/session/session.go).
+One entity per browser process tree, `session/<pid>-<start time in microseconds>`, so a reused pid is a new session; every event is an observation from the scan or a stop request.
+
+```mermaid
+stateDiagram-v2
+  [*] --> Discovered
+  Discovered --> Active: Busy
+  Idle --> Active: Busy
+  Discovered --> Idle: Quiet
+  Active --> Idle: Quiet
+  Discovered --> Leftover: OwnerExited
+  Active --> Leftover: OwnerExited
+  Idle --> Leftover: OwnerExited
+  Discovered --> Stopping: StopRequested / SignalTerm
+  Active --> Stopping: StopRequested / SignalTerm
+  Idle --> Stopping: StopRequested / SignalTerm
+  Leftover --> Stopping: StopRequested / SignalTerm
+  Stopping --> Stopping: StopTimedOut / SignalKill
+  Discovered --> Stopped: Exited
+  Active --> Stopped: Exited
+  Idle --> Stopped: Exited
+  Leftover --> Stopped: Exited
+  Stopping --> Stopped: Exited
+```
+
+- `Busy` comes when the session's CPU time grew by 20 ms or more since the last scan, `Quiet` after 60 seconds without that; the shell sends only events the table accepts in the current state, so a steady browser writes no rows.
+- `OwnerExited` comes when the owner process, or the browser's parent at first sight, is gone, or when an automated or headless browser already hangs from launchd. `Leftover` is sticky until the browser exits or is stopped.
+- `SignalTerm` sends SIGTERM to the browser and starts a 5 second timer whose `StopTimedOut` makes `SignalKill` kill every process of the session; a signal to a process already gone is no failure, since the scan or `NOTE_EXIT` sends `Exited`.
+- Boot recovery scans once, then sends `Exited` with the note `gone at boot` to every live session row the scan did not find.
+
 ### Planned machines
 
 | Machine | Milestone | Owns |
 |---|---|---|
-| Session | M2, grows in M4 | One browser and whoever drives it: `Discovered`, `Active`, `Idle`, `Leftover`, `Stopping`, `Stopped`, then `Launching`, `Ready`, `Failed` |
+| Session (grows) | M4 | `Launching`, `Ready` and `Failed` for a browser Berth starts itself |
 | Profile lock | M4 | Which session holds a Chrome profile, and who waits for it |
 | Screen stream | M5 | One live view stream to a client, dropping stale frames |
 | Control | M5 | Whether the agent or a person drives the page |
 | Fill | M6 | One attempt to type a secret into a page; the value exists only between reading and typing |
 | Browser grant | M6 | A Keychain item granted to one browser profile for one site |
 
-Sessions will follow the observe then reconcile pattern: scanners and browser drivers only report what they saw as events, and a periodic reconcile pass sends corrective events so a missed event heals itself.
+Sessions follow the observe then reconcile pattern: the scan (and in M4 browser drivers) only reports what it saw as events, and every scan sends corrective events, so a missed event heals itself.
+
+## Browser discovery (built, M2)
+
+`berthd` scans the process table every 2 seconds, and at once when a watched browser exits (kqueue `NOTE_EXIT` on each session's browser), and turns what it sees into session events.
+
+- **What the kernel shows.** `kern.proc.all` gives every process's pid, parent, uid and start time in one call, and `proc_pidpath` its executable, for any user. `kern.procargs2` gives arguments only for the owner's own processes; another user's are refused, so such a browser is listed as unmanaged, other user, from its path alone, and is never stopped. A full table read takes about 4 ms for about 1,000 processes.
+- **Recognising a browser** (`browsersig`): Chrome (with Beta, Dev and Canary), Chrome for Testing, Chromium, Edge, Brave and the headless shells, by the executable's path inside its bundle; helpers by their bundle name or `--type=`. The driver comes from the install location (`ms-playwright`, `.cache/puppeteer`), the profile folder's name, or `--enable-automation`; headless, the CDP pipe or port and the profile folder from the flags. Electron apps match nothing.
+- **A session** is a browser process whose parent is not a process of the same browser, with every descendant.
+- **The owner** (`ownerchain`) is the nearest agent anywhere above the browser (`claude`, `codex`, `cursor-agent`, `gemini` and others, also when run by `node`, `bun` or `deno`), else the nearest terminal, else the nearest app bundle, else the person for a plain browser app launchd started, else none for an automated or headless browser already under launchd, else the parent process.
+- **Arguments never leave `berthd`.** They can carry credentials, so only the parsed facts reach the API; raw arguments are never stored or logged, and the `procargs2` buffer, which also holds the environment, is cleared after parsing.
+- **Stop** needs no Touch ID: it only ends a process the person could end. A browser owned by the person or an app needs `force`, and another user's is refused (`ERROR_REASON_SESSION_NOT_STOPPABLE`). `Signal` re-reads the process's start time just before `kill(2)`, so a reused pid is not signalled.
+- The honest limits (a poll can miss a browser that lives under 2 seconds, recognition by path and flags, owners guessed from the process tree, activity from CPU time) are in [the M2 plan](docs/plans/m2-see-every-browser.md#honest-limits).
 
 ## Storage (built)
 
@@ -308,6 +354,8 @@ One SQLite file, `$BERTH_HOME/berth.db`, through the pure Go driver `modernc.org
 | `proxy_sessions` | 0005 | One row per `berth-proxy` run: id, proxy pid, created and ended time, injected and refused counts; never paths, request details or values |
 | `proxy_session_grants` | 0005 | Which proxy grants each session holds tickets for, so a revoke finds the sessions to stop |
 
+Browser sessions have no table: their facts are rebuilt by every scan, and only their machine rows (`session/<id>` in `machine_state` and `machine_event`) persist, which boot recovery finds by kind.
+
 Single use tickets live only in `berthd` memory and are never persisted.
 
 ## Security model
@@ -327,7 +375,7 @@ Instructions and prompts are never a security control.
 
 ### The agent surface
 
-- **Built:** a method is meant for agents only when the schema marks it `option (berth.v1.agent) = true`, and `TestAgentSurface` pins the list: `Handshake`, `RequestSecret`, `ListSecrets`, `AuthorizeUse`, `AuthorizeProxy`, `WatchProxySession` and `EndProxySession`. The last three accept only the signed `berth-proxy`, and only the audit token that authorized a session may watch or end it.
+- **Built:** a method is meant for agents only when the schema marks it `option (berth.v1.agent) = true`, and `TestAgentSurface` pins the list: `Handshake`, `RequestSecret`, `ListSecrets`, `AuthorizeUse`, `AuthorizeProxy`, `WatchProxySession` and `EndProxySession`. The last three accept only the signed `berth-proxy`, and only the audit token that authorized a session may watch or end it. The M2 sessions methods are not marked: listing shows every browser on the Mac, the person's own included, and stopping one is a cross session action; agents get methods scoped to their own session with session tokens in M4.
 - **Planned (M4):** agents get a session token that works only for their own session, only from their own process tree, and only for agent methods ([ADR 0006](docs/adr/0006-agents-are-scoped-by-session-token.md)); `berth-mcp` and the agent commands expose exactly the marked methods.
 - **Enforced for a separate agent user (E3):** the agent socket serves exactly the marked methods, read from the schema option, and `TestAgentSurface` pins both the list and the refusal of every other method there.
 - **Today's limit:** for an agent running as the same user, until session tokens exist, the daemon cannot tell it from the person; anything that can reach the socket can call any method, and the protections that hold are Touch ID on power actions, values never crossing the API, and use tickets going only to the signed `berth` CLI.
@@ -453,7 +501,7 @@ Running agents as a separate macOS user (E3, [ADR 0018](docs/adr/0018-agents-run
 - A granted interpreter can print the secret whatever the glob says; `--allow-interpreter` only makes that a deliberate choice.
 - The receiver check compares the socket peer's audit token pid with `getppid()`; a parent that exited would reparent the helper (to pid 1) and fail that comparison, and the audit token itself stops matching once its process exits or execs.
 - Until session tokens (M4), a malicious process running as the person can call every method; it still cannot read a value through the API or grant itself access without Touch ID.
-- **`berthd` cannot read another user's process arguments:** `kern.procargs2` fails for processes of another uid (checked on 2026-11-17), so `berthd` cannot see the debugging port of a Chrome the agent user starts itself; agent browsers must be launched through Berth (E3 item 8), and M2 can list such a Chrome only as owned by the agent user.
+- **`berthd` cannot read another user's process arguments:** `kern.procargs2` fails for processes of another uid (checked on 2026-11-17), so `berthd` cannot see the debugging port of a Chrome the agent user starts itself; agent browsers must be launched through Berth (E3 item 8), and M2 lists such a Chrome as unmanaged, other user, by its path alone, and never stops it.
 - **The agent socket's path is checked twice, not bound through the checked descriptor:** Go cannot bind a Unix socket relative to a directory descriptor, so `berthd` walks the path before and after the bind. Every level is owned by root or the owner and writable by no one else, so only root could change it in between. The check ignores ACLs (a follow up in the E3 plan).
 - **Until E3 items 4 to 6 land, the agent socket only narrows the surface:** a separate agent user can call the agent methods with no session token, and `AuthorizeUse` and `AuthorizeProxy` answer it as they answer the owner, though their tickets lead to no value, since only a `berth-native` or `berth-proxy` on the owner socket can redeem them.
 - The peer adapter reads process facts through a raw `proc_info` syscall with a hardcoded struct offset, which a macOS update could break; its test guards it.
@@ -471,7 +519,7 @@ Each milestone starts from a plan in [`docs/plans/`](docs/plans) with acceptance
 | E2a Terminal secrets | `berth secret request`, `add`, `ls`, `grant`, `berth run`, `berth-native`, secret and grant machines, audit rows, a Claude Code hook | Done: wired with the end to end canary test; the maintainer's manual check with real signing and Touch ID passed on 2026-11-17 ([plan](docs/plans/e2-terminal-secrets.md#manual-check-2026-11-17)) |
 | E2b Header proxy and secret lifecycle | `berth-proxy` and `berth run --proxy`, `berth secret proxy`, `revoke`, `rm`, `rotate`, the proxy session machine, and `berth run --env` starting its child suspended to check its live cdhash | Built: wired with the canary and lifecycle end to end tests, agent safety checklist walked ([exit gate](docs/plans/e2b-header-proxy.md#e2b-exit-gate)); item 7 catches a Mach-O consumer swapped between the check and the start (not an agent that also signals berth and the child); awaiting the maintainer's manual check with real signing, Touch ID and a real API. `copy` moved to E3 or M5, MCP tools to M4 ([plan](docs/plans/e2b-header-proxy.md)) |
 | E3 Isolated agents | Coding agents run as a separate macOS user (the scout's pick over Seatbelt and a VM), env consumers as a runner user `berthd` starts, so a hostile agent cannot reach your files, Keychain or `berth.db`; the agent surface becomes enforced | In progress: the agent socket is built (item 3); the separate macOS user is proposed in [ADR 0018](docs/adr/0018-agents-run-as-a-separate-macos-user.md) with provisional picks awaiting the maintainer, and the spike, setup and launching as another user need his admin rights ([plan](docs/plans/e3-isolated-agents.md)) |
-| M2 See every browser | `ProcessSource`, signature registry, owner chain, session machine (observed states), `berth ps`, `inspect`, `stop`, `leftovers` | Planned, after E3 |
+| M2 See every browser | `ProcessSource`, signature registry, owner chain, session machine (observed states), `berth ps`, `inspect`, `stop`, `leftovers` | In progress: every item built with the real headless Chromium end to end tests and the agent safety checklist walked; awaiting the maintainer's `berth ps` check on his Mac ([plan](docs/plans/m2-see-every-browser.md)) |
 | M3 Live terminal view | `WatchSessions` stream with resume, the TUI | Planned |
 | M4 Managed Chromium | `BrowserDriver` over a private CDP pipe, the token gated CDP proxy, profile locks, session tokens, `berth-mcp` | Planned |
 | M5 Mac app | `Berth.app`, login item registration, live view and takeover, window pictures, notifications | Planned |
