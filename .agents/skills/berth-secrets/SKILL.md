@@ -76,6 +76,14 @@ Only the signed `berth` gets secrets: a script of yours that calls the API or st
 The command gets a clean environment: `HOME`, `PATH`, `TERM`, `LANG`, `LC_*`, `USER`, `LOGNAME`, `SHELL`, `TMPDIR`, the secrets, and only the variables its grant lists (`berth secret grant ... --pass-env NAME`). Variables you set on `berth run` do not reach it otherwise; if the tool needs one, ask the person to grant it with `--pass-env`. `DYLD_*`, `LD_*` and `*_OPTIONS`/`*_OPTS`/`*OPT` never pass.
 A grant pins the file's hash, so after the tool is upgraded the person grants it again.
 
+## A browser of your own (agent sessions)
+
+With `BERTH_AGENT_SOCKET` set, `berth browser open --token-file <new file>` starts a headless Chromium for your agent session and prints its CDP endpoint; the token goes into the file (mode 0600), never your output.
+Connect with any CDP client and send the file's content in the `X-Berth-Token` header, for example Playwright's `connectOverCDP(endpoint, { headers: { "X-Berth-Token": token } })`.
+The profile is fresh and deleted when the browser closes; `berth browser ls` lists your open browsers, `berth browser close <id>` closes one, and the end of your agent session closes them all.
+You may have 2 open and open 10 an hour: for more pages, open new contexts in the browser you have.
+Without a shell, `berth-mcp` (an MCP server over stdio, configured with the same two variables) offers `browser_open`, `browser_close`, `browser_list`, `secret_list` and `secret_request`; `browser_open` returns the path of the token file, and `browser_list` finds your browsers again after a restart.
+
 ## Exit codes and fixes
 
 | Code | Meaning | Fix |

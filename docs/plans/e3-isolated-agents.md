@@ -201,6 +201,7 @@ Taken while the maintainer was away; each is **provisional, awaiting the maintai
 ### Item 8: browser brokering
 
 - `berthd` launches Chrome (M4's `BrowserDriver`, over the private CDP pipe) and the agent gets only the CDP proxy endpoint and its token; it never gets the pipe, the profile folder or Chrome's debugging port.
+- Built as one user in M4 item 7: `OpenAgentBrowser`, `CloseAgentBrowser` and `ListAgentBrowsers`, scoped by the agent session, with Chrome still running as the owner; running it as the runner identity needs D3.
 - Because `kern.procargs2` fails across users, a Chrome the agent user starts itself cannot be inspected; M2 lists it as a browser owned by the agent user, not brokered.
 - Chrome runs as the runner identity (provisional), so CDP calls that write files (downloads) cannot land in the owner's files; the CDP proxy also refuses `Browser.setDownloadBehavior` to paths outside the workspace.
 
@@ -260,7 +261,7 @@ These go into `ARCHITECTURE.md` when the items that create them land.
 | The agent cannot signal or trace the runner consumer or `berthd` | By hand, real second user | Planned (item 5) |
 | A consumer started on behalf of an agent sees the runner's `HOME` and `PATH`, not the agent's | One user e2e for the protocol; by hand for the uid | Planned (item 5) |
 | A hostile agent script that tries every E2a review attack (driving signed binaries, fake daemon, wrapper helpers, tool configuration) gets no secret value | By hand, real second user | Planned (item 10) |
-| A Chrome the agent starts itself is not brokered; one launched through Berth gives the agent only the CDP proxy | e2e with M4 | Planned (item 8) |
+| A Chrome the agent starts itself is not brokered; one launched through Berth gives the agent only the CDP proxy | e2e with M4 | The Berth launched half built (M4 item 7, `TestAgentBrowserThroughTheAgentSocket`); the agent's own Chrome planned (item 8) |
 
 ## Order
 

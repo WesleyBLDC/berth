@@ -17,14 +17,14 @@ Paste its last lines in your report; a failure is investigated to its root cause
 | `make lint` | Every linter, including untracked files |
 | `make fmt` | Format Go, Protobuf, Swift, Python |
 | `make gen` | Regenerate `gen/` after editing `proto/` |
-| `make build` | `bin/berthd`, `bin/berth` and `bin/berth-proxy`, signed |
+| `make build` | `bin/berthd`, `bin/berth` and `bin/berth-proxy`, signed, and `bin/berth-mcp`, unsigned (it holds nothing and nothing trusts it) |
 | `make test-app` | `Berth.app`'s Swift tests, and its bundle built and checked signed ad hoc; opens no window |
 | `make app` | `bin/Berth.app`, signed, with `berthd` and its helpers in `Contents/Helpers` |
 | `make native` | `bin/berth-native`, the Swift helper, built in release mode and signed |
 | `make test-native` | Swift unit tests for the helper's core |
 | `make breaking` | `buf breaking` against the local `main` branch |
 
-Binaries: `berthd` (daemon), `berth` (CLI and the `berth top` TUI), `berth-proxy` (one per `berth run --proxy`), `berth-native` (Swift, the only reader of Keychain values), and soon `berth-mcp` (M4 item 8, not on `main` yet).
+Binaries: `berthd` (daemon), `berth` (CLI and the `berth top` TUI), `berth-proxy` (one per `berth run --proxy`), `berth-native` (Swift, the only reader of Keychain values), and `berth-mcp` (an MCP server over stdio for agents without a shell).
 Build tag: `berth_e2e` compiles the test only pin rule, the test root of `berth-proxy`, loopback proxy targets and the `BERTH_NATIVE`, `BERTH_PROXY` and swap hooks; `test/e2e` builds its binaries with it, release builds never, and no environment variable turns it on.
 
 ## Where things live
@@ -44,7 +44,8 @@ Build tag: `berth_e2e` compiles the test only pin rule, the test root of `berth-
 | `internal/proxy/`, `internal/proxyctl/`, `internal/proxyproc/` | The `berth-proxy` logic; the two JSON lines it exchanges with its starter; the starter `berth` and `berthd` share | gen, api, adapters; never a UI module |
 | `internal/peertrust/`, `internal/codetrust/`, `internal/spawn/`, `internal/mask/`, `internal/paths/`, `internal/logging/` | Trust in signed Berth peers, the suspended start for `berth run --env`, output masking, default paths, the redacting log handler | |
 | `internal/testutil/` | Fakes for ports (in memory store, fake clock, scriptable secrets, process table and browser driver) | ports |
-| `cmd/` | `berthd`, `berth` and `berth-proxy` entry points, thin | internal |
+| `internal/mcp/` | `berth-mcp`: MCP over stdio for agents without a shell; its tools are fixed text in `tools.json`, and its test maps every agent method to a tool or a reason | client, gen; never a UI module |
+| `cmd/` | `berthd`, `berth`, `berth-proxy` and `berth-mcp` entry points, thin | internal |
 | `native/` | `berth-native`, the Swift helper that alone touches secret values, and `BerthSocket`, the socket and peer check code it shares with the app | |
 | `macos/` | `Berth.app`: `BerthAppCore` (the Connect JSON client, models, session store), the SwiftUI shell, `berth-app-probe` for the end to end tests, `Bundle/` plists | `BerthSocket` only, never Keychain code |
 | `test/e2e/` | End to end tests that build and run the binaries | internal, gen |

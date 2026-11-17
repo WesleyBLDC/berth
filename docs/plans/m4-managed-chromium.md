@@ -163,21 +163,28 @@ Agents never get the pipe, the profile path or a debugging port: only the proxy 
 | Method | Agent surface | Why |
 |---|---|---|
 | `LaunchBrowser`, `ListBrowsers`, `CloseBrowser` | **No** | They name any profile and see or close every managed browser, including other agents' and the person's logged in profiles |
-| `OpenAgentBrowser` (planned, item 7) | **Yes** | Launches, or returns, the one browser of the caller's agent session (from `api.AgentSession(ctx)`), on an ephemeral profile `agent-<session id>`, and returns its endpoint and a fresh token once; the token is never kept in the request log |
-| `CloseAgentBrowser` (planned, item 7) | **Yes** | Closes only the caller's own browser; another session's id answers `BROWSER_NOT_FOUND`, so ids cannot be probed |
+| `OpenAgentBrowser` (built, item 7) | **Yes** | Launches a headless browser for the caller's agent session (from `api.AgentSession(ctx)`), on an ephemeral profile `agent-<session id>-<n>`, and returns an `AgentBrowser` (no profile path, executable or pid) with its endpoint and token once; the token is never kept in the request log. At most 2 open and 10 opened per rolling hour per session |
+| `CloseAgentBrowser` (built, item 7) | **Yes** | Closes only the caller's own browsers; another session's id, or the owner's, answers `BROWSER_NOT_FOUND`, so ids cannot be probed |
+| `ListAgentBrowsers` (built, review of item 7) | **Yes** | Lists only the caller's session's live browsers (ids, states, endpoints, never a token), so an agent that lost its ids after a restart can find and close them |
 
 - Agent browsers are headless only until M5, since a headful window on the person's screen is not the agent's to drive or see until live view and takeover exist.
 - A token minted by `OpenAgentBrowser` dies with the browser, and the browser closes when its agent session ends (`Revoked`, `Expired` or `Ended`).
-- `LaunchBrowserResponse.cdp_token` is set only in the first reply, like `CreateAgentSession`'s token: the request log keeps the reply without it, so a retry gets the browser but no token.
+- `LaunchBrowserResponse.cdp_token` and `OpenAgentBrowserResponse.cdp_token` are set only in the first reply, like `CreateAgentSession`'s token: the request log keeps the reply without it, so a retry gets the browser but no token.
+- A browser lives until `CloseAgentBrowser` or its session's end, not as a server stream like `StartProxy` (decision 12). The profile is deleted before the browser reads as closed, and boot deletes agent profiles a previous `berthd` left; the owner's profile names may not start with `agent-`.
+- A launch runs on `berthd`'s context, and whoever takes its outcome owns it: a caller that gives up hands the result to a goroutine that closes the browser once it starts, and the launch checks the session again once it settles, since the session's end hook may have run while the browser had no row.
+- After a restart the profile numbers start again, so a number whose folder is still on disk is skipped.
+- In agent mode, `berth browser open [--token-file <path>]`, `berth browser ls` and `berth browser close <id>` call these methods; `berth browser ls` shows the owner each agent browser's session.
 - Persistent named profiles for agents wait for M6's hard limits per profile.
 
-### berth-mcp (planned, item 8)
+### berth-mcp (built, item 8)
 
 A thin Go MCP server over stdio for agents without a shell, reaching the agent socket with the session token it reads from `BERTH_AGENT_TOKEN_FILE`, so the token never enters the model's context.
 
-- It exposes exactly the methods marked `(berth.v1.agent) = true`, read from the schema at build time, and a test fails when the tool list and `TestAgentSurface` disagree.
-- Tools: `secret_request`, `secret_list`, `browser_open`, `browser_close`; `browser_open` returns the endpoint and writes the token to a `0600` file whose path it returns, so an agent can hand both to Playwright MCP (`--cdp-endpoint`, `--cdp-header`) without the token in its context or in a command line.
-- No secret value or token appears in a tool result; tool definitions are fixed strings, pinned by a golden test (the MCP security guidance on pinned tool definitions).
+- Its test maps every method marked `(berth.v1.agent) = true` to a tool or the reason it is left out, so a newly marked method fails until it is decided: `Handshake` is the client's own call, `AuthorizeUse` and the three proxy session methods belong to `berth run` and `berth-proxy`, and `StartProxy` needs a command to run, which would make `berth-mcp` a shell.
+- Tools: `secret_request`, `secret_list`, `browser_open`, `browser_close`, `browser_list`; `browser_open` returns the endpoint and writes the token to a `0600` file whose path it returns, so an agent can hand both to Playwright MCP (`--cdp-endpoint`, `--cdp-header`) without the token in its context or in a command line.
+- No secret value or token appears in a tool result; tool definitions are fixed text in `internal/mcp/tools.json`, pinned by its SHA-256 in a test (the MCP security guidance on pinned tool definitions). The token file is removed at `browser_close` and when `berth-mcp` exits.
+- A message without an id is a notification and runs nothing, so a tool with side effects is always a request the client sees answered; a line over 1 MiB gets an error reply and the session goes on; after a signal no token file is written.
+- JSON-RPC 2.0 over stdio is hand rolled (decision 14), and `berth-mcp` links no UI module (`testutil.RequireNoUIModules`, shared with `berth-proxy`'s test).
 
 ### Live view and takeover hooks for M5 (planned)
 
@@ -262,6 +269,11 @@ Items 3 and 4 can run in parallel after the contract; 5 joins them; 6 needs 5's 
 - **Chrome for Testing outlives a crashed `berthd`** until the next boot finds it by its profile folder and stops it; a browser that someone moves out of `$BERTH_HOME/profiles` escapes that.
 - **The executable is trusted by path and bundle name** (`browsersig`), not by code signature; anything the person can write at a matching path is launched. Pinning Chrome for Testing by its signature waits for a release.
 - **No site allowlist yet.** The agent can navigate anywhere; per profile site limits are M6.
+- **An agent browser outlives the agent process that opened it** until it is closed or its agent session ends (a revoke, the expiry, up to 7 days, or the root's exit). A crashed tool below a live harness leaves its browsers running, at most 2; the harness's own crash ends the session through its root watch and closes them.
+- **The agent browser limits live in memory:** a restart of `berthd` resets both counts, and the profile numbers start again at 1 (boot deleted the old profiles first).
+- **An agent profile a browser still uses at boot** (a Chrome for Testing a crashed `berthd` left, stopped but not yet gone) is deleted at the next boot.
+- **With one shared agent user, a CDP token is the agent user's, not the session's:** any agent process that reads the output of `berth browser open` or the token file `berth-mcp` writes drives that browser until it closes.
+- **`berth-mcp` does not verify the server on the agent socket,** like `berth` in agent mode: it sends only the session token and receives facts, never a value.
 
 ## Decisions for the maintainer
 
@@ -278,6 +290,10 @@ Defaults taken while he was away; each is cheap to reverse before M4 closes.
 9. **Executable choice:** the `-browser` flag, then Chrome for Testing, Playwright's Chromium, then the apps in `/Applications`; a named executable must classify as a Chromium family browser.
 10. **Error reasons 19 to 21,** after E3 item 4's 16 to 18.
 11. **No Touch ID to launch or close** a managed browser: it starts a fresh process on a Berth profile and touches nothing of the person's.
+12. **An agent browser lives until it is closed or its agent session ends, not as long as a server stream** (item 7). A stream like `StartProxy` ties the browser to one connection, so it would die with a tool timeout, a restarted MCP server or a reconnecting CDP client, all of which happen while the agent still works, and a shell agent would need a background process holding the stream, which a double fork reparents to launchd, where the session refuses it. The crash that matters, the harness's, already ends the session through its root watch, and the session's end closes its browsers on `berthd`'s context; the 2 browser cap bounds what a crashed tool leaves until then.
+13. **Agent browser limits:** 2 open and 10 opened in any rolling hour per agent session, failed launches included, in memory. Each is a Chromium of the owner's and a fresh profile on disk; an agent needing more pages opens new contexts in a browser it has, which costs nothing. More than one (the plan first said one) lets an agent compare two sites or keep a clean browser beside a logged in one.
+14. **`berth-mcp` hand rolls JSON-RPC** instead of `github.com/modelcontextprotocol/go-sdk` (v1.8.0 requires `golang-jwt/jwt`, `google/jsonschema-go`, `segmentio/encoding`, `yosida95/uritemplate`, `golang.org/x/oauth2`, `golang.org/x/time`, `golang.org/x/tools` and `go-cmp`, checked on 2026-11-17), none of which `go.mod` has; four methods over newline delimited JSON are about 300 lines with no new module, and `govulncheck` stays clean.
+15. **`browser_open` returns a token file, not the token,** as this plan's berth-mcp section planned, so the token stays out of the model's context and the transcript; the agent hands the file to its CDP client. `StartProxy` is not a tool (see the berth-mcp section).
 
 ## Exit notes (2026-11-17)
 
@@ -303,3 +319,35 @@ Items 7 (agent methods) and 8 (`berth-mcp`) remain; E3 item 4 is now on `main`, 
 6. `LaunchBrowser` and `CloseBrowser` take a `request_id`; a retried launch gets the browser and no token.
 7. Failures are typed (`PROFILE_BUSY`, `BROWSER_NOT_FOUND`, `BROWSER_LAUNCH_FAILED`), and a failed launch is a `Closed` browser with its reason.
 8. OWASP agentic risks: ASI02 gains the CDP method filter and ASI07 the per browser token; the new limits are in the honest limits above and in `ARCHITECTURE.md`.
+
+## Exit notes, items 7 and 8 (2026-11-17)
+
+Built on branch `m4b` from `main` at e729c37: item 7, then item 8, then the review's fixes, each with its own commit, rebased onto `main` at 093667f, then these docs, with `make check` passing.
+
+- **Contract.** Additions only, `buf breaking` clean: `OpenAgentBrowser`, `CloseAgentBrowser` and (after review) `ListAgentBrowsers` on `BrowsersService`, marked `(berth.v1.agent)`; the `AgentBrowser` message; `ManagedBrowser.agent_session_id`. No new error reason: limits answer `RATE_LIMITED`, another session's id `BROWSER_NOT_FOUND`, and the agent methods on the owner socket `FailedPrecondition`. `OpenAgentBrowserResponse.cdp_token` joins the one time tokens in `TestNoFieldCarriesAValue`.
+- **Daemon** (`internal/berthd/agentbrowsers.go`): agent browsers reuse the launch path (`start`, with an admission check under the profile lock) and the close path (`closeAndWait`); limits use `agentsession.Limit`, which the store dialog and `StartProxy` limits now share. The agent session's saved hook gained `CloseBrowsers` beside `StopProxies`.
+- **Tests.** Unit: the profile name and headless launch, the session in `ListBrowsers`, profile deletion at close and at the session's end, another session's and the owner's ids refused, both limits with the clock moved an hour, an open racing the session's end, a revoke through the real agents actor with a cancelled caller, boot deleting only agent profiles. End to end (`TestAgentBrowserThroughTheAgentSocket`, `TestBerthMCPOpensAndClosesAnAgentBrowser`, the agent uid set to the test's own): no token and a forged token open nothing; `berth browser open` through the agent socket; Playwright's `connectOverCDP` drives it with no refusal; another session cannot close it and the agent cannot close the owner's or list browsers; its own close ends the process group and deletes the profile; a third open is refused; a revoke closes both browsers and deletes their profiles while another session's stays; `berth-mcp` answers `initialize` and `tools/list`, opens a browser whose token file's token the proxy accepts, and closes it; no session token or CDP token in `berthd`'s log, any database file or another output.
+
+### Agent safety checklist (M4, items 7 and 8)
+
+1. Three agent methods were added, `OpenAgentBrowser`, `CloseAgentBrowser` and `ListAgentBrowsers`, each scoped by the caller's agent session and pinned in `TestAgentSurface`; `berth-mcp` exposes five tools, each over a marked method.
+2. No secret value is touched; agent browsers run headless on fresh profiles, so nothing of the person's is logged in there.
+3. Canary: the end to end tests check the session tokens and every CDP token against `berthd`'s log, every database file and every output but the one that printed it; the API test checks the stored reply; the `berth-mcp` tests check every line it wrote.
+4. No power action was added: an agent browser starts a fresh process on a Berth profile.
+5. Tool results and replies hold ids, states, endpoints and fixed phrases; `berth-mcp` passes `berthd`'s fixed error text.
+6. `OpenAgentBrowser` and `CloseAgentBrowser` take a `request_id`; a retried open gets the browser and no token.
+7. Failures are typed (`RATE_LIMITED`, `BROWSER_NOT_FOUND`, `AGENT_TOKEN_INVALID`, `BROWSER_LAUNCH_FAILED`).
+8. OWASP agentic risks: ASI02 gains per session browser limits, ASI03 scoping by agent session; the new limits are in the honest limits above and in `ARCHITECTURE.md`.
+
+### Review fixes (2026-11-17)
+
+- **A cancelled open left a browser running.** The launch step ran on the caller's context, so a caller that gave up returned while the actor carried the browser to `Ready`, and a session end that found it in `Requested` skipped it. The launch now runs on `berthd`'s context and its outcome is always taken (tests: a cancelled open on a launch that blocks ends `Closed` with its profile deleted; a session end during an in flight open closes it).
+- **Audit B1, the same leak on the owner path:** a `LaunchBrowser` caller that gave up during `Spawn` released the browser and its profile lock while the actor still started Chromium and its proxy, leaving a browser no owner tool could see. Owner and agent launches share `managed.start`, so the fix above covers both (test: a cancelled `LaunchBrowser` on a blocked launch ends `Closed`, listed, its process closed and its profile free).
+- `ListAgentBrowsers` and the `browser_list` tool; `berth-mcp` ignores notifications, answers an oversized line with an error, and writes no token file after a signal; an ended session's browser counts are dropped even when a racing open recreated them, and its proxy start times too (`stopAgentSessions`); a profile number whose folder a previous `berthd` left is skipped.
+
+### Follow ups
+
+- The audit's medium finding stays open: a close during a launch still waits for the launch (the entity's turn is held while `Spawn` runs), and a browser whose `Launch` has not returned is not killed at shutdown until `Spawn` gives up after its 30 second timeout. The shared launch path changed who waits, not the actor's turn, so making `Spawn` return at once remains the fix (see the note under the browser machine).
+
+- Chrome's crashpad handler can still write into an agent profile while it is deleted, leaving a few files behind until the next boot's sweep.
+- A launch that fails after the profile folder was made (an actor that could not take the event, only when `berthd` stops) leaves an empty folder; the next boot's sweep removes an agent one, an owner one stays empty.

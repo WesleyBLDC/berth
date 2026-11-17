@@ -37,7 +37,7 @@ The maintainer keeps extra design notes privately; everything needed to understa
 - `berth-proxy`: a signed loopback HTTPS proxy, one per `berth run --proxy`, that writes a granted API key header so the command never holds the key.
 - Chromium: browsers `berthd` launches itself over a private CDP pipe, which agents reach only through a token gated, filtering CDP proxy.
 - `Berth.app`: a native SwiftUI window and menu bar item (M5, in progress).
-- `berth-mcp`: a thin MCP shim for agents without a shell (planned, M4).
+- `berth-mcp`: an MCP server over stdio for agents without a shell (M4).
 
 ## Development
 

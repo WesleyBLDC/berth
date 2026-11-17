@@ -16,7 +16,7 @@ What each milestone added:
 | E2a, E2b | Values only in `berth-native`, the granted child or `berth-proxy`; grants pinned to an executable or a proxy target; Touch ID on power actions |
 | E3 (items 3, 4, 6) | A separate agent socket that serves only the marked methods; a session token on every call there, bound to the agent uid and its process tree; store dialogs and proxy starts limited per session; the proxy of an agent session started by `berthd`, so the agent never holds the process that holds a value. The separate macOS user itself is not set up yet |
 | M2, M3 | Discovery is read only and off the agent surface; raw process arguments never leave `berthd`; text a process chose is escaped before it reaches a terminal; memory per session is bounded |
-| M4 (items 1 to 6) | Chromium only over a private pipe on a Berth profile; a per browser token; a CDP filter that parses strictly and fails closed. Not on the agent surface until item 7 |
+| M4 | Chromium only over a private pipe on a Berth profile; a per browser token; a CDP filter that parses strictly and fails closed. Agent browsers are headless, on fresh profiles deleted at close, scoped to the agent session, limited to 2 open and 10 an hour, and closed when the session ends; `berth-mcp` keeps the CDP token in a file, out of the model's context, and its tool definitions are pinned |
 
 ## Why browser agents are the hard case
 
