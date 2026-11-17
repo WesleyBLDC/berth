@@ -48,6 +48,24 @@ func TestSaveLoadHistory(t *testing.T) {
 	}
 }
 
+func TestEntitiesOfKind(t *testing.T) {
+	ctx := context.Background()
+	s := open(t, filepath.Join(t.TempDir(), "b.db"))
+	for _, r := range []ports.TransitionRecord{
+		{Entity: "session/2-1", Kind: "session", Version: 1, Event: "Busy", To: "Active"},
+		{Entity: "session/1-1", Kind: "session", Version: 1, Event: "Quiet", To: "Idle"},
+		{Entity: "daemon", Kind: "daemon", Version: 1, Event: "Boot", To: "Recovering"},
+	} {
+		if err := s.SaveTransition(ctx, r); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := s.EntitiesOfKind(ctx, "session")
+	if err != nil || len(got) != 2 || got[0].Entity != "session/1-1" || got[0].State != "Idle" || got[1].Entity != "session/2-1" {
+		t.Fatalf("sessions: %+v %v", got, err)
+	}
+}
+
 func TestStaleVersionIsRejectedAndWritesNothing(t *testing.T) {
 	ctx := context.Background()
 	s := open(t, filepath.Join(t.TempDir(), "b.db"))

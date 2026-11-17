@@ -97,6 +97,9 @@ type shell struct {
 	// machineCtx outlives the signal context so background sends can still reach the actor.
 	machineCtx context.Context
 	secrets    *secrets
+	browsers   *browsers
+	// stopScans ends the browser scan loop StartServing began.
+	stopScans context.CancelFunc
 }
 
 // Run blocks until the daemon machine reaches Stopped, and returns its exit code.
@@ -125,6 +128,14 @@ func Run(ctx context.Context, cfg Config) (int, error) {
 	if s.secrets, err = newSecretsFor(machineCtx, cfg, store); err != nil {
 		return 1, err
 	}
+	procs, err := procscan.New()
+	if err != nil {
+		return 1, err
+	}
+	s.browsers = newBrowsers(machineCtx, browsersDeps{
+		Log: cfg.Log, Source: procs, Store: store, List: store, Clock: clock.System{},
+		UID: uint32(os.Getuid()), //nolint:gosec // user IDs fit in 32 bits
+	})
 	s.actor, err = machine.NewActor(ctx, machine.Config[daemon.State, daemon.Event, daemon.Effect]{
 		Entity: daemon.Entity, Kind: daemon.Kind, Initial: daemon.Starting,
 		Transition: daemon.Transition, Run: s.run, Store: store, Clock: clock.System{},
@@ -161,6 +172,9 @@ func (s *shell) run(ctx context.Context, effect daemon.Effect) ([]daemon.Event, 
 		if err := s.secrets.recover(ctx); err != nil {
 			return []daemon.Event{{Kind: daemon.Failed, Note: "recover secrets: " + err.Error()}}, nil
 		}
+		if err := s.browsers.recover(ctx); err != nil {
+			return []daemon.Event{{Kind: daemon.Failed, Note: "recover browser sessions: " + err.Error()}}, nil
+		}
 		note := fmt.Sprintf("previous run ended in %s", effect.Previous)
 		if effect.Unclean {
 			note += ": unclean shutdown"
@@ -172,8 +186,14 @@ func (s *shell) run(ctx context.Context, effect daemon.Effect) ([]daemon.Event, 
 			s.log.Error("cannot serve", "err", err)
 			return []daemon.Event{{Kind: daemon.Failed, Note: err.Error()}}, nil
 		}
+		scanCtx, stop := context.WithCancel(ctx)
+		s.stopScans = stop
+		go s.browsers.run(scanCtx)
 		return nil, nil
 	case daemon.StopServing:
+		if s.stopScans != nil {
+			s.stopScans()
+		}
 		// Proxy sessions are told to stop and open prompts end first, while the server still
 		// takes their EndProxySession calls and their callers still get an answer.
 		if !s.secrets.stop(stopPromptsTimeout) {
@@ -260,7 +280,7 @@ func (s *shell) serve(ctx context.Context) error {
 		RequestStop: func(ctx context.Context) error {
 			return s.actor.Send(ctx, daemon.Event{Kind: daemon.StopRequested, Note: "Shutdown call"})
 		},
-		Secrets: s.secrets,
+		Secrets: s.secrets, Sessions: s.browsers,
 	}, servers...)
 	s.listen(ln, s.sock, owner, false)
 	if agent != nil {

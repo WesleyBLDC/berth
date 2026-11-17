@@ -57,3 +57,9 @@ type ProcessSource interface {
 	// Signal sends sig after checking the pid still names this process instance.
 	Signal(ctx context.Context, p ProcessRef, sig Signal) error
 }
+
+// EntityLister finds every entity of one machine kind, for boot recovery of a machine whose
+// entities have no table of their own (browser sessions).
+type EntityLister interface {
+	EntitiesOfKind(ctx context.Context, kind string) ([]EntityState, error)
+}

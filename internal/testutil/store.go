@@ -3,6 +3,7 @@ package testutil
 import (
 	"context"
 	"slices"
+	"strings"
 	"sync"
 
 	"berth/internal/core/ports"
@@ -50,6 +51,19 @@ func (s *Store) History(_ context.Context, entity string, limit int) ([]ports.Tr
 			out = append(out, e)
 		}
 	}
+	return out, nil
+}
+
+func (s *Store) EntitiesOfKind(_ context.Context, kind string) ([]ports.EntityState, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []ports.EntityState
+	for _, st := range s.states {
+		if st.Kind == kind {
+			out = append(out, st)
+		}
+	}
+	slices.SortFunc(out, func(a, b ports.EntityState) int { return strings.Compare(a.Entity, b.Entity) })
 	return out, nil
 }
 

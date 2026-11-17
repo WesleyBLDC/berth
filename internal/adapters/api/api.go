@@ -37,12 +37,15 @@ type Deps struct {
 	RequestStop func(ctx context.Context) error
 	// Secrets runs SecretsService; nil leaves it unimplemented.
 	Secrets Secrets
+	// Sessions runs SessionsService; nil leaves it unimplemented.
+	Sessions Sessions
 }
 
 type handlers struct {
 	berthv1connect.UnimplementedDaemonServiceHandler
 	berthv1connect.UnimplementedDebugServiceHandler
 	berthv1connect.UnimplementedSecretsServiceHandler
+	berthv1connect.UnimplementedSessionsServiceHandler
 	d Deps
 	// inFlight holds the request IDs being served, so a retry waits for the first call while
 	// calls with other IDs (a store dialog can stay open for minutes) carry on.
@@ -59,6 +62,9 @@ func Register(d Deps, servers ...*connect.Server) {
 		berthv1connect.RegisterDebugServiceHandler(server, h)
 		if d.Secrets != nil {
 			berthv1connect.RegisterSecretsServiceHandler(server, h)
+		}
+		if d.Sessions != nil {
+			berthv1connect.RegisterSessionsServiceHandler(server, h)
 		}
 	}
 }

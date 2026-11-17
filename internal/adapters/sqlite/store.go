@@ -132,6 +132,23 @@ func (s *Store) LoadState(ctx context.Context, entity string) (ports.EntityState
 	return st, err == nil, err
 }
 
+func (s *Store) EntitiesOfKind(ctx context.Context, kind string) ([]ports.EntityState, error) {
+	rows, err := s.db.QueryContext(ctx, `SELECT entity, state, version FROM machine_state WHERE kind = ? ORDER BY entity`, kind)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = rows.Close() }()
+	var out []ports.EntityState
+	for rows.Next() {
+		st := ports.EntityState{Kind: kind}
+		if err := rows.Scan(&st.Entity, &st.State, &st.Version); err != nil {
+			return nil, err
+		}
+		out = append(out, st)
+	}
+	return out, rows.Err()
+}
+
 // History returns the newest transitions first.
 func (s *Store) History(ctx context.Context, entity string, limit int) ([]ports.TransitionRecord, error) {
 	rows, err := s.db.QueryContext(ctx,
