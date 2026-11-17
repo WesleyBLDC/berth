@@ -413,27 +413,34 @@ func TestPathMethodAndHostLimits(t *testing.T) {
 	cases := []struct {
 		method, uri, host string
 		want              int
+		header            string
 	}{
-		{"GET", "/v1/models", host, http.StatusOK},
-		{"GET", "/v1/models?q=../..", host, http.StatusOK},
-		{"POST", "/v1/models", host, http.StatusForbidden},
-		{"GET", "/v2/models", host, http.StatusForbidden},
-		{"GET", "/v1/a/b", host, http.StatusForbidden},
-		{"GET", "/v1/../admin", host, http.StatusForbidden},
-		{"GET", "/v1/%2e%2e", host, http.StatusForbidden},
-		{"GET", "/v1//x", host, http.StatusForbidden},
-		{"GET", "/v1/..;", host, http.StatusForbidden},
-		{"GET", "/v1/models;admin", host, http.StatusForbidden},
-		{"GET", "/v1/models%3Badmin", host, http.StatusForbidden},
-		{"GET", "/v1/models", "evil.example", http.StatusMisdirectedRequest},
-		{"GET", "/v1/models", "example.com", http.StatusMisdirectedRequest},
+		{"GET", "/v1/models", host, http.StatusOK, ""},
+		{"GET", "/v1/models", host, http.StatusForbidden, "X-HTTP-Method-Override: DELETE\r\n"},
+		{"GET", "/v1/models", host, http.StatusForbidden, "x-http-method: DELETE\r\n"},
+		{"GET", "/v1/models", host, http.StatusForbidden, "X-Method-Override: GET\r\n"},
+		{"GET", "/v1/models", host, http.StatusForbidden, "X_HTTP_Method_Override: DELETE\r\n"},
+		{"GET", "/v1/models", host, http.StatusForbidden, "x-http_method: DELETE\r\n"},
+		{"GET", "/v1/models", host, http.StatusForbidden, "Any_Name: 1\r\n"},
+		{"GET", "/v1/models?q=../..", host, http.StatusOK, ""},
+		{"POST", "/v1/models", host, http.StatusForbidden, ""},
+		{"GET", "/v2/models", host, http.StatusForbidden, ""},
+		{"GET", "/v1/a/b", host, http.StatusForbidden, ""},
+		{"GET", "/v1/../admin", host, http.StatusForbidden, ""},
+		{"GET", "/v1/%2e%2e", host, http.StatusForbidden, ""},
+		{"GET", "/v1//x", host, http.StatusForbidden, ""},
+		{"GET", "/v1/..;", host, http.StatusForbidden, ""},
+		{"GET", "/v1/models;admin", host, http.StatusForbidden, ""},
+		{"GET", "/v1/models%3Badmin", host, http.StatusForbidden, ""},
+		{"GET", "/v1/models", "evil.example", http.StatusMisdirectedRequest, ""},
+		{"GET", "/v1/models", "example.com", http.StatusMisdirectedRequest, ""},
 	}
 	refused := 0
 	for _, c := range cases {
 		tn := f.open(t, host)
-		resp, _ := tn.do(t, c.method, c.method+" "+c.uri+" HTTP/1.1\r\nHost: "+c.host+"\r\nContent-Length: 0\r\n\r\n")
+		resp, _ := tn.do(t, c.method, c.method+" "+c.uri+" HTTP/1.1\r\nHost: "+c.host+"\r\n"+c.header+"Content-Length: 0\r\n\r\n")
 		if resp.StatusCode != c.want {
-			t.Fatalf("%s %s Host %s: status %d, want %d", c.method, c.uri, c.host, resp.StatusCode, c.want)
+			t.Fatalf("%s %s Host %s %q: status %d, want %d", c.method, c.uri, c.host, c.header, resp.StatusCode, c.want)
 		}
 		if c.want != http.StatusOK {
 			refused++

@@ -24,6 +24,17 @@ var hopByHop = []string{
 	"Upgrade", "Content-Length", "Expect",
 }
 
+// methodOverrides are headers some servers and frameworks take as the request's real method, so
+// under a method limit an allowed POST could act as a DELETE. Rack and PHP's FastCGI read an
+// underscore as a hyphen, so names are compared that way too.
+var methodOverrides = []string{"x-http-method-override", "x-http-method", "x-method-override"}
+
+// overridesMethod reports whether a header name could reach a server as a method override. Any
+// name with an underscore counts, since servers disagree on what it maps to.
+func overridesMethod(name string) bool {
+	return strings.Contains(name, "_") || slices.Contains(methodOverrides, strings.ToLower(name))
+}
+
 // forwarder serves one client tunnel to a granted host. It writes each request itself, from
 // bytes, so the value goes from locked memory to the TLS connection without ever being a string
 // or passing through a buffer the proxy does not zero.
@@ -127,8 +138,15 @@ func (f *forwarder) check(req *http.Request) int {
 	if host != f.g.authority() && (f.g.Port != 443 || host != f.g.Host) {
 		return http.StatusMisdirectedRequest
 	}
-	if len(f.g.Methods) > 0 && !slices.Contains(f.g.Methods, req.Method) {
-		return http.StatusForbidden
+	if len(f.g.Methods) > 0 {
+		if !slices.Contains(f.g.Methods, req.Method) {
+			return http.StatusForbidden
+		}
+		for h := range req.Header {
+			if overridesMethod(h) {
+				return http.StatusForbidden
+			}
+		}
 	}
 	if f.g.PathGlob != "" {
 		raw, _, _ := strings.Cut(req.RequestURI, "?")
