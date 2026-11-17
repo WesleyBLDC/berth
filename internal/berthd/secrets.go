@@ -102,6 +102,7 @@ type useRequest struct {
 	name    string
 	sha256  [32]byte
 	pid     int
+	kind    ports.ConsumerKind
 }
 
 type issued struct {
@@ -110,12 +111,28 @@ type issued struct {
 	err     error
 }
 
+// liveTicket binds a ticket to what it may do when redeemed; berth-native refuses a ticket whose
+// consumer kind is not its parent's.
 type liveTicket struct {
 	name    string
 	sha256  [32]byte
 	pid     int
+	kind    ports.ConsumerKind
+	action  ports.TicketAction
 	expires time.Time
 }
+
+var (
+	consumerKinds = map[ports.ConsumerKind]berthv1.ConsumerKind{
+		ports.ConsumerExe:   berthv1.ConsumerKind_CONSUMER_KIND_EXECUTABLE,
+		ports.ConsumerProxy: berthv1.ConsumerKind_CONSUMER_KIND_PROXY,
+	}
+	ticketActions = map[ports.TicketAction]berthv1.TicketAction{
+		ports.TicketUse:    berthv1.TicketAction_TICKET_ACTION_USE,
+		ports.TicketRemove: berthv1.TicketAction_TICKET_ACTION_REMOVE,
+		ports.TicketRotate: berthv1.TicketAction_TICKET_ACTION_ROTATE,
+	}
+)
 
 var _ api.Secrets = (*secrets)(nil)
 
@@ -414,7 +431,7 @@ func (s *secrets) issue(ctx context.Context, entity string) {
 	}
 	expires := now.Add(ticketLife)
 	s.mu.Lock()
-	s.live[t] = liveTicket{name: u.name, sha256: u.sha256, pid: u.pid, expires: expires}
+	s.live[t] = liveTicket{name: u.name, sha256: u.sha256, pid: u.pid, kind: u.kind, action: ports.TicketUse, expires: expires}
 	s.mu.Unlock()
 	s.grants.output(entity, issued{ticket: t, expires: expires})
 }
@@ -504,7 +521,11 @@ func (s *secrets) AuthorizeUse(ctx context.Context, req *berthv1.AuthorizeUseReq
 
 func (s *secrets) authorize(ctx context.Context, g ports.GrantRecord, exe ports.Executable, peer ports.Peer) (*berthv1.AuthorizeUseResponse, error) {
 	entity := grant.Entity(g.ID)
-	use := useRequest{grantID: g.ID, name: g.Secret, sha256: exe.SHA256, pid: peer.PID}
+	kind := g.Kind
+	if kind == "" {
+		kind = ports.ConsumerExe
+	}
+	use := useRequest{grantID: g.ID, name: g.Secret, sha256: exe.SHA256, pid: peer.PID, kind: kind}
 	_, out, err := step(ctx, s.grants, entity, grant.Event{Kind: grant.UseAuthorized}, use, grant.UseAuthorized)
 	if err != nil {
 		return nil, err
@@ -555,7 +576,7 @@ func (s *secrets) RedeemUseTicket(ctx context.Context, ticket ports.Ticket, peer
 		s.Log.Warn("ticket redeemed by a helper the caller did not start", "pid", peer.PID)
 		return nil, api.ErrTicketInvalid
 	}
-	return &berthv1.RedeemUseTicketResponse{Name: t.name}, nil
+	return &berthv1.RedeemUseTicketResponse{Name: t.name, ConsumerKind: consumerKinds[t.kind], Action: ticketActions[t.action]}, nil
 }
 
 func (s *secrets) facts(ctx context.Context, peer ports.Peer) (ports.Requester, error) {

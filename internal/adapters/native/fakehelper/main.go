@@ -356,11 +356,6 @@ func read(dir string, cfg config, line []byte, stderr io.Writer) int {
 // useRule is berth-native's receiver rule after the redeem: the ticket must be for reading, by
 // the kind of consumer the parent proved to be.
 func useRule(parent string, t redeemed) error {
-	if t.Action == "" && t.ConsumerKind == "" && parent == kindExecutable {
-		// berthd does not send either field until E2b item 6 wires them; item 6 deletes this
-		// branch so the fake is as strict as berth-native, which refuses this answer.
-		return nil
-	}
 	if t.Action != actionUse {
 		return errors.New("the ticket is not for reading a value")
 	}

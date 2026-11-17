@@ -208,6 +208,7 @@ func TestReadNeedsTheParentsConsumerKindAndUse(t *testing.T) {
 		{kindExecutable, useTicket("k", kindProxy), false},
 		{kindProxy, useTicket("k", kindExecutable), false},
 		{kindProxy, map[string]string{"name": "k"}, false},
+		{kindExecutable, map[string]string{"name": "k"}, false},
 		{kindExecutable, map[string]string{"name": "k", "consumerKind": kindExecutable, "action": actionRemove}, false},
 		{kindProxy, map[string]string{"name": "k", "consumerKind": kindProxy}, false},
 	}
