@@ -18,6 +18,8 @@ var (
 	warp     = anc(31, "/Applications/Warp.app/Contents/MacOS/stable")
 	tmux     = anc(32, "/opt/homebrew/bin/tmux", "tmux")
 	claude   = anc(20, "/Users/u/.local/share/claude/ClaudeCode.app/Contents/MacOS/claude", "claude")
+	claudeNt = anc(21, "/Users/u/.local/share/claude/versions/2.1.322", "claude")
+	notAgent = anc(22, "/Users/u/.local/share/tool/versions/2.1.322", "tool")
 	npmExec  = anc(50, "/opt/homebrew/bin/node", "npm exec @playwright/mcp@latest")
 	cursorPl = anc(60, "/Applications/Cursor.app/Contents/Frameworks/Cursor Helper (Plugin).app/Contents/MacOS/Cursor Helper (Plugin)")
 	gemini   = anc(70, "/opt/homebrew/bin/node", "node", "--no-warnings", "/opt/homebrew/lib/node_modules/@google/gemini-cli/dist/index.js")
@@ -35,6 +37,8 @@ func TestFind(t *testing.T) {
 		pid       int
 	}{
 		{"agent above a terminal wins", []ownerchain.Ancestor{pwTest, zsh, claude, tmux, ghostty, launchd}, true, ownerchain.Agent, "claude", 20},
+		{"Claude Code's native install", []ownerchain.Ancestor{pwTest, zsh, claudeNt, ghostty, launchd}, true, ownerchain.Agent, "claude", 21},
+		{"a versioned binary of another tool", []ownerchain.Ancestor{notAgent, launchd}, true, ownerchain.Process, "2.1.322", 22},
 		{"agent package run by node", []ownerchain.Ancestor{gemini, zsh, ghostty, launchd}, true, ownerchain.Agent, "gemini", 70},
 		{"agent bin link run by node", []ownerchain.Ancestor{codexBin, launchd}, true, ownerchain.Agent, "codex", 71},
 		{"nearest terminal", []ownerchain.Ancestor{pwTest, zsh, tmux, ghostty, launchd}, true, ownerchain.Terminal, "tmux", 32},

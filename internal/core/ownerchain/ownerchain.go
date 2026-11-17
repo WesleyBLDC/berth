@@ -5,6 +5,7 @@ package ownerchain
 
 import (
 	"path"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -106,10 +107,19 @@ func KeptArgs(args []string) []string {
 	return slices.Clone(args[:min(1, len(args))])
 }
 
+// version is a release number, the file name of a versioned native install such as Claude
+// Code's .../claude/versions/2.1.322.
+var version = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.-]+)?$`)
+
 func agentName(a Ancestor) (string, bool) {
 	base := path.Base(a.Executable)
 	if agents[base] {
 		return base, true
+	}
+	if dir := path.Dir(a.Executable); version.MatchString(base) && path.Base(dir) == "versions" {
+		if name := path.Base(path.Dir(dir)); agents[name] {
+			return name, true
+		}
 	}
 	if !ReadsArgs(a.Executable) {
 		return "", false
