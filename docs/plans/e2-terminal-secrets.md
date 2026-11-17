@@ -100,3 +100,4 @@ stderr carries short diagnostics and never a value.
 - From item 3: send secret `UseRefused` only to a Stored secret with no grant; a name that is not Stored is `SECRET_NOT_FOUND`, never an event.
 - From item 3: `GrantSecret` always creates a new grant row and entity; `GrantFailed` ends in Denied.
 - Add the secret and grant state diagrams to the wiki architecture page.
+- The `berth-native` store and confirm dialog uses the brand palette from `brand/colors/tokens.json` (navy background, Mist text, brass only on the confirm button) and the app icon from `brand/app-icon/` where macOS shows one.

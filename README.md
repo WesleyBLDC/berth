@@ -1,3 +1,10 @@
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="brand/logo/svg/berth-lockup-dark-bg.svg">
+    <img src="brand/logo/svg/berth-lockup-light-bg.svg" width="240" alt="berth">
+  </picture>
+</p>
+
 # Berth
 
 Berth is a local app for macOS that lists every browser your agents, tests and scrapers have open, lets you watch and take over any of them, and decides which Keychain passwords and which runbook each one gets.
@@ -9,6 +16,7 @@ Status: M0 (spike) and M1 (skeleton) done; the daemon, CLI, schema and state mac
 - Milestone plans: `docs/plans/`; how several agents split the work: `docs/agentic-work.md`
 - Setup: `docs/setup.md`
 - Rules for coding agents: `AGENTS.md`
+- Brand: `brand/README.md`
 
 ## Shape
 
