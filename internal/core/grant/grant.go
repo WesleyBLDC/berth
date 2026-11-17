@@ -1,8 +1,11 @@
-// Package grant is the state machine for one consumer pinned to a secret. Item 3 of E2a adds
-// Transition.
+// Package grant is the state machine for one consumer pinned to a secret.
 package grant
 
-import "strconv"
+import (
+	"strconv"
+
+	"berth/internal/core/machine"
+)
 
 const Kind = "grant"
 
@@ -22,6 +25,9 @@ const (
 )
 
 var States = []State{Requested, Active, Denied, Stale, Revoked}
+
+// Initial is the state of a new grant row.
+const Initial = Requested
 
 type EventKind string
 
@@ -74,3 +80,50 @@ const (
 type Effect struct {
 	Kind EffectKind
 }
+
+// Transition is the grant's whole transition table. A Denied, Stale or Revoked grant is never
+// approved again; the person makes a new grant, which is a new entity.
+func Transition(s State, e Event) (State, []Effect, error) {
+	switch e.Kind {
+	case GrantRequested:
+		if s == Requested {
+			return Requested, []Effect{{Kind: PromptPower}}, nil
+		}
+	case GrantApproved:
+		if s == Requested {
+			return Active, nil, nil
+		}
+	case GrantDenied:
+		if s == Requested {
+			return Denied, nil, nil
+		}
+	case GrantFailed:
+		// Denied, since a retry is a new GrantSecret and so a new grant row, never this one.
+		if s == Requested {
+			return Denied, nil, nil
+		}
+	case UseAuthorized:
+		if s == Active {
+			return Active, []Effect{{Kind: IssueTicket}}, nil
+		}
+	case HashChanged:
+		if s == Active {
+			return Stale, nil, nil
+		}
+	case Revoke:
+		switch s {
+		case Active, Stale:
+			return Revoked, nil, nil
+		case Requested, Denied, Revoked:
+		}
+	case UseRefused:
+		switch s {
+		case Stale, Denied, Revoked:
+			return s, nil, nil
+		case Requested, Active:
+		}
+	}
+	return s, nil, machine.Illegal(s, e)
+}
+
+var _ machine.Transition[State, Event, Effect] = Transition

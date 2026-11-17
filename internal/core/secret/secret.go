@@ -1,5 +1,7 @@
-// Package secret is the state machine for one stored secret. Item 3 of E2a adds Transition.
+// Package secret is the state machine for one stored secret.
 package secret
+
+import "berth/internal/core/machine"
 
 const Kind = "secret"
 
@@ -17,6 +19,9 @@ const (
 )
 
 var States = []State{Pending, Stored, Denied, Failed}
+
+// Initial is the state of a secret the daemon has not seen before.
+const Initial = Pending
 
 type EventKind string
 
@@ -54,3 +59,37 @@ const PromptStore EffectKind = "PromptStore"
 type Effect struct {
 	Kind EffectKind
 }
+
+// Transition is the secret's whole transition table.
+func Transition(s State, e Event) (State, []Effect, error) {
+	switch e.Kind {
+	case StoreRequested:
+		switch s {
+		// Denied and Failed may be requested again so a person can retry.
+		case Pending, Denied, Failed:
+			return Pending, []Effect{{Kind: PromptStore}}, nil
+		// A Stored secret is replaced only by rotate (E2b); the API answers SECRET_EXISTS.
+		case Stored:
+		}
+	case StoreSucceeded:
+		if s == Pending {
+			return Stored, nil, nil
+		}
+	case StoreDenied:
+		if s == Pending {
+			return Denied, nil, nil
+		}
+	case StoreFailed:
+		if s == Pending {
+			return Failed, nil, nil
+		}
+	case UseRefused:
+		// Use of a secret that is not Stored is SECRET_NOT_FOUND, not a refused use.
+		if s == Stored {
+			return Stored, nil, nil
+		}
+	}
+	return s, nil, machine.Illegal(s, e)
+}
+
+var _ machine.Transition[State, Event, Effect] = Transition
