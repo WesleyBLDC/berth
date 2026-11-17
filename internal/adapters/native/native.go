@@ -13,6 +13,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -199,14 +200,21 @@ func Read(ctx context.Context, helper string, ticket ports.Ticket) ([]byte, erro
 	in := make([]byte, hex.EncodedLen(len(ticket))+1)
 	hex.Encode(in, ticket[:])
 	in[len(in)-1] = '\n'
+	// Like os.Pipe: hold ForkLock until both ends are close-on-exec, so no concurrent exec
+	// inherits either. ExtraFiles clears the flag on theirs for the helper alone.
+	syscall.ForkLock.RLock()
 	fds, err := unix.Socketpair(unix.AF_UNIX, unix.SOCK_STREAM, 0)
+	if err == nil {
+		unix.CloseOnExec(fds[0])
+		unix.CloseOnExec(fds[1])
+	}
+	syscall.ForkLock.RUnlock()
 	if err != nil {
 		return nil, fmt.Errorf("native read: socketpair: %w", err)
 	}
 	mine := os.NewFile(uintptr(fds[0]), "berth-value")
 	theirs := os.NewFile(uintptr(fds[1]), "berth-native-value")
 	defer func() { _ = mine.Close() }()
-	unix.CloseOnExec(fds[0])
 	cmd := helperCommand(ctx, helper, "read")
 	cmd.Stdin = bytes.NewReader(in)
 	var stderr bytes.Buffer

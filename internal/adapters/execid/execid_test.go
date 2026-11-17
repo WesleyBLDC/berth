@@ -177,7 +177,4 @@ func TestPinSignedReadsAPrivateCopy(t *testing.T) {
 	if _, ok, _ := id.PinSigned(t.Context(), "/bin/ls", `anchor apple generic and certificate leaf[subject.OU] = "XPJ7XA42J4"`); ok {
 		t.Fatal("pinned against another team's requirement")
 	}
-	if got, err := id.PinAny(t.Context(), "/bin/ls"); err != nil || got != want {
-		t.Fatalf("pin any %x %v", got, err)
-	}
 }

@@ -144,6 +144,7 @@ public func valueChannelRefusal(_ fd: Int32, parent: pid_t, requirement: String)
     guard getsockopt(fd, SOL_LOCAL, LOCAL_PEERTOKEN, &token, &tokenSize) == 0,
         tokenSize == socklen_t(MemoryLayout<audit_token_t>.size)
     else { return "the value channel has no peer (\(String(cString: strerror(errno))))" }
+    // For a socketpair the peer token names whoever holds the other end, which is how we know berth receives.
     let peer = pid_t(bitPattern: token.val.5)
     guard peer == parent else { return "the value channel's peer \(peer) is not the parent \(parent)" }
     switch checkPeer(token, requirement: requirement) {

@@ -194,17 +194,6 @@ func (x *Identity) PinSigned(ctx context.Context, path, requirement string) (sum
 	return sum, ok && err == nil, err
 }
 
-// PinAny reads the cdhash of a private copy without any requirement. Only test builds use it.
-func (x *Identity) PinAny(ctx context.Context, path string) (ports.CDHash, error) {
-	var sum ports.CDHash
-	err := x.withPrivateCopy(path, func(cp string) error {
-		var err error
-		sum, err = x.CDHash(ctx, cp)
-		return err
-	})
-	return sum, err
-}
-
 // withPrivateCopy copies path to a 0600 file in a fresh 0700 folder, runs do on it, and removes
 // both; see PinSigned for what the copy does and does not protect.
 func (*Identity) withPrivateCopy(path string, do func(cp string) error) error {

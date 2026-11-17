@@ -336,6 +336,7 @@ func openRecipient(ctx context.Context) (io.WriteCloser, error) {
 }
 
 func checkRecipient(ctx context.Context, uc *net.UnixConn, parent int) error {
+	// For a socketpair the peer is whoever holds the other end, which is how we know berth receives.
 	pid, err := socket.KernelPeerPID(uc)
 	if err != nil {
 		return err
