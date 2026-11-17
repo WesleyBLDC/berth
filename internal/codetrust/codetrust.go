@@ -1,5 +1,5 @@
 // Package codetrust recognises Berth's own signed binaries in running processes: berthd uses it
-// for the berth CLI and berth-native, and berth uses it for berthd. A file is pinned by the
+// for the berth CLI, berth-native and berth-proxy, and berth and berth-proxy use it for berthd. A file is pinned by the
 // cdhash of a private copy that satisfies the signing requirement, and a process counts as that
 // file only when the kernel reports the same cdhash, a valid signature and the hardened runtime.
 package codetrust

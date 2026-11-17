@@ -1,6 +1,7 @@
 // Package session is the state machine for one browser session: a browser process tree and
 // whoever started it. In M2 every event is an observation from berthd's scan or a stop request;
-// M4 adds the states of a browser Berth launches itself.
+// a browser Berth launches itself has its own machine (internal/core/browser), linked to its
+// session by this id.
 package session
 
 import "berth/internal/core/machine"

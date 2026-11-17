@@ -1,4 +1,5 @@
-// Package socket serves the API on a Unix socket only the daemon's own user can use.
+// Package socket serves the API on a Unix socket only the daemon's own user can use (Listen), and
+// on a second, group reachable socket that only the agent user can use (ListenShared).
 package socket
 
 import (

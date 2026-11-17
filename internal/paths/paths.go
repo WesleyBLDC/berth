@@ -1,4 +1,5 @@
-// Package paths resolves where Berth keeps its socket and database.
+// Package paths resolves where Berth keeps its sockets and database, and finds the binaries
+// installed beside the running one.
 package paths
 
 import (

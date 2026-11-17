@@ -1,5 +1,6 @@
-// Package berthd is the daemon's imperative shell: it opens adapters, runs the daemon machine,
-// and performs the machine's effects. All decisions live in internal/core.
+// Package berthd is the daemon's imperative shell: it opens adapters, runs every machine's actors
+// and performs their effects. Decisions about states live in internal/core; the shell keeps what
+// the effects need between events (in memory facts, tickets, limits, timers and process handles).
 package berthd
 
 import (

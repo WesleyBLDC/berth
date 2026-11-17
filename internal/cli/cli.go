@@ -117,7 +117,8 @@ type Env struct {
 	// ConnectTrusted is Connect, refusing any server but the signed berthd; berth run uses it,
 	// since it hands what berthd answers to berth-native.
 	ConnectTrusted func(ctx context.Context) (*client.Client, error)
-	// Read is nil until berth-native is wired in; berth run refuses without it.
+	// Read reads a value through berth-native (cmd/berth wires native.Read); tests leave it nil or
+	// fake it, and berth run --env refuses without it.
 	Read ValueReader
 	// StartProxy starts berth-proxy for berth run --proxy, which refuses without it.
 	StartProxy ProxyStarter
@@ -323,4 +324,4 @@ func reportError(w io.Writer, err error, name, target string) int {
 	return ExitError
 }
 
-var errNoReader = errors.New("berth run cannot read secrets yet: berth-native is not wired in")
+var errNoReader = errors.New("berth run cannot read secrets: this build has no berth-native reader")

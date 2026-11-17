@@ -1,4 +1,5 @@
-// Package sqlite stores state machines, their audit trail and the request log in one SQLite file.
+// Package sqlite stores state machines, their audit trail, the request log and the secret, grant,
+// proxy session and agent session records in one SQLite file.
 package sqlite
 
 import (

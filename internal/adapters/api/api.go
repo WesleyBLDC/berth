@@ -1,5 +1,5 @@
-// Package api serves berth.v1 over Connect. Handlers validate, then call the core through
-// narrow functions; they hold no state of their own.
+// Package api serves berth.v1 over Connect. Handlers validate, then call the daemon through
+// narrow interfaces; the only state they hold is the set of request IDs in flight.
 package api
 
 import (
