@@ -584,3 +584,37 @@ func TestReplacedBrowserStaysLive(t *testing.T) {
 		t.Fatalf("inspect: %v %v", got.GetSession().GetBrowser(), err)
 	}
 }
+
+// A session is published with its facts, so a stop that arrives before the scan applies its
+// first observation still refuses another user's browser.
+func TestANewSessionIsPublishedWithItsFacts(t *testing.T) {
+	f := newBrowsersFixture(t)
+	theirs := row(310, 1, 502, shellPath)
+	theirs.Opaque = true
+	f.procs.Set(append(slices.Clone(f.rows), theirs)...)
+	seen, err := discovery.NewScanner(f.procs, testUID).Scan(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	i := slices.IndexFunc(seen, func(o discovery.Observed) bool { return o.Root.PID == 310 })
+	if _, err := f.b.track(t.Context(), seen[i]); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := f.b.StopSession(t.Context(), &berthv1.StopSessionRequest{Id: seen[i].ID, Force: true}); !errors.Is(err, api.ErrSessionNotStoppable) {
+		t.Fatalf("stop of another user's browser before its first observation: %v", err)
+	}
+}
+
+// Two steps can return in either order; the kept state is the later one's.
+func TestAnOlderStepDoesNotOverwriteALaterState(t *testing.T) {
+	f := newBrowsersFixture(t)
+	id := f.id(100)
+	f.b.recorded(id, ports.TransitionRecord{Version: 5, To: string(session.Stopping), At: bootTime})
+	f.b.recorded(id, ports.TransitionRecord{Version: 4, To: string(session.Active), At: bootTime})
+	f.b.mu.Lock()
+	st := f.b.live[id].disc.State
+	f.b.mu.Unlock()
+	if st != session.Stopping {
+		t.Fatalf("kept state %s, want Stopping from the later step", st)
+	}
+}

@@ -92,6 +92,9 @@ type tracked struct {
 	disc  discovery.Tracked
 	obs   discovery.Observed
 	since time.Time
+	// version is the machine version disc.State and since come from, so a step that finishes
+	// after a later one cannot put an older state back.
+	version int64
 }
 
 func newBrowsers(ctx context.Context, d browsersDeps) *browsers {
@@ -214,7 +217,9 @@ func (b *browsers) track(ctx context.Context, o discovery.Observed) (*tracked, e
 	if found {
 		st = session.State(saved.State)
 	}
-	t = &tracked{disc: discovery.Tracked{State: st, Unsaved: !found}, since: b.Clock.Now()}
+	// The facts are set before the session is published, so a stop in between still sees whose
+	// browser it is.
+	t = &tracked{disc: discovery.Tracked{State: st, Unsaved: !found}, obs: o, since: b.Clock.Now(), version: saved.Version}
 	if hist, err := b.Store.History(ctx, entity, 1); err == nil && len(hist) == 1 {
 		t.since = hist[0].At
 	}
@@ -267,13 +272,19 @@ func (b *browsers) send(ctx context.Context, id string, e session.Event) {
 		b.Log.Debug("session event not applied", "session", id, "event", e.Kind, "err", err)
 		return
 	}
+	b.recorded(id, rec)
+}
+
+// recorded keeps the state a step reached, unless a later step's state is already kept: two
+// steps on one session finish one after the other, but their callers can get here in any order.
+func (b *browsers) recorded(id string, rec ports.TransitionRecord) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	t, ok := b.live[id]
-	if !ok {
+	if !ok || rec.Version <= t.version {
 		return
 	}
-	t.disc.State, t.since = session.State(rec.To), rec.At
+	t.disc.State, t.since, t.version = session.State(rec.To), rec.At, rec.Version
 	if t.disc.State == session.Stopped {
 		b.end(id, t)
 	}
