@@ -85,7 +85,7 @@ Build tag: `berth_e2e` compiles the test only pin rule, the test root of `berth-
 - Use `t.Context()` and `exec.CommandContext`; socket paths must stay under 104 bytes, so use `os.MkdirTemp("", ...)`, not `t.TempDir()`, for a `BERTH_HOME`.
 - Never use real secrets; tests plant a canary value and assert it never appears in output.
 - `Berth.app`'s Swift models are hand written (ADR 0019); a change to a message the app reads reruns `go test ./internal/cli -run TestSwiftFixtures -update-swift` and updates the Swift models and tests. Swift tests never launch the app or ask for a permission.
-- Every injected dependency's real default gets its own test against the real thing (the kernel, a real process, real SQLite): a fake only proves the caller, and the reviews found most bugs in defaults that only fakes had exercised.
+- Every injected dependency's real default gets its own test against the real thing (the kernel, a real process, real SQLite): a fake only proves the caller.
 - Browser tests find an installed Chromium (`BERTH_E2E_CHROME`, then the Playwright and Puppeteer caches) and skip with the reason when there is none; they install nothing and kill only the pids they started.
 
 ## Working beside other agents
@@ -98,7 +98,7 @@ Build tag: `berth_e2e` compiles the test only pin rule, the test root of `berth-
 
 ## Lessons from the review rounds
 
-Each of these was found more than once; the skills carry the detail.
+What the parallel workers and their reviews learned; the skills carry the detail.
 
 - **Cleanup hangs off the actor, on berthd's context.** Free what an entity held (timers, watches, slots, child processes, other entities) from the actors kit's `saved` hook once the final state is saved, on its own goroutine with `berthd`'s context, never from the call that caused the end: a caller that cancels must not leave work half stopped.
 - **A pid is not a process.** Name a process by pid and start time or by its audit token, watch exits with kqueue `NOTE_EXIT`, and reap a child only after everything keyed by its pid is gone.

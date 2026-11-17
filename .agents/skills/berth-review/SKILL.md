@@ -24,7 +24,7 @@ Read the brief or plan item, then the diff (`git diff <base>...HEAD`), then the 
 
 ## What the review rounds kept finding
 
-Each of these got past a first review at least twice; look for them by name.
+The reviews of E2b to M4 kept finding these; look for them by name.
 
 10. **Parser differentials.** Berth checks a message and another program then parses it (CDP JSON to Chrome, HTTP to an upstream, `procargs2` from the kernel, a URL to Chrome's parser). Block when the two could read it differently: duplicate keys, keys that differ by case, numbers in another form, stripped whitespace, a layout that is guessed. The fix refuses the input; it never re-encodes or guesses.
 11. **Pid reuse.** A pid used without its start time or an audit token; a signal, a watch or a map keyed by pid alone; a child reaped while something still names its pid; a kill of a process group whose leader is already reaped.
