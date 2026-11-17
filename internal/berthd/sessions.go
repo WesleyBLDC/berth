@@ -1,6 +1,7 @@
 package berthd
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"log/slog"
@@ -449,9 +450,11 @@ func (b *browsers) ListSessions(_ context.Context, req *berthv1.ListSessionsRequ
 	return resp, nil
 }
 
+// sortSessions orders by the browser's start, then by id, so equal start times keep one order
+// from call to call.
 func sortSessions(sessions []*berthv1.Session) {
 	slices.SortFunc(sessions, func(x, y *berthv1.Session) int {
-		return x.GetBrowser().GetStartedAt().AsTime().Compare(y.GetBrowser().GetStartedAt().AsTime())
+		return cmp.Or(x.GetBrowser().GetStartedAt().AsTime().Compare(y.GetBrowser().GetStartedAt().AsTime()), strings.Compare(x.GetId(), y.GetId()))
 	})
 }
 

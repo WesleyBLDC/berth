@@ -644,3 +644,17 @@ func TestBootRearmsAStoppingSession(t *testing.T) {
 		t.Fatalf("signals %v, want %v", got, want)
 	}
 }
+
+// Sessions whose browsers started at the same moment come back in one order every time.
+func TestListOrderIsStableForEqualStartTimes(t *testing.T) {
+	var sessions []*berthv1.Session
+	for _, id := range []string{"9-1", "3-1", "7-1", "1-1", "5-1", "8-1", "2-1", "6-1", "4-1"} {
+		sessions = append(sessions, &berthv1.Session{Id: id})
+	}
+	sortSessions(sessions)
+	for i := 1; i < len(sessions); i++ {
+		if sessions[i-1].GetId() > sessions[i].GetId() {
+			t.Fatalf("order %v", sessions)
+		}
+	}
+}
