@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -702,12 +703,14 @@ var (
 	}
 )
 
-// ProfileInUse reports whether a live browser the scan saw uses dir as its profile folder.
+// ProfileInUse reports whether a live browser the scan saw uses dir as its profile folder,
+// comparing cleaned absolute paths with symlinks resolved on both sides.
 func (b *browsers) ProfileInUse(dir string) bool {
+	want := profilePath(dir)
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for _, t := range b.live {
-		if t.disc.State != session.Stopping && t.obs.Signature.UserDataDir == dir {
+		if t.disc.State != session.Stopping && want != "" && profilePath(t.obs.Signature.UserDataDir) == want {
 			return true
 		}
 	}
@@ -718,11 +721,15 @@ func (b *browsers) ProfileInUse(dir string) bool {
 // forced stop, and returns how many it asked to stop. Boot recovery uses it for the browsers a
 // previous berthd launched on Berth's profiles and lost.
 func (b *browsers) StopUnder(ctx context.Context, root string) int {
-	prefix := strings.TrimSuffix(root, "/") + "/"
+	prefix := profilePath(root)
+	if prefix == "" {
+		return 0
+	}
+	prefix = strings.TrimSuffix(prefix, "/") + "/"
 	b.mu.Lock()
 	var ids []string
 	for id, t := range b.live {
-		if !t.obs.OtherUser && strings.HasPrefix(t.obs.Signature.UserDataDir, prefix) {
+		if !t.obs.OtherUser && strings.HasPrefix(profilePath(t.obs.Signature.UserDataDir), prefix) {
 			ids = append(ids, id)
 		}
 	}
@@ -731,4 +738,17 @@ func (b *browsers) StopUnder(ctx context.Context, root string) int {
 		b.send(ctx, id, session.Event{Kind: session.StopRequested, Note: "left on a Berth profile"})
 	}
 	return len(ids)
+}
+
+// profilePath is a profile folder as a cleaned absolute path with symlinks resolved where the
+// folder exists, or "" for a relative path, whose base only its own process knows.
+func profilePath(p string) string {
+	if !filepath.IsAbs(p) {
+		return ""
+	}
+	p = filepath.Clean(p)
+	if real, err := filepath.EvalSymlinks(p); err == nil {
+		return real
+	}
+	return p
 }

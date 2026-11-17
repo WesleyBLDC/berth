@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -64,7 +65,7 @@ func browserLaunch(ctx context.Context, args []string, env Env) int {
 	fmt.Fprintf(env.Stdout, "browser %s on profile %s is %s\n", b.GetId(), b.GetProfile(), browserStateName(b.GetState()))
 	fmt.Fprintf(env.Stdout, "endpoint %s\n", b.GetCdpEndpoint())
 	if *tokenFile != "" {
-		if err := os.WriteFile(*tokenFile, []byte(resp.GetCdpToken()+"\n"), 0o600); err != nil {
+		if err := writeNewFile(*tokenFile, []byte(resp.GetCdpToken()+"\n")); err != nil {
 			fmt.Fprintf(env.Stderr, "could not write the token file: %v\n", err)
 			return ExitError
 		}
@@ -74,6 +75,20 @@ func browserLaunch(ctx context.Context, args []string, env Env) int {
 	}
 	fmt.Fprintln(env.Stderr, "the token is shown only now; send it in the X-Berth-Token header, for example Playwright MCP's --cdp-header")
 	return ExitOK
+}
+
+// writeNewFile creates path for the person alone: never over an existing file and never
+// through a symlink, so the token cannot be steered into a file someone else can read.
+func writeNewFile(path string, b []byte) error {
+	f, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL|syscall.O_NOFOLLOW, 0o600) //nolint:gosec // the person names the file
+	if err != nil {
+		return err
+	}
+	if _, err := f.Write(b); err != nil {
+		_ = f.Close()
+		return err
+	}
+	return f.Close()
 }
 
 func browserList(ctx context.Context, args []string, env Env) int {

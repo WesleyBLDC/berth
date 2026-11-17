@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"slices"
 	"testing"
 	"time"
@@ -517,10 +519,34 @@ func TestBrowsersOnBerthProfilesAreFoundAndStopped(t *testing.T) {
 	if !f.b.ProfileInUse(root+"/work") || f.b.ProfileInUse(root+"/other") {
 		t.Fatal("ProfileInUse must name exactly the profile a scanned browser uses")
 	}
+	// The same folder written another way is the same profile.
+	for _, same := range []string{root + "/work/", root + "/./work", root + "/x/../work"} {
+		if !f.b.ProfileInUse(same) {
+			t.Fatalf("ProfileInUse(%q) must match %s/work", same, root)
+		}
+	}
 	if n := f.b.StopUnder(t.Context(), root); n != 1 {
 		t.Fatalf("StopUnder asked %d browsers to stop, want 1", n)
 	}
 	if got := f.procs.Signals(); !slices.Equal(got, []testutil.SentSignal{{PID: 400, Signal: ports.SignalTerm}}) {
 		t.Fatalf("signals %v, want SIGTERM to 400 only", got)
+	}
+}
+
+// A profile reached through a symlink (/var is /private/var on macOS) is the same profile.
+func TestProfileInUseResolvesSymlinks(t *testing.T) {
+	f := newBrowsersFixture(t)
+	tmp := t.TempDir()
+	dir := filepath.Join(tmp, "p")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	real, err := filepath.EvalSymlinks(dir)
+	if err != nil || real == dir {
+		t.Skipf("the temporary folder %s has no symlink in its path", tmp)
+	}
+	f.set(t, append(slices.Clone(f.rows), row(400, 1, testUID, shellPath, shellPath, "--remote-debugging-pipe", "--user-data-dir="+dir))...)
+	if !f.b.ProfileInUse(real) {
+		t.Fatalf("ProfileInUse(%s) must match a browser using %s", real, dir)
 	}
 }

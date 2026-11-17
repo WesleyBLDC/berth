@@ -106,3 +106,28 @@ fedcba9876543210  old      closed (launch failed: the browser did not start)  - 
 		}
 	}
 }
+
+// The token file is created new: an existing file or a symlink is refused, not written through.
+func TestBrowserLaunchTokenFileIsNeverReused(t *testing.T) {
+	dir := t.TempDir()
+	existing := filepath.Join(dir, "existing")
+	if err := os.WriteFile(existing, []byte("keep"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(filepath.Join(dir, "elsewhere"), link); err != nil {
+		t.Fatal(err)
+	}
+	for _, path := range []string{existing, link} {
+		r := invokeBrowsers(t, &fakeBrowsers{}, "browser", "launch", "--token-file", path, "work")
+		if r.code != ExitError || strings.Contains(r.stdout+r.stderr, cliToken) {
+			t.Fatalf("%s: %d %q %q", path, r.code, r.stdout, r.stderr)
+		}
+	}
+	if b, _ := os.ReadFile(existing); string(b) != "keep" {
+		t.Fatal("an existing file was overwritten")
+	}
+	if _, err := os.Lstat(filepath.Join(dir, "elsewhere")); err == nil {
+		t.Fatal("the token was written through a symlink")
+	}
+}
