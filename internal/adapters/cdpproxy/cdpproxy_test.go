@@ -230,3 +230,22 @@ func TestASlowAgentIsDroppedPastTheByteLimit(t *testing.T) {
 		t.Fatalf("the agent got all %d replies (%d MiB); the byte limit must drop it first", got, got)
 	}
 }
+
+func TestDownloadBehaviourIsAnsweredByTheProxy(t *testing.T) {
+	fb, endpoint, _ := serve(t)
+	ws, _, err := dial(t, endpoint, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ws.CloseNow() }()
+	if err := ws.Write(t.Context(), websocket.MessageText, []byte(`{"id":4,"method":"Browser.setDownloadBehavior","params":{"behavior":"allow","downloadPath":"/Users/you"}}`)); err != nil {
+		t.Fatal(err)
+	}
+	m := read(t, ws)
+	if m["id"] != float64(4) || m["error"] != nil || m["result"] == nil {
+		t.Fatalf("reply = %v, want an empty success", m)
+	}
+	if len(fb.Sent()) != 0 {
+		t.Fatalf("browser got %q; the download behaviour must never reach it", fb.Sent())
+	}
+}

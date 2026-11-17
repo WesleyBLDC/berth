@@ -215,3 +215,21 @@ func TestListsDoNotOverlap(t *testing.T) {
 		}
 	}
 }
+
+// The proxy answers the download behaviour itself; Check still refuses it, so it never reaches
+// Chrome, and a Berth session or id is not answered.
+func TestDownloadBehaviourIsAnsweredNotForwarded(t *testing.T) {
+	for _, method := range []string{"Browser.setDownloadBehavior", "Page.setDownloadBehavior"} {
+		m := cdppolicy.Message{ID: 1, Method: method, Params: []byte(`{"behavior":"allowAndName","downloadPath":"/Users/you"}`)}
+		if !cdppolicy.Answers(m, ownOnly) || cdppolicy.Check(m, ownOnly) == "" {
+			t.Fatalf("%s must be answered by the proxy and refused by Check", method)
+		}
+		if cdppolicy.Answers(cdppolicy.Message{ID: 1, Method: method, SessionID: "BERTH-SESSION"}, ownOnly) ||
+			cdppolicy.Answers(cdppolicy.Message{ID: cdppolicy.FirstBerthID, Method: method}, ownOnly) {
+			t.Fatalf("%s on a Berth session or id must not be answered", method)
+		}
+	}
+	if cdppolicy.Answers(cdppolicy.Message{ID: 1, Method: "Browser.close"}, ownOnly) {
+		t.Fatal("only the download behaviour is answered")
+	}
+}

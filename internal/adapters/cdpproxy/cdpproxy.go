@@ -181,8 +181,10 @@ func (e *endpoint) socket(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
-	var allowed, refused int
-	defer func() { e.log.Info("CDP connection ended", "browser", e.id, "allowed", allowed, "refused", refused) }()
+	var allowed, refused, answered int
+	defer func() {
+		e.log.Info("CDP connection ended", "browser", e.id, "allowed", allowed, "refused", refused, "answered", answered)
+	}()
 	for {
 		_, raw, err := ws.Read(ctx)
 		if err != nil {
@@ -192,6 +194,11 @@ func (e *endpoint) socket(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			_ = ws.Close(websocket.StatusPolicyViolation, "malformed CDP message")
 			return
+		}
+		if cdppolicy.Answers(m, e.conn.OwnSession) {
+			answered++
+			push(emptyResult(m))
+			continue
 		}
 		if why := cdppolicy.Check(m, e.conn.OwnSession); why != "" {
 			refused++
@@ -206,6 +213,16 @@ func (e *endpoint) socket(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+// emptyResult is the success reply for a method the proxy answers itself.
+func emptyResult(m cdppolicy.Message) []byte {
+	reply := map[string]any{"id": m.ID, "result": map[string]any{}}
+	if m.SessionID != "" {
+		reply["sessionId"] = m.SessionID
+	}
+	b, _ := json.Marshal(reply)
+	return b
 }
 
 // refusal is the CDP error reply for a refused message, so the client's call ends instead of

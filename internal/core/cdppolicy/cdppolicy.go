@@ -222,6 +222,17 @@ var Denied = map[string]string{
 	"Autofill.*":                    "autofill belongs to Berth",
 }
 
+// Answered names methods the proxy answers itself with an empty success and never forwards:
+// Playwright sets the download behaviour when it connects, and refusing it would stop the
+// connection, while downloads stay in the profile's own folder through its preferences. Check
+// still refuses them, so nothing forwards them by mistake.
+var Answered = []string{"Browser.setDownloadBehavior", "Page.setDownloadBehavior"}
+
+// Answers reports whether the proxy answers m itself, for a message it does not refuse otherwise.
+func Answers(m Message, own func(sessionID string) bool) bool {
+	return slices.Contains(Answered, m.Method) && m.ID >= 0 && m.ID < FirstBerthID && !own(m.SessionID)
+}
+
 // Check decides one message. own reports whether a CDP session id is one Berth attached to
 // itself. It returns "" when the message may pass, otherwise why it is refused.
 func Check(m Message, own func(sessionID string) bool) string {
