@@ -1,43 +1,89 @@
 # Berth: agent instructions
 
 Berth is a local macOS app that lists every browser agents, tests and scrapers have open, lets a person watch and take over any of them, and brokers Keychain secrets to browsers and terminals without agents ever reading them.
+The full design is in the wiki (start at the reading order on https://wiki.wesleybldc.com/wiki-artifacts/berth); the decisions that bind code are in `docs/adr/`, and the current milestone's plan is in `docs/plans/`.
+A lead session reads `lead.toml`; workers can ignore it.
 
-The design lives in the wiki and in `docs/adr/`; read them before changing behaviour:
-https://wiki.wesleybldc.com/wiki-artifacts/berth (start with the reading order on that page).
+## Done means
 
-## Rules that are never negotiable
+`make check` ends with `check: PASS`.
+It runs every linter and hook, `go mod verify`, `buf breaking`, unit tests with the race detector, the end to end tests with the real binaries, and `govulncheck`.
+Paste its last lines in your report; a failure is investigated to its root cause, never rerun and hoped.
 
-- Every stateful thing is an explicit state machine: one `state` field, a closed set of events, one transition table. No boolean flags whose combinations mean something.
-- Transitions are pure functions returning the next state and a list of effects; they do no I/O. The effect runner does the I/O.
-- `internal/core` never imports an adapter. `depguard` enforces it.
-- Observations (process seen, page activity) arrive as events; nothing writes state directly.
-- Secrets never cross the API, never enter a Go string, never reach logs, errors or agent replies. Only `berth-native` and secret helpers read them.
-- Agents can store and use secrets, never read them. Power actions need Touch ID.
-- Approval prompts are built only from facts the daemon verified, never from text an agent sent.
-- No third party code runs inside `berthd`.
-- Nothing is pushed to a remote until the open source milestone (M8).
+| Command | Use |
+|---|---|
+| `make test` | Unit tests, seconds; run after every change |
+| `make e2e` | Real `berthd` and `berth` binaries in a temporary `BERTH_HOME` |
+| `make lint` | Every linter, including untracked files |
+| `make fmt` | Format Go, Protobuf, Swift, Python |
+| `make gen` | Regenerate `gen/` after editing `proto/` |
+| `make build` | `bin/berthd` and `bin/berth` |
 
-## How to make a change
+## Where things live
 
-1. Change the contract first: the Protobuf schema in `proto/` or the transition table of the machine involved.
-2. Write or update the acceptance tests for it.
-3. Change the core, then adapters, then clients.
-4. Run `make check` (lint, `buf lint`, `buf breaking`, tests) before committing.
-5. If the change alters a decision, add or supersede a record in `docs/adr/` and update the wiki page.
+| Path | Holds | May import |
+|---|---|---|
+| `proto/berth/v1/` | The API contract: services, messages, validation rules, the `agent` method option, typed error reasons | |
+| `gen/` | Generated code, committed; never edit by hand | |
+| `internal/core/ports/` | Interfaces the core needs (Store, Clock, RequestLog) | stdlib only |
+| `internal/core/machine/` | The state machine kit: `Transition`, `Actor`, `machinetest.Walk` | ports |
+| `internal/core/<machine>/` | One package per state machine (today `daemon`) | machine, ports |
+| `internal/adapters/<name>/` | Implementations of ports and the API (`sqlite`, `socket`, `api`, `clock`) | core, gen |
+| `internal/berthd/` | The daemon shell: wires adapters, runs machines, performs effects | everything |
+| `internal/client/` | The Go client every Go tool uses to reach the daemon | gen, api |
+| `internal/testutil/` | Fakes for ports (in memory store, fake clock) | ports |
+| `cmd/` | `berthd` and `berth` entry points, thin | internal |
+| `test/e2e/` | End to end tests that build and run the binaries | internal, gen |
+| `docs/adr/` | One decision record per decision | |
+
+## Invariants (reviewers block on these)
+
+1. **Explicit state machines.** Every stateful thing has one `state` field, a closed set of events, and one transition function returning next state and effects. No booleans whose combinations mean something. Use the `berth-state-machine` skill.
+2. **Transitions are pure.** No I/O, no `time.Now`, no logging inside a transition; the shell runs effects.
+3. **Persist before acting.** The actor saves state and event in one transaction before any effect runs.
+4. **State and event names are stored data.** Renaming one breaks existing databases; add new names and migrate instead.
+5. **The core imports no adapter.** `depguard` enforces it; `forbidigo` bans `time.Now` and `fmt.Print` in `internal/core`.
+6. **Contract first.** A behaviour change starts in `proto/` or a transition table, then tests, then code.
+7. **Secrets never cross the API**, never live in a Go string, never reach logs, errors or agent replies. Only `berth-native` and secret helpers read them.
+8. **Agents store and use secrets, never read them.** Power actions need Touch ID. Approval text is built only from facts the daemon verified.
+9. **Agent methods are opt in.** Only methods with `(berth.agent) = true` are reachable by agents, and `TestAgentSurface` pins the list.
+10. **Mutating calls are idempotent** through a `request_id` and the request log.
+11. **No third party code runs inside `berthd`.**
+12. **Nothing is pushed** until the open source milestone (M8). Commit locally.
+
+## Making a change
+
+1. Read the plan for the milestone in `docs/plans/` and the ADRs it names.
+2. Load the skill for the kind of change: `berth-add-rpc`, `berth-state-machine`, `berth-port-adapter`, `berth-milestone`; reviewers load `berth-review`.
+3. Change the contract, write the failing test, then the code. A new branch of logic gets a test that fails without it.
+4. `make check`, then commit with a plain message (no `type:` prefix, no co-author trailer).
+5. If the change alters a decision, add or supersede an ADR and say which wiki page needs the same change.
+
+## Testing
+
+- Unit tests for transition tables (always with `machinetest.Walk` and a pinned legal pair count), stores and parsers.
+- End to end tests drive the real binaries; prefer one more e2e case over mocks.
+- Use `t.Context()` and `exec.CommandContext`; socket paths must stay under 104 bytes, so use `os.MkdirTemp("", ...)`, not `t.TempDir()`, for a `BERTH_HOME`.
+- Never use real secrets; tests plant a canary value and assert it never appears in output.
+
+## Working beside other agents
+
+- Each worker builds in its own git worktree on its own branch; never edit the main checkout.
+- Regenerate `gen/` with `make gen` instead of resolving conflicts in it by hand.
+- SQLite migrations are numbered; take the next free number when you rebase, and the contiguity test catches gaps.
+- `docs/agentic-work.md` explains how work is split so agents rarely touch the same files.
 
 ## Lint and hooks
 
-- `make hooks` installs the prek git hooks; `make lint` runs every hook over every file; `make fmt` formats Go, Swift, Protobuf and Python.
-- Go: `golangci-lint` v2 with `.golangci.yml` (gofumpt, goimports, exhaustive, depguard keeping `internal/core` free of adapters, forbidigo banning `time.Now` in the core, gosec and more).
-- Swift: `swift format` from the Xcode toolchain with `.swift-format`.
-- Protobuf: `buf format` and `buf lint`.
-- Python and shell: `ruff` and `shellcheck`.
-- Every file: trailing whitespace, final newline, private key detection, `gitleaks`, and no em or en dashes in Markdown.
-- Claude Code hooks in `.claude/settings.json`: after every edit the file is formatted and linted, and problems come straight back to the agent; a guard refuses Bash commands that would print a Keychain secret or put one on the command line.
+- Go: `golangci-lint` v2 (`.golangci.yml`): gofumpt (told `module-path: berth`), goimports, exhaustive, depguard, forbidigo, gosec, errorlint, noctx, revive and more. `revive`'s exported comment rule is off on purpose.
+- Protobuf: `buf format`, `buf lint` (STANDARD), `buf breaking` (FILE).
+- Swift: `swift format` from the Xcode toolchain. Python and shell: `ruff`, `shellcheck`.
+- Every file: whitespace, final newline, private keys, `gitleaks`, no em or en dashes in Markdown.
+- prek runs these as git hooks and only sees tracked files; `make lint` also lints untracked Go and Protobuf.
+- Claude Code hooks (`.claude/settings.json`) format and lint each file after an edit and refuse Bash commands that would print a Keychain secret.
 
 ## Writing style
 
-- Plain commit messages, no `type:` prefixes, no co-author trailers.
-- No dashes as punctuation in docs or messages; hyphens inside words are fine.
+- No dashes as punctuation in docs, comments or messages; hyphens inside words are fine.
 - One sentence per line in long Markdown.
 - Comments explain why, never what.

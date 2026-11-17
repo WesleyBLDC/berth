@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"testing"
 	"time"
@@ -143,6 +144,20 @@ func churn(path string) {
 		r := ports.TransitionRecord{Entity: "churn", Kind: "test", Version: v, Event: "Tick", From: fmt.Sprint(v - 1), To: fmt.Sprint(v), At: time.Now()}
 		if err := s.SaveTransition(ctx, r); err != nil {
 			os.Exit(3)
+		}
+	}
+}
+
+// TestMigrationsAreContiguous catches two agents taking the same migration number, or a gap.
+func TestMigrationsAreContiguous(t *testing.T) {
+	names, err := filepath.Glob("migrations/*.sql")
+	if err != nil || len(names) == 0 {
+		t.Fatalf("no migrations: %v", err)
+	}
+	for i, name := range names {
+		want := fmt.Sprintf("%04d_", i+1)
+		if !strings.HasPrefix(filepath.Base(name), want) {
+			t.Fatalf("migration %d is %s; numbers must run 0001, 0002, ... with no gaps or repeats", i+1, filepath.Base(name))
 		}
 	}
 }

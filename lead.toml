@@ -1,0 +1,15 @@
+# Lead mode settings for Berth. Workers can ignore this file.
+name = "berth"
+done = "make check"
+pass_line = "check: PASS"
+leash = "held"
+ci = false
+worker = "berth-worker"
+reviewer = "berth-reviewer"
+test_by = "tester"
+reviewer_may_run = "make test"
+cap = 3
+per_message = 2
+shared_files = "serialize"
+plans = "the Berth wiki pages under wiki-artifacts/berth"
+attention_floor = ["proto/**:approve", "internal/core/**:approve", "docs/adr/**:approve"]

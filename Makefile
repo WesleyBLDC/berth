@@ -14,7 +14,9 @@ test: ## Unit tests with the race detector
 e2e: ## End to end tests with the real binaries
 	go test -count=1 ./test/e2e/...
 
-lint: ## Every linter and hook over every file
+lint: ## Every linter and hook over every file, untracked Go and Protobuf included
+	scripts/lint-go.sh
+	scripts/lint-proto.sh
 	prek run --all-files
 
 fmt: ## Format Go, Swift, Protobuf and Python
@@ -33,6 +35,7 @@ breaking: ## Schema changes that would break existing clients
 	@if git rev-parse --verify -q main >/dev/null && git cat-file -e main:buf.yaml 2>/dev/null; then buf breaking --against '.git#branch=main'; else echo "no schema on main yet"; fi
 
 check: lint verify breaking test e2e vuln ## Everything that must pass before a commit
+	@echo "check: PASS"
 
 hooks: ## Install the git hooks and prepare their environments
 	prek install
