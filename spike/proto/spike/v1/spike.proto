@@ -1,0 +1,41 @@
+syntax = "proto3";
+
+package spike.v1;
+
+option go_package = "berth/spike/go/gen/spike/v1;spikev1";
+
+message CountRequest {
+  int32 count = 1;
+}
+
+message CountResponse {
+  int32 seq = 1;
+  bytes payload = 2;
+}
+
+message SendInputRequest {
+  int32 seq = 1;
+  string kind = 2;
+  double x = 3;
+  double y = 4;
+}
+
+message SendInputResponse {
+  int32 received = 1;
+}
+
+message WatchScreenRequest {
+  int32 max_width = 1;
+}
+
+message WatchScreenResponse {
+  int32 seq = 1;
+  bytes jpeg = 2;
+  int64 sent_unix_micros = 3;
+}
+
+service SpikeService {
+  rpc Count(CountRequest) returns (stream CountResponse);
+  rpc SendInput(stream SendInputRequest) returns (SendInputResponse);
+  rpc WatchScreen(WatchScreenRequest) returns (stream WatchScreenResponse);
+}
