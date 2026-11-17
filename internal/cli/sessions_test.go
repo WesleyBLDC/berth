@@ -9,6 +9,7 @@ import (
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connectinprocess"
+	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	berthv1 "berth/gen/berth/v1"
@@ -182,5 +183,21 @@ func TestSessionTextIsEscaped(t *testing.T) {
 	r := invokeSessions(t, &fakeSessions{list: list}, "inspect", "100-1794945540000000")
 	if !strings.Contains(r.stdout, `"/tmp/p\x1b[2J\nFAKE  line"`) || !strings.Contains(r.stdout, `"/x/chrome\u202e\x7f\u0085"`) {
 		t.Fatalf("profile or executable not shown escaped:\n%s", r.stdout)
+	}
+}
+
+// --json escapes what a terminal would act on that protojson leaves raw: C1 controls, DEL and
+// bidi overrides, outside the BMP too, and the JSON still reads back the same.
+func TestJSONEscapesControlAndFormatRunes(t *testing.T) {
+	odd := "/tmp/a\u0085b\u007fc\u202ed\U000e0001e"
+	list := sampleSessions()
+	list[0].UserDataDir = odd
+	r := invokeSessions(t, &fakeSessions{list: list}, "ps", "--json")
+	if r.code != ExitOK || strings.ContainsAny(r.stdout, "\u0085\u007f\u202e\U000e0001") {
+		t.Fatalf("code %d, stdout %q", r.code, r.stdout)
+	}
+	var back berthv1.ListSessionsResponse
+	if err := protojson.Unmarshal([]byte(r.stdout), &back); err != nil || back.GetSessions()[0].GetUserDataDir() != odd {
+		t.Fatalf("read back %q: %v", back.GetSessions()[0].GetUserDataDir(), err)
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"text/tabwriter"
 	"time"
 	"unicode"
+	"unicode/utf16"
 	"unicode/utf8"
 
 	"google.golang.org/protobuf/encoding/protojson"
@@ -267,14 +268,27 @@ func argsName(s *berthv1.Session) string {
 	return "read"
 }
 
-// printJSON prints a response as JSON, for --json.
+// printJSON prints a response as JSON, for --json, with every rune that is not graphic escaped:
+// protojson escapes C0 controls but prints C1 controls, DEL and format characters such as bidi
+// overrides as they are, and a terminal acts on those. Outside its strings JSON holds only ASCII
+// punctuation, spaces and newlines, so escaping by rune keeps the document the same.
 func printJSON(env Env, m proto.Message) int {
 	b, err := protojson.MarshalOptions{Multiline: true}.Marshal(m)
 	if err != nil {
 		fmt.Fprintln(env.Stderr, err)
 		return ExitError
 	}
-	fmt.Fprintf(env.Stdout, "%s\n", b)
+	var out strings.Builder
+	for _, r := range string(b) {
+		if r == '\n' || unicode.IsGraphic(r) {
+			out.WriteRune(r)
+			continue
+		}
+		for _, u := range utf16.Encode([]rune{r}) {
+			fmt.Fprintf(&out, `\u%04x`, u)
+		}
+	}
+	fmt.Fprintln(env.Stdout, out.String())
 	return ExitOK
 }
 
