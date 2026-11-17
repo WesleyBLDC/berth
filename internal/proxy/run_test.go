@@ -24,6 +24,7 @@ import (
 	berthv1 "berth/gen/berth/v1"
 	"berth/gen/berth/v1/berthv1connect"
 	"berth/internal/cli"
+	"berth/internal/proxyctl"
 )
 
 const sessionID = "0123456789abcdef0123456789abcdef"
@@ -136,7 +137,7 @@ func testDeps(t *testing.T, d *fakeDaemon, u *upstream, value string) Deps {
 
 type running struct {
 	stdin  *io.PipeWriter
-	ctl    cli.ProxyControl
+	ctl    proxyctl.Control
 	line   string
 	stderr *syncBuffer
 	done   chan result

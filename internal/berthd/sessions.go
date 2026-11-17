@@ -497,30 +497,43 @@ func (b *browsers) catchUp(ctx context.Context, cursor int64, send func(*berthv1
 
 // snapshot sends every live session and returns the cursor it is consistent with. The cursor is
 // read before the states, so no state is older than it; a change after it that the snapshot
-// already shows is applied again, which is harmless since a change carries the whole state.
+// already shows is applied again, which is harmless since a change carries the whole state. Only
+// the live sessions' rows are read, so a snapshot costs the same however long the history.
 func (b *browsers) snapshot(ctx context.Context, reason berthv1.SnapshotReason, send func(*berthv1.WatchSessionsResponse) error) (int64, error) {
 	last, err := b.Events.LastEventID(ctx)
 	if err != nil {
 		return 0, err
 	}
-	rows, err := b.List.EntitiesOfKind(ctx, session.Kind)
-	if err != nil {
-		return 0, err
-	}
-	states := make(map[string]session.State, len(rows))
-	for _, r := range rows {
-		states[r.Entity] = session.State(r.State)
-	}
-	snap := &berthv1.SessionsSnapshot{EventId: last, Reason: reason}
 	b.mu.Lock()
-	for id, t := range b.live {
-		s := sessionProto(t)
-		if st, ok := states[session.Entity(id)]; ok {
-			s.State = stateProto(st)
+	ids := make([]string, 0, len(b.live))
+	for id := range b.live {
+		ids = append(ids, id)
+	}
+	b.mu.Unlock()
+	snap := &berthv1.SessionsSnapshot{EventId: last, Reason: reason}
+	for _, id := range ids {
+		saved, found, err := b.Store.LoadState(ctx, session.Entity(id))
+		if err != nil {
+			return 0, err
+		}
+		b.mu.Lock()
+		t, ok := b.live[id]
+		if !ok {
+			t, ok = b.ended[id]
+		}
+		var s *berthv1.Session
+		if ok {
+			s = sessionProto(t)
+		}
+		b.mu.Unlock()
+		if s == nil {
+			continue
+		}
+		if found {
+			s.State = stateProto(session.State(saved.State))
 		}
 		snap.Sessions = append(snap.Sessions, s)
 	}
-	b.mu.Unlock()
 	sortSessions(snap.Sessions)
 	return last, send(&berthv1.WatchSessionsResponse{Update: &berthv1.WatchSessionsResponse_Snapshot{Snapshot: snap}})
 }

@@ -35,7 +35,7 @@ So a slow or stuck client holds one goroutine and at most one page of rows, neve
 ### The `Seen` event
 
 - `Seen` is legal only in `Discovered` and leads back to `Discovered` with no effect: 18 legal pairs, up from 17.
-- `discovery.Events` sends it on a session's first observation when the shell says the machine has no row yet (`Tracked.Unsaved`), before any other event of that scan; so every session has a row from first sight, and a session that already has rows (a restart, or one seen before M3) gets none.
+- `discovery.Events` sends it on a session's first observation when the shell says the machine has no row yet (`Tracked.Unsaved`), before any other event of that scan; so every session has a row from first sight, and a session that already has rows (seen again after a restart) gets none. An M2 session that stayed steady in `Discovered` has no row, so after the upgrade it gets one `Seen` at its next first observation, which is harmless: it changes nothing and only records the session.
 - The name is stored data from now on, like every state and event name.
 
 ### `WatchSessions`
@@ -66,7 +66,8 @@ So a slow or stuck client holds one goroutine and at most one page of rows, neve
 ### The TUI: `berth top`
 
 - `berth top` opens it; `berth` with no arguments still prints the usage and exits 2, so scripts that call `berth` by mistake never land in a full screen program.
-- Built on Bubble Tea v2 (`charm.land/bubbletea/v2` v2.1.1, released 2026-10-28), the only new direct module. `go.mod` had no TUI library, and ADR 0001 puts the TUI in Go. Lip Gloss is left out: the view is plain text with a `>` marker on the selected row, so the golden tests compare plain strings and can assert that no ESC byte reaches the screen at all. `govulncheck` runs over the new modules in `make check`.
+- Built on Bubble Tea v2 (`charm.land/bubbletea/v2` v2.1.1, released 2026-10-28), the only new direct module. `go.mod` had no TUI library, and ADR 0001 puts the TUI in Go. Lip Gloss is left out: the view is plain text with a `>` marker on the selected row, so the golden tests compare plain strings and can assert that no ESC byte reaches the screen at all. `govulncheck` (pinned at v1.9.0) runs over the new modules in `make check`. One of them, `github.com/charmbracelet/ultraviolet`, has no release: it comes in at the pseudo version `v0.0.0-20261008173134-6b8d4baf91b4` that Bubble Tea v2.1.1 pins.
+- `berth-proxy`, which holds secret values, links none of these modules: the JSON lines it exchanges with `berth` live in `internal/proxyctl`, not in `internal/cli`, and `TestBerthProxyLinksNoUIModules` runs `go list -deps` on it and fails on any `charm.land`, `charmbracelet` or `muesli` module.
 - The model, update and view live in `internal/cli/top.go`, beside `shown` and the name helpers `ps` and `inspect` use, so the TUI prints exactly what the CLI prints. They take no terminal: tests feed messages to `Update` and compare `View` with fixed sessions, a fixed clock and a fixed size.
 
 **Layout**, top to bottom: a header (how many sessions are live and stopped, and the stream's state: watching, or reconnecting with the error); the session list; a detail pane for the selected session; a key line and a status line.
@@ -168,6 +169,8 @@ Each part ends with `make check` passing and its own commit.
 - **Widths are counted in runes,** so a line holding East Asian wide characters can overflow the terminal by a few cells.
 - **No colour.** The selected row is marked with `>`, not highlighted; the brand palette can come with the Mac app's pass.
 - **Anything that can reach the socket can watch,** as with `ListSessions`; until session tokens (M4) the daemon cannot tell an agent running as the person from the person.
+- **Any client on the owner socket can hold all 16 streams,** and then `berth top` gets `RESOURCE_EXHAUSTED` until one closes; the limit is per daemon, not per caller.
+- **A snapshot reads one row per live session,** never the whole history, so `START` and `BEHIND` cost the same however many browsers came and went.
 
 ## Decisions for the maintainer
 

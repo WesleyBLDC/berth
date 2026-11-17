@@ -489,3 +489,18 @@ func TestWatchStreamsAreBounded(t *testing.T) {
 		t.Fatalf("stream %d: %v, want ErrTooManyWatchers", maxWatchers+1, err)
 	}
 }
+
+type refusingLister struct{}
+
+func (refusingLister) EntitiesOfKind(context.Context, string) ([]ports.EntityState, error) {
+	return nil, errors.New("a snapshot read every session ever seen")
+}
+
+// A snapshot reads the rows of live sessions only, so its cost does not grow with history.
+func TestSnapshotReadsOnlyLiveSessions(t *testing.T) {
+	f := newBrowsersFixture(t)
+	f.b.List = refusingLister{}
+	if snap := f.watch(t, 0).next(t).GetSnapshot(); len(snap.GetSessions()) != 3 {
+		t.Fatalf("snapshot %v", snap)
+	}
+}

@@ -355,3 +355,24 @@ func TestTopFitsTheTerminal(t *testing.T) {
 		t.Fatalf("key line not kept at the bottom: %q", lines[len(lines)-1])
 	}
 }
+
+// A panic in the stream goroutine ends berth top through Bubble Tea, which restores the terminal,
+// instead of killing the process.
+func TestTopQuitsCleanlyWhenItsStreamPanics(t *testing.T) {
+	m := newTop(t.Context(), topDeps{
+		watch: func(context.Context, int64) (sessionStream, error) { panic("boom") },
+		now:   func() time.Time { return topNow },
+	})
+	go m.watch()
+	msg := m.next()()
+	if _, ok := msg.(topFault); !ok {
+		t.Fatalf("got %#v, want topFault", msg)
+	}
+	_, cmd := m.Update(msg)
+	if cmd == nil {
+		t.Fatal("no command after a fault")
+	}
+	if _, quit := cmd().(tea.QuitMsg); !quit || m.fault == nil || !strings.Contains(m.fault.Error(), "boom") {
+		t.Fatalf("fault %v did not quit", m.fault)
+	}
+}

@@ -22,7 +22,7 @@ import (
 
 	berthv1 "berth/gen/berth/v1"
 	"berth/gen/berth/v1/berthv1connect"
-	"berth/internal/cli"
+	"berth/internal/proxyctl"
 )
 
 // Exit codes.
@@ -194,7 +194,7 @@ func run(ctx context.Context, d Deps) (int, []*Grant) {
 			placeholders[g.Placeholder] = Placeholder
 		}
 	}
-	line, err := json.Marshal(cli.ProxyControl{
+	line, err := json.Marshal(proxyctl.Control{
 		Port:         ln.Addr().(*net.TCPAddr).Port,
 		Credential:   credential,
 		CAFile:       caFile,
@@ -267,7 +267,7 @@ func readRequest(in *bufio.Reader) ([]string, error) {
 	if err != nil {
 		return nil, errors.New(`expected one line {"secrets":[...]}`)
 	}
-	var req cli.ProxyRequest
+	var req proxyctl.Request
 	dec := json.NewDecoder(bytes.NewReader(line))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&req); err != nil {

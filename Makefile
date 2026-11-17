@@ -37,7 +37,7 @@ fmt: ## Format Go, Swift, Protobuf and Python
 	uvx ruff format .
 
 vuln: ## Known vulnerabilities in dependencies
-	go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+	go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
 
 verify: ## Dependencies match go.sum
 	go mod verify

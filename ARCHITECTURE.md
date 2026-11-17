@@ -138,7 +138,7 @@ flowchart LR
 | Discovery | `internal/core/{browsersig,ownerchain,discovery}/` | ports, session | Pure rules that recognise a browser, pick its owner, group processes into sessions and derive their events |
 | Adapters | `internal/adapters/{sqlite,socket,api,clock,native,execid,peer,ticket,procscan}/` | core, gen | Implementations of the ports and the API handlers |
 | Shell | `internal/berthd/` | everything | Wires adapters, runs actors, performs effects |
-| Clients | `internal/client/`, `internal/cli/`, `internal/proxy/`, `internal/peertrust/`, `internal/spawn/`, `cmd/` | gen, api, adapters | The Go client, the CLI logic, the `berth-proxy` logic, the shared rule for trusting signed Berth peers and the signed `berthd` (release or `berth_e2e`), the suspended start and live cdhash read for `berth run`, thin entry points |
+| Clients | `internal/client/`, `internal/cli/`, `internal/proxy/`, `internal/proxyctl/`, `internal/peertrust/`, `internal/spawn/`, `cmd/` | gen, api, adapters | The Go client, the CLI logic, the `berth-proxy` logic, the two JSON lines `berth` and `berth-proxy` exchange (so `berth-proxy` links no TUI code, pinned by a `go list -deps` test), the shared rule for trusting signed Berth peers and the signed `berthd` (release or `berth_e2e`), the suspended start and live cdhash read for `berth run`, thin entry points |
 | Fakes | `internal/testutil/` | ports | In memory store, fake clock, scriptable secrets fakes, a scriptable process table |
 
 The rules are enforced by `golangci-lint`, not by convention:

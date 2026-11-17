@@ -63,6 +63,9 @@ type (
 		err  error
 	}
 	topTick struct{}
+	// topFault ends berth top when its stream goroutine panicked, so Bubble Tea still restores
+	// the terminal.
+	topFault struct{ err error }
 )
 
 type topConfirm struct {
@@ -86,6 +89,7 @@ type topModel struct {
 	inspected   *berthv1.InspectSessionResponse
 	link        string
 	status      string
+	fault       error
 	width       int
 	height      int
 }
@@ -118,9 +122,13 @@ func top(ctx context.Context, env Env) int {
 	}
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-	if _, err := tea.NewProgram(NewTop(ctx, c), tea.WithContext(ctx), tea.WithInput(env.Stdin), tea.WithOutput(out)).Run(); err != nil &&
-		!errors.Is(err, tea.ErrProgramKilled) {
+	final, err := tea.NewProgram(NewTop(ctx, c), tea.WithContext(ctx), tea.WithInput(env.Stdin), tea.WithOutput(out)).Run()
+	if err != nil && !errors.Is(err, tea.ErrProgramKilled) {
 		fmt.Fprintln(env.Stderr, err)
+		return ExitError
+	}
+	if m, ok := final.(*topModel); ok && m.fault != nil {
+		fmt.Fprintln(env.Stderr, shown(m.fault.Error()))
 		return ExitError
 	}
 	return ExitOK
@@ -133,9 +141,23 @@ func isTerminal(f *os.File) bool {
 
 func (m *topModel) Init() tea.Cmd {
 	return tea.Batch(func() tea.Msg {
-		go watchLoop(m.ctx, m.deps.watch, m.updates, topRetry)
+		go m.watch()
 		return nil
 	}, m.next(), topTickCmd())
+}
+
+// watch runs watchLoop and turns a panic in it into topFault: a panic on this goroutine would
+// otherwise kill the process without Bubble Tea restoring the terminal.
+func (m *topModel) watch() {
+	defer func() {
+		if r := recover(); r != nil {
+			select {
+			case m.updates <- topFault{fmt.Errorf("berth top's stream failed: %v", r)}:
+			case <-m.ctx.Done():
+			}
+		}
+	}()
+	watchLoop(m.ctx, m.deps.watch, m.updates, topRetry)
 }
 
 // watchLoop feeds out from WatchSessions, and when a stream ends, reports it and resumes after
@@ -213,6 +235,9 @@ func (m *topModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, m.next()
 	case topTick:
 		return m, topTickCmd()
+	case topFault:
+		m.fault = msg.err
+		return m, tea.Quit
 	case topInspected:
 		switch {
 		case msg.err != nil:

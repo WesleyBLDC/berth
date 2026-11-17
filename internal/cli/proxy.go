@@ -16,6 +16,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"berth/internal/proxyctl"
 )
 
 // ProxyProcess is a started berth-proxy. Stdin carries the request and stays open for the run;
@@ -29,22 +31,6 @@ type ProxyProcess struct {
 
 // ProxyStarter starts the berth-proxy beside berth with the scrubbed environment ExecProxy builds.
 type ProxyStarter func(ctx context.Context) (*ProxyProcess, error)
-
-// ProxyRequest is the one line berth writes to berth-proxy's stdin.
-type ProxyRequest struct {
-	Secrets []string `json:"secrets"`
-}
-
-// ProxyControl is the one line berth-proxy writes to its stdout once it serves. It carries no
-// value: the credential only lets the child use the proxy, and placeholders are stand ins the
-// proxy swaps for nothing but its own header.
-type ProxyControl struct {
-	Port         int               `json:"port"`
-	Credential   string            `json:"credential"`
-	CAFile       string            `json:"ca_file"`
-	BundleFile   string            `json:"bundle_file"`
-	Placeholders map[string]string `json:"placeholders"`
-}
 
 // proxyEnvKeep is all berth-proxy may inherit; it refuses to start with anything more.
 var proxyEnvKeep = []string{"HOME", "PATH", "BERTH_HOME", "TMPDIR"}
@@ -156,13 +142,13 @@ func runProxied(ctx context.Context, names []string, exe string, argv []string, 
 	return code
 }
 
-func handshake(p *ProxyProcess, names []string) (ProxyControl, error) {
-	req, err := json.Marshal(ProxyRequest{Secrets: names})
+func handshake(p *ProxyProcess, names []string) (proxyctl.Control, error) {
+	req, err := json.Marshal(proxyctl.Request{Secrets: names})
 	if err != nil {
-		return ProxyControl{}, err
+		return proxyctl.Control{}, err
 	}
 	if _, err := p.Stdin.Write(append(req, '\n')); err != nil {
-		return ProxyControl{}, fmt.Errorf("cannot send it the request: %w", err)
+		return proxyctl.Control{}, fmt.Errorf("cannot send it the request: %w", err)
 	}
 	type lineResult struct {
 		line []byte
@@ -179,38 +165,38 @@ func handshake(p *ProxyProcess, names []string) (ProxyControl, error) {
 	case r := <-got:
 		switch {
 		case errors.Is(r.err, bufio.ErrBufferFull):
-			return ProxyControl{}, errors.New("its control line is too long")
+			return proxyctl.Control{}, errors.New("its control line is too long")
 		case r.err != nil:
-			return ProxyControl{}, errors.New("it exited before it was ready")
+			return proxyctl.Control{}, errors.New("it exited before it was ready")
 		}
 		return parseControl(r.line)
 	case <-timer.C:
-		return ProxyControl{}, fmt.Errorf("it was not ready within %s", proxyReadyTimeout)
+		return proxyctl.Control{}, fmt.Errorf("it was not ready within %s", proxyReadyTimeout)
 	}
 }
 
 // parseControl never echoes the line, since it holds the run's credential.
-func parseControl(line []byte) (ProxyControl, error) {
-	var ctl ProxyControl
+func parseControl(line []byte) (proxyctl.Control, error) {
+	var ctl proxyctl.Control
 	dec := json.NewDecoder(bytes.NewReader(line))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(&ctl); err != nil {
-		return ProxyControl{}, errors.New("its control line is malformed")
+		return proxyctl.Control{}, errors.New("its control line is malformed")
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
-		return ProxyControl{}, errors.New("its control line is malformed")
+		return proxyctl.Control{}, errors.New("its control line is malformed")
 	}
 	switch {
 	case ctl.Port < 1 || ctl.Port > 65535:
-		return ProxyControl{}, errors.New("its control line has no valid port")
+		return proxyctl.Control{}, errors.New("its control line has no valid port")
 	case !credentialHex.MatchString(ctl.Credential):
-		return ProxyControl{}, errors.New("its control line has no valid credential")
+		return proxyctl.Control{}, errors.New("its control line has no valid credential")
 	case !filepath.IsAbs(ctl.CAFile) || !filepath.IsAbs(ctl.BundleFile):
-		return ProxyControl{}, errors.New("its control line has no absolute CA and bundle paths")
+		return proxyctl.Control{}, errors.New("its control line has no absolute CA and bundle paths")
 	}
 	for k, v := range ctl.Placeholders {
 		if !placeholderKey.MatchString(k) || slices.Contains(berthOwned, k) || v == "" || strings.ContainsRune(v, 0) {
-			return ProxyControl{}, fmt.Errorf("its control line has an invalid placeholder %s", k)
+			return proxyctl.Control{}, fmt.Errorf("its control line has an invalid placeholder %s", k)
 		}
 	}
 	return ctl, nil
@@ -218,7 +204,7 @@ func parseControl(line []byte) (ProxyControl, error) {
 
 // proxyChildEnv is the caller's environment minus every variable Berth owns, plus Berth's
 // values. The child holds no secret, so it needs no allowlist.
-func proxyChildEnv(environ []string, ctl ProxyControl) []string {
+func proxyChildEnv(environ []string, ctl proxyctl.Control) []string {
 	owned := func(k string) bool {
 		_, placeholder := ctl.Placeholders[k]
 		return placeholder || slices.Contains(berthOwned, k)
