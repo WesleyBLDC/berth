@@ -387,11 +387,9 @@ func (s *secrets) stopAllSessions(timeout time.Duration) bool {
 	for _, ps := range running {
 		s.stopSession(s.ctx, ps.id, proxysession.StopDaemonStopping)
 	}
-	deadline := time.After(timeout)
+	deadline := time.Now().Add(timeout)
 	for _, ps := range running {
-		select {
-		case <-ps.done:
-		case <-deadline:
+		if done, _ := awaitDone(s.ctx, ps.done, time.Until(deadline)); !done {
 			return false
 		}
 	}

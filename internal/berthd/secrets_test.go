@@ -630,13 +630,14 @@ func TestStopEndsOpenStorePrompts(t *testing.T) {
 	if !f.s.stop(2 * time.Second) {
 		t.Fatal("stop timed out")
 	}
+	// stop waits for the step, which ends as the caller is handed the outcome.
 	select {
 	case got := <-done:
 		if got != berthv1.StoreOutcome_STORE_OUTCOME_FAILED {
 			t.Fatalf("outcome %v", got)
 		}
-	default:
-		t.Fatal("stop returned before the caller had its answer")
+	case <-time.After(time.Second):
+		t.Fatal("the caller never had its answer")
 	}
 	h := f.history(t, "secret/gh-token")
 	if h[0].Event != "StoreFailed" || h[0].To != "Failed" || h[0].Detail != "berthd stopped while the prompt was open" {

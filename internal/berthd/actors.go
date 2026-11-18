@@ -41,8 +41,10 @@ type actors[S ~string, E machine.Event, F any] struct {
 
 	mu   sync.Mutex
 	live map[string]*slot[S, E, F]
-	// busy counts steps whose event the actor has not finished with, so a stop can wait for them.
+	// busy counts steps whose event the actor has not finished with, so a stop can wait for them;
+	// idle is closed when busy falls to zero, and is nil while it is zero.
 	busy int
+	idle chan struct{}
 }
 
 type slot[S ~string, E machine.Event, F any] struct {
@@ -229,15 +231,22 @@ func step[S ~string, E machine.Event, F any, K ~string](ctx context.Context, a *
 		return ports.TransitionRecord{}, nil, err
 	}
 	a.mu.Lock()
-	a.busy++
+	if a.busy++; a.idle == nil {
+		a.idle = make(chan struct{})
+	}
 	a.mu.Unlock()
+	// The step stays busy until its caller has the outcome, or, for a caller that gave up, until
+	// the actor has finished with the event.
+	leave := func() {
+		a.mu.Lock()
+		if a.busy--; a.busy == 0 {
+			close(a.idle)
+			a.idle = nil
+		}
+		a.mu.Unlock()
+	}
 	done := make(chan stepResult, 1)
 	go func() {
-		defer func() {
-			a.mu.Lock()
-			a.busy--
-			a.mu.Unlock()
-		}()
 		rec, err := waitApplied(sl, w, names)
 		r := release()
 		r.rec, r.err = rec, err
@@ -245,11 +254,13 @@ func step[S ~string, E machine.Event, F any, K ~string](ctx context.Context, a *
 	}()
 	select {
 	case r := <-done:
+		defer leave()
 		if errors.Is(r.err, errActorStopped) {
 			r.err = a.stopped(ctx, entity, event)
 		}
 		return r.rec, r.output, r.err
 	case <-ctx.Done():
+		go func() { <-done; leave() }()
 		return ports.TransitionRecord{}, nil, ctx.Err()
 	}
 }
@@ -308,17 +319,27 @@ func waitApplied[S ~string, E machine.Event, F any](sl *slot[S, E, F], w chan ap
 
 // wait blocks until every step has finished or the timeout passes, and reports which.
 func (a *actors[S, E, F]) wait(timeout time.Duration) bool {
-	deadline := time.Now().Add(timeout)
-	for {
-		a.mu.Lock()
-		idle := a.busy == 0
-		a.mu.Unlock()
-		if idle {
-			return true
-		}
-		if time.Now().After(deadline) {
-			return false
-		}
-		time.Sleep(10 * time.Millisecond)
+	a.mu.Lock()
+	idle := a.idle
+	a.mu.Unlock()
+	if idle == nil {
+		return true
+	}
+	done, _ := awaitDone(a.ctx, idle, timeout)
+	return done
+}
+
+// awaitDone waits until done is closed, wait passes or ctx ends, and reports whether done was
+// closed; it returns ctx's error only when ctx ended first.
+func awaitDone(ctx context.Context, done <-chan struct{}, wait time.Duration) (bool, error) {
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	select {
+	case <-done:
+		return true, nil
+	case <-timer.C:
+		return false, nil
+	case <-ctx.Done():
+		return false, ctx.Err()
 	}
 }

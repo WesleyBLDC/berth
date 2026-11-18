@@ -103,6 +103,9 @@ type managedBrowser struct {
 	endpoint  string
 	stopProxy func()
 	reason    string
+	// gone is closed once the browser leaves live, closed or never started, which is when its state
+	// reads Closed.
+	gone chan struct{}
 }
 
 func newManaged(ctx context.Context, d managedDeps) *managed {
@@ -169,10 +172,7 @@ func (m *managed) saved(rec ports.TransitionRecord) {
 	if b.state == browser.Closed {
 		b.reason = closeReason(rec)
 		stop, b.stopProxy, b.endpoint = b.stopProxy, nil, ""
-		delete(m.live, id)
-		if m.profiles[b.profile] == id {
-			delete(m.profiles, b.profile)
-		}
+		m.drop(b)
 		m.closed[id] = b
 		m.closedOrder = append(m.closedOrder, id)
 		for len(m.closedOrder) > closedMax {
@@ -388,7 +388,7 @@ func (m *managed) newBrowser(profile, exe string, headless bool, agent string) (
 	}
 	return &managedBrowser{
 		id: id, profile: profile, executable: exe, headless: headless, agent: agent,
-		tokenHash: token.Hash(tok), state: browser.Requested, since: m.Clock.Now(),
+		tokenHash: token.Hash(tok), state: browser.Requested, since: m.Clock.Now(), gone: make(chan struct{}),
 	}, tok, nil
 }
 
@@ -471,10 +471,18 @@ func (m *managed) settleLaunch(b *managedBrowser) error {
 func (m *managed) release(b *managedBrowser) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
+	if m.live[b.id] == b {
+		m.drop(b)
+	}
+}
+
+// drop takes a live browser out of live and frees its profile. m.mu is held.
+func (m *managed) drop(b *managedBrowser) {
 	delete(m.live, b.id)
 	if m.profiles[b.profile] == b.id {
 		delete(m.profiles, b.profile)
 	}
+	close(b.gone)
 }
 
 func (m *managed) state(id string) browser.State {
@@ -515,18 +523,8 @@ func (m *managed) closeAndWait(ctx context.Context, b *managedBrowser) (*managed
 	} else if st != browser.Closing {
 		m.send(ctx, b.id, browser.Event{Kind: browser.CloseRequested})
 	}
-	deadline := time.NewTimer(closeWait)
-	defer deadline.Stop()
-	poll := time.NewTicker(50 * time.Millisecond)
-	defer poll.Stop()
-	for m.state(b.id) != browser.Closed {
-		select {
-		case <-poll.C:
-		case <-deadline.C:
-			return b, nil
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
+	if _, err := awaitDone(ctx, b.gone, closeWait); err != nil {
+		return nil, err
 	}
 	return b, nil
 }
@@ -558,24 +556,28 @@ func (m *managed) ListBrowsers(_ context.Context, req *berthv1.ListBrowsersReque
 func (m *managed) stop(ctx context.Context, timeout time.Duration) {
 	m.mu.Lock()
 	m.stopping = true
-	ids := make([]string, 0, len(m.live))
-	for id := range m.live {
-		ids = append(ids, id)
+	live := make([]*managedBrowser, 0, len(m.live))
+	for _, b := range m.live {
+		live = append(live, b)
 	}
 	m.mu.Unlock()
-	ctx, cancel := context.WithTimeout(ctx, timeout)
+	deadline := time.Now().Add(timeout)
+	ctx, cancel := context.WithDeadline(ctx, deadline)
 	defer cancel()
 	var wg sync.WaitGroup
-	for _, id := range ids {
+	for _, b := range live {
 		wg.Go(func() {
-			if m.state(id) != browser.Closing {
-				m.send(ctx, id, browser.Event{Kind: browser.CloseRequested, Note: "berthd stopping"})
+			if m.state(b.id) != browser.Closing {
+				m.send(ctx, b.id, browser.Event{Kind: browser.CloseRequested, Note: "berthd stopping"})
 			}
 		})
 	}
 	wg.Wait()
-	for m.liveCount() > 0 && ctx.Err() == nil {
-		time.Sleep(20 * time.Millisecond)
+	// No browser starts once stopping is set, so these are all the live ones.
+	for _, b := range live {
+		if done, _ := awaitDone(ctx, b.gone, time.Until(deadline)); !done {
+			break
+		}
 	}
 	m.mu.Lock()
 	var left []ports.BrowserConn
@@ -592,12 +594,6 @@ func (m *managed) stop(ctx context.Context, timeout time.Duration) {
 		case <-time.After(2 * time.Second):
 		}
 	}
-}
-
-func (m *managed) liveCount() int {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	return len(m.live)
 }
 
 func (m *managed) proto(b *managedBrowser) *berthv1.ManagedBrowser {

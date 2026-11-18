@@ -88,6 +88,8 @@ type tracked struct {
 	// version is the machine version disc.State and since come from, so a step that finishes
 	// after a later one cannot put an older state back.
 	version int64
+	// stopped is closed when the session ends and leaves live.
+	stopped chan struct{}
 }
 
 func newBrowsers(ctx context.Context, d browsersDeps) *browsers {
@@ -223,7 +225,7 @@ func (b *browsers) track(ctx context.Context, o discovery.Observed) (*tracked, e
 	}
 	// The facts are set before the session is published, so a stop in between still sees whose
 	// browser it is.
-	t = &tracked{disc: discovery.Tracked{State: st, Unsaved: !found}, obs: o, since: b.Clock.Now(), version: saved.Version}
+	t = &tracked{disc: discovery.Tracked{State: st, Unsaved: !found}, obs: o, since: b.Clock.Now(), version: saved.Version, stopped: make(chan struct{})}
 	if hist, err := b.Store.History(ctx, entity, 1); err == nil && len(hist) == 1 {
 		t.since = hist[0].At
 	}
@@ -292,6 +294,10 @@ func (b *browsers) recorded(id string, rec ports.TransitionRecord) {
 
 // end moves a stopped session out of live and trims ended; its actor stopped itself. b.mu is held.
 func (b *browsers) end(id string, t *tracked) {
+	if b.live[id] != t {
+		return
+	}
+	close(t.stopped)
 	delete(b.live, id)
 	b.ended[id] = t
 	b.endedOrder = append(b.endedOrder, id)
@@ -390,29 +396,17 @@ func (b *browsers) StopSession(ctx context.Context, req *berthv1.StopSessionRequ
 		// Illegal only when another stop or the exit got there first; the wait below sees either.
 		b.send(ctx, id, session.Event{Kind: session.StopRequested})
 	}
-	deadline := time.NewTimer(stopWait)
-	defer deadline.Stop()
-	poll := time.NewTicker(100 * time.Millisecond)
-	defer poll.Stop()
-	for {
-		b.mu.Lock()
-		_, done := b.ended[id]
-		state := session.Stopping
-		if t, ok := b.live[id]; ok {
-			state = t.disc.State
-		}
-		b.mu.Unlock()
-		if done {
-			return &berthv1.StopSessionResponse{State: berthv1.SessionState_SESSION_STATE_STOPPED}, nil
-		}
-		select {
-		case <-poll.C:
-		case <-deadline.C:
-			return &berthv1.StopSessionResponse{State: stateProto(state)}, nil
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		}
+	done, err := awaitDone(ctx, t.stopped, stopWait)
+	if err != nil {
+		return nil, err
 	}
+	if done {
+		return &berthv1.StopSessionResponse{State: berthv1.SessionState_SESSION_STATE_STOPPED}, nil
+	}
+	b.mu.Lock()
+	state := t.disc.State
+	b.mu.Unlock()
+	return &berthv1.StopSessionResponse{State: stateProto(state)}, nil
 }
 
 func (b *browsers) ListSessions(_ context.Context, req *berthv1.ListSessionsRequest) (*berthv1.ListSessionsResponse, error) {
