@@ -430,6 +430,7 @@ func TestStatusAndDebugStateReportTypedErrors(t *testing.T) {
 	}{
 		{[]string{"status"}, berthv1.ErrorReason_ERROR_REASON_NOT_SERVING, "berthd is not serving right now"},
 		{[]string{"debug", "state", "secret/none"}, berthv1.ErrorReason_ERROR_REASON_ENTITY_NOT_FOUND, "no state machine entity named secret/none\n"},
+		{[]string{"status"}, berthv1.ErrorReason_ERROR_REASON_NOT_BERTH_APP, "only the signed Berth.app may do this; use the app\n"},
 	} {
 		d := refusingDaemon{err: reasonError(t, tc.reason)}
 		server := connect.NewServer()

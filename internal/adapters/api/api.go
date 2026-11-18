@@ -105,6 +105,22 @@ func AgentOnly() connect.ServerInterceptor {
 	}
 }
 
+// AppOnly serves a method the schema marks (berth.v1.app) only to a peer that isApp says runs
+// the signed Berth.app, and every other method as before. It checks before the handler runs,
+// so a refused caller learns nothing from the method.
+func AppOnly(isApp func(ctx context.Context, peer ports.Peer) bool) connect.ServerInterceptor {
+	return func(next connect.ServerFunc) connect.ServerFunc {
+		return func(ctx context.Context, spec connect.Spec, stream connect.ServerStream) error {
+			md, ok := spec.Schema.(protoreflect.MethodDescriptor)
+			if !ok || !proto.GetExtension(md.Options(), berthv1.E_App).(bool) || isApp(ctx, peerOf(ctx)) {
+				return next(ctx, spec, stream)
+			}
+			return withReason(connect.Errorf(connect.CodePermissionDenied, "only the signed Berth.app may call %s", spec.Procedure),
+				berthv1.ErrorReason_ERROR_REASON_NOT_BERTH_APP)
+		}
+	}
+}
+
 func (h *handlers) Handshake(ctx context.Context, req *berthv1.HandshakeRequest) (*berthv1.HandshakeResponse, error) {
 	if err := validate(req); err != nil {
 		return nil, err

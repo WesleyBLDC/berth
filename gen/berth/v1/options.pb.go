@@ -86,6 +86,9 @@ const (
 	ErrorReason_ERROR_REASON_PROXY_NOT_STARTED ErrorReason = 23
 	// ENTITY_NOT_FOUND means GetState found no state machine entity with that name.
 	ErrorReason_ERROR_REASON_ENTITY_NOT_FOUND ErrorReason = 24
+	// NOT_BERTH_APP refuses a method marked app to any caller that is not the signed Berth.app
+	// beside berthd.
+	ErrorReason_ERROR_REASON_NOT_BERTH_APP ErrorReason = 25
 )
 
 // Enum value maps for ErrorReason.
@@ -116,6 +119,7 @@ var (
 		22: "ERROR_REASON_BAD_GLOB",
 		23: "ERROR_REASON_PROXY_NOT_STARTED",
 		24: "ERROR_REASON_ENTITY_NOT_FOUND",
+		25: "ERROR_REASON_NOT_BERTH_APP",
 	}
 	ErrorReason_value = map[string]int32{
 		"ERROR_REASON_UNSPECIFIED":             0,
@@ -143,6 +147,7 @@ var (
 		"ERROR_REASON_BAD_GLOB":                22,
 		"ERROR_REASON_PROXY_NOT_STARTED":       23,
 		"ERROR_REASON_ENTITY_NOT_FOUND":        24,
+		"ERROR_REASON_NOT_BERTH_APP":           25,
 	}
 )
 
@@ -226,6 +231,14 @@ var file_berth_v1_options_proto_extTypes = []protoimpl.ExtensionInfo{
 		Tag:           "varint,50001,opt,name=agent",
 		Filename:      "berth/v1/options.proto",
 	},
+	{
+		ExtendedType:  (*descriptorpb.MethodOptions)(nil),
+		ExtensionType: (*bool)(nil),
+		Field:         50002,
+		Name:          "berth.v1.app",
+		Tag:           "varint,50002,opt,name=app",
+		Filename:      "berth/v1/options.proto",
+	},
 }
 
 // Extension fields to descriptorpb.MethodOptions.
@@ -236,6 +249,12 @@ var (
 	//
 	// optional bool agent = 50001;
 	E_Agent = &file_berth_v1_options_proto_extTypes[0]
+	// app marks a method only the signed Berth.app may call: berthd serves it on the owner socket
+	// to a peer running the Berth.app beside berthd, by its code identity, and refuses everyone
+	// else with ERROR_REASON_NOT_BERTH_APP. Listing and watching methods are never marked.
+	//
+	// optional bool app = 50002;
+	E_App = &file_berth_v1_options_proto_extTypes[1]
 )
 
 var File_berth_v1_options_proto protoreflect.FileDescriptor
@@ -244,7 +263,7 @@ const file_berth_v1_options_proto_rawDesc = "" +
 	"\n" +
 	"\x16berth/v1/options.proto\x12\bberth.v1\x1a google/protobuf/descriptor.proto\":\n" +
 	"\tErrorInfo\x12-\n" +
-	"\x06reason\x18\x01 \x01(\x0e2\x15.berth.v1.ErrorReasonR\x06reason*\xe4\x06\n" +
+	"\x06reason\x18\x01 \x01(\x0e2\x15.berth.v1.ErrorReasonR\x06reason*\x84\a\n" +
 	"\vErrorReason\x12\x1c\n" +
 	"\x18ERROR_REASON_UNSPECIFIED\x10\x00\x12\"\n" +
 	"\x1eERROR_REASON_PROTOCOL_MISMATCH\x10\x01\x12\"\n" +
@@ -271,8 +290,10 @@ const file_berth_v1_options_proto_rawDesc = "" +
 	"\"ERROR_REASON_BROWSER_LAUNCH_FAILED\x10\x15\x12\x19\n" +
 	"\x15ERROR_REASON_BAD_GLOB\x10\x16\x12\"\n" +
 	"\x1eERROR_REASON_PROXY_NOT_STARTED\x10\x17\x12!\n" +
-	"\x1dERROR_REASON_ENTITY_NOT_FOUND\x10\x18:6\n" +
-	"\x05agent\x12\x1e.google.protobuf.MethodOptions\x18ц\x03 \x01(\bR\x05agentBy\n" +
+	"\x1dERROR_REASON_ENTITY_NOT_FOUND\x10\x18\x12\x1e\n" +
+	"\x1aERROR_REASON_NOT_BERTH_APP\x10\x19:6\n" +
+	"\x05agent\x12\x1e.google.protobuf.MethodOptions\x18ц\x03 \x01(\bR\x05agent:2\n" +
+	"\x03app\x12\x1e.google.protobuf.MethodOptions\x18҆\x03 \x01(\bR\x03appBy\n" +
 	"\fcom.berth.v1B\fOptionsProtoP\x01Z\x1aberth/gen/berth/v1;berthv1\xa2\x02\x03BXX\xaa\x02\bBerth.V1\xca\x02\bBerth\\V1\xe2\x02\x14Berth\\V1\\GPBMetadata\xea\x02\tBerth::V1b\x06proto3"
 
 var (
@@ -297,10 +318,11 @@ var file_berth_v1_options_proto_goTypes = []any{
 var file_berth_v1_options_proto_depIdxs = []int32{
 	0, // 0: berth.v1.ErrorInfo.reason:type_name -> berth.v1.ErrorReason
 	2, // 1: berth.v1.agent:extendee -> google.protobuf.MethodOptions
-	2, // [2:2] is the sub-list for method output_type
-	2, // [2:2] is the sub-list for method input_type
-	2, // [2:2] is the sub-list for extension type_name
-	1, // [1:2] is the sub-list for extension extendee
+	2, // 2: berth.v1.app:extendee -> google.protobuf.MethodOptions
+	3, // [3:3] is the sub-list for method output_type
+	3, // [3:3] is the sub-list for method input_type
+	3, // [3:3] is the sub-list for extension type_name
+	1, // [1:3] is the sub-list for extension extendee
 	0, // [0:1] is the sub-list for field type_name
 }
 
@@ -316,7 +338,7 @@ func file_berth_v1_options_proto_init() {
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_berth_v1_options_proto_rawDesc), len(file_berth_v1_options_proto_rawDesc)),
 			NumEnums:      1,
 			NumMessages:   1,
-			NumExtensions: 1,
+			NumExtensions: 2,
 			NumServices:   0,
 		},
 		GoTypes:           file_berth_v1_options_proto_goTypes,

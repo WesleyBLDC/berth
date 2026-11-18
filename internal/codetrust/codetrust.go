@@ -20,6 +20,7 @@ const (
 	HelperSigningID = "com.wesleybldc.berth.native"
 	DaemonSigningID = "com.wesleybldc.berth.daemon"
 	ProxySigningID  = "com.wesleybldc.berth.proxy"
+	AppSigningID    = "com.wesleybldc.berth"
 )
 
 // RepinInterval is the least time between two reads of the same file, so a caller cannot make
@@ -66,9 +67,15 @@ type File struct {
 
 // New pins the file at path now.
 func New(ctx context.Context, path, identifier string, pin Pinner, code ports.CodeInspector, clock ports.Clock, log *slog.Logger) *File {
-	f := &File{path: path, identifier: identifier, pin: pin, code: code, clock: clock, log: log}
+	f := Deferred(path, identifier, pin, code, clock, log)
 	f.repin(ctx)
 	return f
+}
+
+// Deferred is New without the first read: the file is pinned on the first Runs, for a binary
+// only some methods need, so a berthd with no Berth.app beside it never reads a file for one.
+func Deferred(path, identifier string, pin Pinner, code ports.CodeInspector, clock ports.Clock, log *slog.Logger) *File {
+	return &File{path: path, identifier: identifier, pin: pin, code: code, clock: clock, log: log}
 }
 
 // repin reads the file again, for example after make build replaced it, at most once per

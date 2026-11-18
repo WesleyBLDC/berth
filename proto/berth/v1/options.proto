@@ -9,6 +9,10 @@ extend google.protobuf.MethodOptions {
   // The MCP shim and the agent commands expose exactly these methods, and the agent socket
   // serves only these.
   bool agent = 50001;
+  // app marks a method only the signed Berth.app may call: berthd serves it on the owner socket
+  // to a peer running the Berth.app beside berthd, by its code identity, and refuses everyone
+  // else with ERROR_REASON_NOT_BERTH_APP. Listing and watching methods are never marked.
+  bool app = 50002;
 }
 
 // ErrorReason is attached to errors so clients can show a typed reason.
@@ -73,6 +77,9 @@ enum ErrorReason {
   ERROR_REASON_PROXY_NOT_STARTED = 23;
   // ENTITY_NOT_FOUND means GetState found no state machine entity with that name.
   ERROR_REASON_ENTITY_NOT_FOUND = 24;
+  // NOT_BERTH_APP refuses a method marked app to any caller that is not the signed Berth.app
+  // beside berthd.
+  ERROR_REASON_NOT_BERTH_APP = 25;
 }
 
 message ErrorInfo {

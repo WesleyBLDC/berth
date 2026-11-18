@@ -317,6 +317,8 @@ func reportError(w io.Writer, err error, name, target string) int {
 		return ExitProxyFailed
 	case berthv1.ErrorReason_ERROR_REASON_ENTITY_NOT_FOUND:
 		line = fmt.Sprintf("no state machine entity named %s", target)
+	case berthv1.ErrorReason_ERROR_REASON_NOT_BERTH_APP:
+		line = "only the signed Berth.app may do this; use the app"
 	// The handshake answers a version mismatch before any command's call, and only berth-native
 	// redeems tickets, so berth never gets these here.
 	case berthv1.ErrorReason_ERROR_REASON_UNSPECIFIED, berthv1.ErrorReason_ERROR_REASON_PROTOCOL_MISMATCH,

@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"time"
 
 	"berth/internal/adapters/api"
@@ -46,10 +47,13 @@ type Config struct {
 	Helper string
 	CLI    string
 	Proxy  string
-	// Pinner decides which files berthd trusts as the berth CLI, berth-native and berth-proxy;
-	// it is required. cmd/berthd passes peertrust.Pinner, which is codetrust.SignedPinner (Apple's
-	// chain, Berth's team and identifier) in every release build, and nothing reads the
-	// environment for it.
+	// App is Berth.app's executable, the only caller of methods marked (berth.v1.app); empty
+	// means ../MacOS/Berth from berthd's folder, where the bundle puts it (Contents/Helpers).
+	App string
+	// Pinner decides which files berthd trusts as the berth CLI, berth-native, berth-proxy and
+	// Berth.app; it is required. cmd/berthd passes peertrust.Pinner, which is
+	// codetrust.SignedPinner (Apple's chain, Berth's team and identifier) in every release build,
+	// and nothing reads the environment for it.
 	Pinner codetrust.Pinner
 	// AllowLocalProxyTargets lets a proxy grant name localhost or an IP literal; only binaries
 	// built with -tags berth_e2e set it, for the test servers on loopback.
@@ -106,6 +110,8 @@ type shell struct {
 	browsers   *browsers
 	agents     *agents
 	managed    *managed
+	// app is Berth.app, pinned on the first call to a method marked app.
+	app *codetrust.File
 	// stopScans ends the browser scan loop StartServing began.
 	stopScans context.CancelFunc
 }
@@ -133,9 +139,19 @@ func Run(ctx context.Context, cfg Config) (int, error) {
 		cfg: cfg, log: cfg.Log, store: store, sock: paths.Socket(cfg.Home),
 		exit: make(chan int, 1), start: clock.System{}.Now(), machineCtx: machineCtx,
 	}
-	if s.secrets, err = newSecretsFor(machineCtx, cfg, store); err != nil {
+	if cfg.Pinner == nil {
+		return 1, errors.New("berthd needs a Pinner to know which binaries to trust")
+	}
+	pin := cfg.Pinner
+	execs := execid.New(execid.DefaultCodesign)
+	if s.secrets, err = newSecretsFor(machineCtx, cfg, store, execs, pin); err != nil {
 		return 1, err
 	}
+	appPath, err := appExecutable(cfg)
+	if err != nil {
+		return 1, fmt.Errorf("find Berth.app: %w", err)
+	}
+	s.app = codetrust.Deferred(appPath, codetrust.AppSigningID, pin, peer.NewCode(), clock.System{}, cfg.Log)
 	procs, err := procscan.New()
 	if err != nil {
 		return 1, err
@@ -265,7 +281,16 @@ const managedStopTimeout = 5 * time.Second
 // stopPromptsTimeout bounds how long a stop waits for open prompts to record their ending.
 const stopPromptsTimeout = 5 * time.Second
 
-func newSecretsFor(ctx context.Context, cfg Config, store *sqlite.Store) (*secrets, error) {
+// appExecutable is where Berth.app's executable must be for berthd to trust it: in the bundle,
+// berthd is Contents/Helpers/berthd and the app Contents/MacOS/Berth.
+func appExecutable(cfg Config) (string, error) {
+	if cfg.App != "" {
+		return cfg.App, nil
+	}
+	return paths.Beside(filepath.Join("..", "MacOS", "Berth"))
+}
+
+func newSecretsFor(ctx context.Context, cfg Config, store *sqlite.Store, execs *execid.Identity, pin codetrust.Pinner) (*secrets, error) {
 	helper, cli, proxy := cfg.Helper, cfg.CLI, cfg.Proxy
 	for _, f := range []struct {
 		path *string
@@ -280,11 +305,6 @@ func newSecretsFor(ctx context.Context, cfg Config, store *sqlite.Store) (*secre
 		}
 		*f.path = p
 	}
-	if cfg.Pinner == nil {
-		return nil, errors.New("berthd needs a Pinner to know which binaries to trust")
-	}
-	pin := cfg.Pinner
-	execs := execid.New(execid.DefaultCodesign)
 	code := peer.NewCode()
 	trusted := func(path, identifier string) *codetrust.File {
 		return codetrust.New(ctx, path, identifier, pin, code, clock.System{}, cfg.Log)
@@ -304,7 +324,7 @@ func (s *shell) serve(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	owner := connect.NewServer()
+	owner := connect.NewServer(api.AppOnly(s.app.Runs))
 	servers := []*connect.Server{owner}
 	var agentLn net.Listener
 	var agent *connect.Server
@@ -313,7 +333,7 @@ func (s *shell) serve(ctx context.Context) error {
 			_ = ln.Close()
 			return fmt.Errorf("agent socket: %w", err)
 		}
-		agent = connect.NewServer(api.AgentOnly(), api.AgentToken(s.agents))
+		agent = connect.NewServer(api.AgentOnly(), api.AppOnly(s.app.Runs), api.AgentToken(s.agents))
 		servers = append(servers, agent)
 	}
 	// Status reports an empty path when the kernel will not give it; nothing decides on it.

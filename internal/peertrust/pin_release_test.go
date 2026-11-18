@@ -27,6 +27,13 @@ func TestReleaseTrustsOnlyAppleChain(t *testing.T) {
 	if want := codetrust.Requirement(codetrust.CLISigningID); r.got != want {
 		t.Fatalf("requirement %q, want %q", r.got, want)
 	}
+	// Berth.app is pinned by the same rule, with its bundle identifier.
+	if _, _, err := Pinner(r)(t.Context(), "/Applications/Berth.app/Contents/MacOS/Berth", codetrust.AppSigningID); err != nil {
+		t.Fatal(err)
+	}
+	if want := `anchor apple generic and certificate leaf[subject.OU] = "XPJ7XA42J4" and identifier "com.wesleybldc.berth"`; r.got != want {
+		t.Fatalf("app requirement %q, want %q", r.got, want)
+	}
 	if E2E {
 		t.Fatal("a release build says it is an end to end build")
 	}

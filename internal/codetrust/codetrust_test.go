@@ -87,3 +87,23 @@ func TestRunsNeedsMatchingHardenedCodeAndRepinsAtMostEveryInterval(t *testing.T)
 		t.Fatal("a process the kernel could not describe was trusted")
 	}
 }
+
+// A deferred file reads nothing until the first Runs, then trusts the code it pinned.
+func TestDeferredPinsOnTheFirstRuns(t *testing.T) {
+	var pins []string
+	pin := func(_ context.Context, path, identifier string) (ports.CDHash, bool, error) {
+		pins = append(pins, path+" "+identifier)
+		return ports.CDHash{3}, true, nil
+	}
+	peer := &live{code: ports.LiveCode{CDHash: ports.CDHash{3}, Status: ports.CSValid | ports.CSRuntime}}
+	f := codetrust.Deferred("/A/Contents/MacOS/Berth", codetrust.AppSigningID, pin, peer, testutil.NewClock(), slog.New(slog.DiscardHandler))
+	if len(pins) != 0 {
+		t.Fatalf("pinned before any call: %v", pins)
+	}
+	if !f.Runs(t.Context(), ports.Peer{PID: 9}) {
+		t.Fatal("the pinned app was refused")
+	}
+	if want := []string{"/A/Contents/MacOS/Berth com.wesleybldc.berth"}; len(pins) != 1 || pins[0] != want[0] {
+		t.Fatalf("pins %v, want %v", pins, want)
+	}
+}
