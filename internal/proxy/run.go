@@ -82,102 +82,143 @@ func run(ctx context.Context, d Deps) (int, []*Grant) {
 	}
 	// A core file would hold the values.
 	_ = unix.Setrlimit(unix.RLIMIT_CORE, &unix.Rlimit{})
-	log := newLog(d.Stderr)
-	fail := func(code int, msg string, err error) int {
-		if err != nil {
-			msg += ": " + err.Error()
-		}
-		fmt.Fprintln(d.Stderr, "berth-proxy:", msg)
-		return code
-	}
+	r := &runner{d: d, log: newLog(d.Stderr)}
 
 	in := bufio.NewReaderSize(io.LimitReader(d.Stdin, maxRequest), 4096)
 	req, err := readRequest(in)
 	if err != nil {
-		return fail(ExitRefused, "bad request on stdin", err), nil
+		return r.fail(ExitRefused, "bad request on stdin", err), nil
 	}
-	names := req.Secrets
-	cl, err := d.Connect(ctx)
+	cl, session, grants, code := r.authorize(ctx, req.Secrets)
+	defer zeroAll(grants)
+	if code != ExitOK {
+		return code, grants
+	}
+	files, code := r.prepareFiles(grants)
+	defer files.remove()
+	if code != ExitOK {
+		return code, grants
+	}
+	return r.serve(ctx, cl, session, req.Mode, grants, files), grants
+}
+
+// runner is one berth-proxy run's dependencies and log.
+type runner struct {
+	d   Deps
+	log *slog.Logger
+}
+
+// fail prints why the run ends to stderr and returns its exit code.
+func (r *runner) fail(code int, msg string, err error) int {
 	if err != nil {
-		return fail(ExitError, "cannot reach the signed berthd", err), nil
+		msg += ": " + err.Error()
+	}
+	fmt.Fprintln(r.d.Stderr, "berth-proxy:", msg)
+	return code
+}
+
+// authorize asks the signed berthd for a session on names and reads each granted value into
+// locked memory. It returns the grants made so far even when it fails, for the caller to zero.
+func (r *runner) authorize(ctx context.Context, names []string) (berthv1connect.SecretsServiceClient, string, []*Grant, int) {
+	cl, err := r.d.Connect(ctx)
+	if err != nil {
+		return nil, "", nil, r.fail(ExitError, "cannot reach the signed berthd", err)
 	}
 	resp, err := cl.AuthorizeProxy(ctx, &berthv1.AuthorizeProxyRequest{RequestId: rand.Text(), Names: names})
 	if err != nil {
-		return fail(ExitError, "berthd refused to authorize the proxy", err), nil
+		return nil, "", nil, r.fail(ExitError, "berthd refused to authorize the proxy", err)
 	}
 	if resp.GetOutcome() != berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED {
-		return fail(ExitNoGrant, "no active proxy grant for every name; grant them with berth secret proxy", nil), nil
+		return nil, "", nil, r.fail(ExitNoGrant, "no active proxy grant for every name; grant them with berth secret proxy", nil)
 	}
-	grants, err := buildGrants(names, resp.GetTickets(), d.AllowLocal)
+	grants, err := buildGrants(names, resp.GetTickets(), r.d.AllowLocal)
 	if err != nil {
-		return fail(ExitRefused, "berthd sent a target berth-proxy refuses", err), nil
+		return nil, "", nil, r.fail(ExitRefused, "berthd sent a target berth-proxy refuses", err)
 	}
-	defer zeroAll(grants)
 	tickets := resp.GetTickets()
 	for i, g := range grants {
-		raw, err := d.Read(ctx, tickets[i].GetTicket())
+		raw, err := r.d.Read(ctx, tickets[i].GetTicket())
 		if err != nil {
-			return fail(ExitError, "cannot read secret "+g.Name, err), grants
+			return nil, "", grants, r.fail(ExitError, "cannot read secret "+g.Name, err)
 		}
 		if g.value, err = lockValue(raw); err != nil {
-			return fail(ExitRefused, "secret "+g.Name+" refused", err), grants
+			return nil, "", grants, r.fail(ExitRefused, "secret "+g.Name+" refused", err)
 		}
 		if !g.value.Locked() {
-			log.Warn("could not lock a secret in memory; it may reach swap", "name", g.Name)
+			r.log.Warn("could not lock a secret in memory; it may reach swap", "name", g.Name)
 		}
 	}
+	return cl, resp.GetSessionId(), grants, ExitOK
+}
 
+// trustFiles is the run's CA and the folder holding ca.pem and bundle.pem.
+type trustFiles struct {
+	ca                      *CA
+	dir, caFile, bundleFile string
+}
+
+func (f trustFiles) remove() {
+	if f.dir != "" {
+		_ = os.RemoveAll(f.dir)
+	}
+}
+
+// prepareFiles makes the run's CA for the granted hosts and writes the files a child trusts it by.
+func (r *runner) prepareFiles(grants []*Grant) (trustFiles, int) {
 	hosts := make([]string, 0, len(grants))
 	for _, g := range grants {
 		hosts = append(hosts, g.Host)
 	}
 	ca, err := NewCA(hosts, time.Now())
 	if err != nil {
-		return fail(ExitError, "cannot make the run CA", err), grants
+		return trustFiles{}, r.fail(ExitError, "cannot make the run CA", err)
 	}
-	dir, caFile, bundleFile, err := proxyctl.WriteTrustFiles(d.TempDir, d.SystemBundle, ca.PEM())
-	if dir != "" {
-		defer func() { _ = os.RemoveAll(dir) }()
-	}
+	f := trustFiles{ca: ca}
+	f.dir, f.caFile, f.bundleFile, err = proxyctl.WriteTrustFiles(r.d.TempDir, r.d.SystemBundle, ca.PEM())
 	if err != nil {
-		return fail(ExitError, "cannot write the trust files", err), grants
+		return f, r.fail(ExitError, "cannot write the trust files", err)
 	}
+	return f, ExitOK
+}
 
+// serve listens on loopback, waits until berthd lets the session serve, prints the control line
+// and proxies until the run must end, then zeroes the values and tells berthd the counts.
+func (r *runner) serve(ctx context.Context, cl berthv1connect.SecretsServiceClient, session, mode string, grants []*Grant, files trustFiles) int {
 	var lc net.ListenConfig
 	ln, err := lc.Listen(ctx, "tcp", "127.0.0.1:0")
 	if err != nil {
-		return fail(ExitError, "cannot listen on loopback", err), grants
+		return r.fail(ExitError, "cannot listen on loopback", err)
 	}
 	credential, err := token.Hex(16)
 	if err != nil {
 		_ = ln.Close()
-		return fail(ExitError, "cannot make the proxy credential", err), grants
+		return r.fail(ExitError, "cannot make the proxy credential", err)
 	}
 	srv := NewServer(ServerConfig{
-		Grants: grants, CA: ca, Credential: credential, Roots: d.Roots, Dial: d.Dial, Log: log,
-		GrantedOnly: req.Mode == proxyctl.ModeAgent,
+		Grants: grants, CA: files.ca, Credential: credential, Roots: r.d.Roots, Dial: r.d.Dial, Log: r.log,
+		GrantedOnly: mode == proxyctl.ModeAgent,
 	})
 	defer srv.Close(closeWait)
 
 	watchCtx, stopWatch := context.WithCancel(ctx)
 	defer stopWatch()
-	events, err := watch(watchCtx, cl, resp.GetSessionId())
+	events, err := watch(watchCtx, cl, session)
 	if err != nil {
 		_ = ln.Close()
-		return fail(ExitError, "berthd did not start the session", err), grants
+		return r.fail(ExitError, "berthd did not start the session", err)
 	}
 	select {
 	case ev := <-events:
 		if ev.err != nil || ev.kind != berthv1.ProxySessionEventKind_PROXY_SESSION_EVENT_KIND_SERVING {
 			_ = ln.Close()
-			return fail(ExitStopped, "berthd did not let the session serve", ev.err), grants
+			return r.fail(ExitStopped, "berthd did not let the session serve", ev.err)
 		}
 	case <-time.After(proxyctl.ReadyTimeout):
 		_ = ln.Close()
-		return fail(ExitError, "berthd did not answer SERVING in time", nil), grants
+		return r.fail(ExitError, "berthd did not answer SERVING in time", nil)
 	case <-ctx.Done():
 		_ = ln.Close()
-		return fail(ExitError, "interrupted", nil), grants
+		return r.fail(ExitError, "interrupted", nil)
 	}
 
 	placeholders := map[string]string{}
@@ -189,46 +230,46 @@ func run(ctx context.Context, d Deps) (int, []*Grant) {
 	line, err := json.Marshal(proxyctl.Control{
 		Port:         ln.Addr().(*net.TCPAddr).Port,
 		Credential:   credential,
-		CAFile:       caFile,
-		BundleFile:   bundleFile,
+		CAFile:       files.caFile,
+		BundleFile:   files.bundleFile,
 		Placeholders: placeholders,
 	})
 	if err != nil {
 		_ = ln.Close()
-		return fail(ExitError, "cannot encode the control line", err), grants
+		return r.fail(ExitError, "cannot encode the control line", err)
 	}
-	if _, err := d.Stdout.Write(append(line, '\n')); err != nil {
+	if _, err := r.d.Stdout.Write(append(line, '\n')); err != nil {
 		_ = ln.Close()
-		return fail(ExitError, "cannot write the control line", err), grants
+		return r.fail(ExitError, "cannot write the control line", err)
 	}
 	go srv.Serve(ln) //nolint:contextcheck // the server's own context, cancelled by Close, bounds every dial
 
 	stdinClosed := make(chan struct{})
-	go func() { _, _ = io.Copy(io.Discard, d.Stdin); close(stdinClosed) }()
-	expiry := time.NewTimer(time.Until(ca.NotAfter()))
+	go func() { _, _ = io.Copy(io.Discard, r.d.Stdin); close(stdinClosed) }()
+	expiry := time.NewTimer(time.Until(files.ca.NotAfter()))
 	defer expiry.Stop()
 
-	code, end := waitForEnd(ctx, events, stdinClosed, expiry.C, log)
+	code, end := waitForEnd(ctx, events, stdinClosed, expiry.C, r.log)
 	if !srv.Close(closeWait) {
-		log.Warn("some connections did not close in time; zeroing anyway")
+		r.log.Warn("some connections did not close in time; zeroing anyway")
 	}
 	zeroAll(grants)
-	_ = os.RemoveAll(dir)
+	files.remove()
 	if end {
 		injected, refused := srv.Counts()
 		endCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), endTimeout)
 		_, err := cl.EndProxySession(endCtx, &berthv1.EndProxySessionRequest{
 			RequestId: rand.Text(),
-			SessionId: resp.GetSessionId(),
+			SessionId: session,
 			Injected:  injected,
 			Refused:   refused,
 		})
 		cancel()
 		if err != nil && code == ExitOK {
-			return fail(ExitError, "berthd did not record the end of the session", err), grants
+			return r.fail(ExitError, "berthd did not record the end of the session", err)
 		}
 	}
-	return code, grants
+	return code
 }
 
 // newLog writes through the redacting handler berthd uses, so an attribute named like a secret
