@@ -20,13 +20,11 @@ import (
 	"golang.org/x/sys/unix"
 
 	"berth/internal/adapters/procscan"
+	"berth/internal/core/cdppolicy"
 	"berth/internal/core/ports"
 )
 
 const (
-	// FirstOwnID starts Berth's own id range on the pipe; the proxy refuses agent ids from here
-	// on, so a reply can always be told apart.
-	FirstOwnID = 1_000_000_000
 	// maxMessage bounds one message, so a runaway page cannot make berthd buffer without limit.
 	maxMessage = 64 << 20
 )
@@ -130,7 +128,7 @@ type conn struct {
 
 func newConn(ctx context.Context, cmd *exec.Cmd, ref ports.ProcessRef, w, r *os.File) *conn {
 	c := &conn{
-		cmd: cmd, ref: ref, done: make(chan struct{}), w: w, next: FirstOwnID,
+		cmd: cmd, ref: ref, done: make(chan struct{}), w: w, next: cdppolicy.FirstBerthID,
 		pending: map[int64]chan reply{}, attaching: map[int64]bool{}, own: map[string]bool{},
 	}
 	readDone := make(chan struct{})
@@ -326,7 +324,7 @@ func (c *conn) route(raw []byte) {
 		return
 	}
 	c.mu.Lock()
-	if m.ID != nil && *m.ID >= FirstOwnID {
+	if m.ID != nil && *m.ID >= cdppolicy.FirstBerthID {
 		ch, ok := c.pending[*m.ID]
 		attach := c.attaching[*m.ID]
 		delete(c.pending, *m.ID)
