@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -264,11 +265,26 @@ func step[S ~string, E machine.Event, F any, K ~string](ctx context.Context, a *
 // was ended by another step first, so the event is illegal; otherwise berthd could not record it
 // (a failed save, or it is stopping), which no caller may mistake for an outcome.
 func (a *actors[S, E, F]) stopped(ctx context.Context, entity string, event E) error {
-	st, found, err := a.store.LoadState(ctx, entity)
-	if err == nil && found && slices.Contains(a.final, S(st.State)) {
-		return machine.Illegal(S(st.State), event)
+	st, err := loadState(ctx, a.store, entity, S(""))
+	if err == nil && slices.Contains(a.final, st) {
+		return machine.Illegal(st, event)
 	}
 	return api.ErrUnavailable
+}
+
+// loadState reads an entity's persisted state, or initial when it has none yet. Only an actor's
+// own goroutine may read its state, and actors save before they act, so this is current.
+func loadState[S ~string](ctx context.Context, store ports.Store, entity string, initial S) (S, error) {
+	st, found, err := store.LoadState(ctx, entity)
+	if err != nil || !found {
+		return initial, err
+	}
+	return S(st.State), nil
+}
+
+// entityID is the id within entity, for a machine whose entities entityOf names.
+func entityID(entity string, entityOf func(string) string) string {
+	return strings.TrimPrefix(entity, entityOf(""))
 }
 
 func waitApplied[S ~string, E machine.Event, F any](sl *slot[S, E, F], w chan applied, until []string) (ports.TransitionRecord, error) {

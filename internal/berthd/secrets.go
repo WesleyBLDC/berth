@@ -363,7 +363,7 @@ func (s *secrets) runSecret(entity string) machine.Runner[secret.Event, secret.E
 		case secret.PromptRemove:
 			return s.promptRemove(ctx, entity), nil
 		case secret.RevokeAll:
-			s.secrets.output(entity, s.revokeAll(ctx, strings.TrimPrefix(entity, "secret/"), proxysession.StopSecretRemoved))
+			s.secrets.output(entity, s.revokeAll(ctx, entityID(entity, secret.Entity), proxysession.StopSecretRemoved))
 			return nil, nil
 		case secret.PromptStore:
 			p, ok := s.secrets.input(entity).(ports.StorePrompt)
@@ -760,14 +760,7 @@ func (s *secrets) servesUses(ctx context.Context, name string) bool {
 
 // state reads an entity's persisted state; actors save before they act, so this is current.
 func (s *secrets) state(ctx context.Context, entity, initial string) (string, error) {
-	st, found, err := s.Store.LoadState(ctx, entity)
-	if err != nil {
-		return "", err
-	}
-	if !found {
-		return initial, nil
-	}
-	return st.State, nil
+	return loadState(ctx, s.Store, entity, initial)
 }
 
 // argsMatch applies a grant's glob to the arguments joined by spaces; an empty glob allows any.

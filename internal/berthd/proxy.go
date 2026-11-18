@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"strings"
 	"sync"
 	"time"
 
@@ -63,7 +62,7 @@ var reasons = map[proxysession.StopReason]berthv1.ProxyStopReason{
 }
 
 func (s *secrets) runSession(entity string) machine.Runner[proxysession.Event, proxysession.Effect] {
-	id := strings.TrimPrefix(entity, "proxy/")
+	id := entityID(entity, proxysession.Entity)
 	return func(_ context.Context, effect proxysession.Effect) ([]proxysession.Event, error) {
 		if effect.Kind != proxysession.SendStop {
 			return nil, fmt.Errorf("unknown proxy session effect %q", effect.Kind)

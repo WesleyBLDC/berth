@@ -212,7 +212,7 @@ func (m *managed) get(id string) (*managedBrowser, bool) {
 }
 
 func (m *managed) runBrowser(entity string) machine.Runner[browser.Event, browser.Effect] {
-	id := strings.TrimPrefix(entity, browser.Entity(""))
+	id := entityID(entity, browser.Entity)
 	return func(ctx context.Context, effect browser.Effect) ([]browser.Event, error) {
 		b, ok := m.get(id)
 		if !ok {
@@ -228,7 +228,7 @@ func (m *managed) runBrowser(entity string) machine.Runner[browser.Event, browse
 			// The grace starts before the close is written, and the write runs beside the actor, so a
 			// browser that stopped reading its pipe is still killed on time.
 			time.AfterFunc(m.grace, func() {
-				if st, found, err := m.Store.LoadState(m.ctx, entity); err == nil && found && browser.State(st.State) == browser.Closing {
+				if st, err := loadState(m.ctx, m.Store, entity, browser.Initial); err == nil && st == browser.Closing {
 					m.send(m.ctx, id, browser.Event{Kind: browser.CloseTimedOut})
 				}
 			})

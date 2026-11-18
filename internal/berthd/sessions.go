@@ -252,11 +252,7 @@ func (b *browsers) track(ctx context.Context, o discovery.Observed) (*tracked, e
 
 // state reads the persisted state, since only the actor's goroutine may read its own.
 func (b *browsers) state(ctx context.Context, entity string) (session.State, error) {
-	st, found, err := b.Store.LoadState(ctx, entity)
-	if err != nil || !found {
-		return session.Initial, err
-	}
-	return session.State(st.State), nil
+	return loadState(ctx, b.Store, entity, session.Initial)
 }
 
 // apply runs one session's pure step and sends what it returns; o is nil when the browser is gone.
@@ -326,7 +322,7 @@ func (b *browsers) trimEnded() {
 }
 
 func (b *browsers) runSession(entity string) machine.Runner[session.Event, session.Effect] {
-	id := entity[len(session.Entity("")):]
+	id := entityID(entity, session.Entity)
 	return func(ctx context.Context, effect session.Effect) ([]session.Event, error) {
 		b.mu.Lock()
 		t, ok := b.live[id]
@@ -387,7 +383,7 @@ func (b *browsers) StopSession(ctx context.Context, req *berthv1.StopSessionRequ
 			return &berthv1.StopSessionResponse{State: berthv1.SessionState_SESSION_STATE_STOPPED}, nil
 		}
 		// A session trimmed from memory is still Stopped in the database.
-		if st, found, err := b.Store.LoadState(ctx, session.Entity(id)); err == nil && found && session.State(st.State) == session.Stopped {
+		if st, err := b.state(ctx, session.Entity(id)); err == nil && st == session.Stopped {
 			return &berthv1.StopSessionResponse{State: berthv1.SessionState_SESSION_STATE_STOPPED}, nil
 		}
 		return nil, api.ErrSessionNotFound

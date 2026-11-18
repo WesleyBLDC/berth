@@ -5,7 +5,6 @@ import (
 	"errors"
 	"log/slog"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -100,7 +99,7 @@ func newAgents(ctx context.Context, d agentsDeps) *agents {
 			// On the actor's goroutine: hand the work off, so the agent actor never waits on the
 			// proxy actors, and use berthd's context, so a caller that gave up stops nothing short.
 			if !agentsession.Live(agentsession.State(rec.To)) {
-				go a.ended(strings.TrimPrefix(rec.Entity, "agent/"))
+				go a.ended(entityID(rec.Entity, agentsession.Entity))
 			}
 		},
 	}
@@ -443,11 +442,7 @@ func (a *agents) live(ctx context.Context, id string) bool {
 }
 
 func (a *agents) state(ctx context.Context, id string) (agentsession.State, error) {
-	st, found, err := a.Store.LoadState(ctx, agentsession.Entity(id))
-	if err != nil || !found {
-		return agentsession.Initial, err
-	}
-	return agentsession.State(st.State), nil
+	return loadState(ctx, a.Store, agentsession.Entity(id), agentsession.Initial)
 }
 
 var agentSessionStates = map[agentsession.State]berthv1.AgentSessionState{
