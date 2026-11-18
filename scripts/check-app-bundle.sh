@@ -1,12 +1,17 @@
 #!/bin/sh
 # Builds Berth.app signed ad hoc in a temporary folder and checks its layout, its plists, every
-# signature and identifier, and that the app links no Keychain code. Opens nothing.
+# signature and identifier, that it holds no symlink, and that the app links no Keychain code.
+# With --check <Berth.app> it checks that bundle instead of building one. Opens nothing.
 set -eu
 root=$(cd "$(dirname "$0")/.." && pwd)
-tmp=$(mktemp -d)
-trap 'rm -rf "$tmp"' EXIT
-app="$tmp/Berth.app"
-"$root/scripts/build-app.sh" --adhoc "$app" >"$tmp/build.log" 2>&1 || { cat "$tmp/build.log"; exit 1; }
+if [ "${1:-}" = --check ]; then
+  app=$2
+else
+  tmp=$(mktemp -d)
+  trap 'rm -rf "$tmp"' EXIT
+  app="$tmp/Berth.app"
+  "$root/scripts/build-app.sh" --adhoc "$app" >"$tmp/build.log" 2>&1 || { cat "$tmp/build.log"; exit 1; }
+fi
 
 fail() { echo "check-app-bundle: $*" >&2; exit 1; }
 plist() { /usr/libexec/PlistBuddy -c "Print :$2" "$1" 2>/dev/null || true; }
@@ -22,6 +27,8 @@ plutil -lint -s "$info" "$agent" || fail "a plist does not parse"
 [ "$(plist "$agent" BundleProgram)" = Contents/Helpers/berthd ] || fail "the LaunchAgent does not run the bundled berthd"
 [ "$(plist "$agent" AssociatedBundleIdentifiers:0)" = com.wesleybldc.berth ] || fail "the LaunchAgent is not tied to the app"
 [ -f "$app/Contents/Resources/AppIcon.icns" ] || fail "no icon"
+# berthd's pin copies only folders and regular files, so a symlink would make the app untrusted.
+[ -z "$(find "$app" -type l)" ] || fail "the bundle holds a symlink: $(find "$app" -type l | head -n 1)"
 
 codesign --verify --strict --deep "$app" || fail "the bundle signature does not verify"
 for pair in Berth:com.wesleybldc.berth berthd:com.wesleybldc.berth.daemon berth:com.wesleybldc.berth.cli \

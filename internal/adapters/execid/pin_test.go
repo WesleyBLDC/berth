@@ -274,6 +274,13 @@ func TestLeftoverPinFoldersGoAtBoot(t *testing.T) {
 	if err := os.Chtimes(old, now.Add(-2*time.Hour), now.Add(-2*time.Hour)); err != nil {
 		t.Fatal(err)
 	}
+	// Another user's folders are never removed.
+	if err := removeLeftoverPins(time.Hour, now, uint32(os.Getuid())+1); err != nil { //nolint:gosec // user IDs fit in 32 bits
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(old); err != nil {
+		t.Fatalf("removed a folder of another uid: %v", err)
+	}
 	if err := RemoveLeftoverPins(time.Hour, now); err != nil {
 		t.Fatal(err)
 	}

@@ -11,6 +11,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"golang.org/x/sys/unix"
@@ -308,8 +309,13 @@ func inPinFolder(do func(dir string) error) error {
 }
 
 // RemoveLeftoverPins removes pin folders a process that died mid pin left in the temporary
-// folder. Only folders older than age go, since berth and berth-proxy pin berthd at any time.
+// folder. Only the running user's folders older than age go, since berth and berth-proxy pin
+// berthd at any time.
 func RemoveLeftoverPins(age time.Duration, now time.Time) error {
+	return removeLeftoverPins(age, now, uint32(os.Getuid())) //nolint:gosec // user IDs fit in 32 bits
+}
+
+func removeLeftoverPins(age time.Duration, now time.Time, uid uint32) error {
 	matches, err := filepath.Glob(filepath.Join(os.TempDir(), pinFolderPrefix+"*"))
 	if err != nil {
 		return err
@@ -318,6 +324,9 @@ func RemoveLeftoverPins(age time.Duration, now time.Time) error {
 	for _, m := range matches {
 		info, err := os.Lstat(m)
 		if err != nil || !info.IsDir() || now.Sub(info.ModTime()) < age {
+			continue
+		}
+		if st, ok := info.Sys().(*syscall.Stat_t); !ok || st.Uid != uid {
 			continue
 		}
 		errs = append(errs, os.RemoveAll(m))
