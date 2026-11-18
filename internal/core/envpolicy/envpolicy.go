@@ -41,10 +41,15 @@ func Child(environ, passed []string) []string {
 	for _, n := range passed {
 		allowed[n] = true
 	}
+	return Keep(environ, func(k string) bool { return allowed[k] && !Stripped(k) })
+}
+
+// Keep is the entries of environ whose name keep accepts, in order; an entry with no "=" is
+// never kept.
+func Keep(environ []string, keep func(name string) bool) []string {
 	var out []string
 	for _, kv := range environ {
-		k, _, ok := strings.Cut(kv, "=")
-		if ok && allowed[k] && !Stripped(k) {
+		if k, _, ok := strings.Cut(kv, "="); ok && keep(k) {
 			out = append(out, kv)
 		}
 	}

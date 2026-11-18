@@ -18,6 +18,7 @@ import (
 	"syscall"
 	"time"
 
+	"berth/internal/core/envpolicy"
 	"berth/internal/proxyctl"
 	"berth/internal/strictjson"
 )
@@ -73,14 +74,7 @@ func Start(ctx context.Context, path string, stderr io.Writer) (*Process, error)
 }
 
 func keepEnv(environ []string) []string {
-	var out []string
-	for _, kv := range environ {
-		k, _, _ := strings.Cut(kv, "=")
-		if slices.Contains(proxyctl.Env, k) {
-			out = append(out, kv)
-		}
-	}
-	return out
+	return envpolicy.Keep(environ, func(k string) bool { return slices.Contains(proxyctl.Env, k) })
 }
 
 // Handshake sends the request for names in mode (proxyctl.ModeOwner or ModeAgent) and waits up

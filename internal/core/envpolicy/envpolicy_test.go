@@ -33,3 +33,10 @@ func TestStrippedAndFilter(t *testing.T) {
 		t.Fatalf("filter %v", got)
 	}
 }
+
+func TestKeepDropsEntriesWithoutAValue(t *testing.T) {
+	got := envpolicy.Keep([]string{"A=1", "B", "C=", "D=4"}, func(k string) bool { return k != "D" })
+	if !slices.Equal(got, []string{"A=1", "C="}) {
+		t.Fatalf("got %v", got)
+	}
+}

@@ -12,6 +12,7 @@ import (
 	"time"
 
 	berthv1 "berth/gen/berth/v1"
+	"berth/internal/core/envpolicy"
 	"berth/internal/proxyctl"
 	"berth/internal/proxyproc"
 )
@@ -164,12 +165,7 @@ func proxyChildEnv(environ []string, ctl proxyctl.Control) []string {
 		_, placeholder := ctl.Placeholders[k]
 		return placeholder || slices.Contains(proxyctl.BerthOwned, k)
 	}
-	var out []string
-	for _, kv := range environ {
-		if k, _, _ := strings.Cut(kv, "="); !owned(k) {
-			out = append(out, kv)
-		}
-	}
+	out := envpolicy.Keep(environ, func(k string) bool { return !owned(k) })
 	proxyURL := fmt.Sprintf("http://berth:%s@127.0.0.1:%d", ctl.Credential, ctl.Port)
 	out = append(out,
 		"HTTPS_PROXY="+proxyURL, "https_proxy="+proxyURL,
