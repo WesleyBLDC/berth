@@ -1,0 +1,9 @@
+{
+  "state": "Serving",
+  "stateVersion": "9007199254740993",
+  "pid": 4321,
+  "startedAt": "2025-11-17T11:46:40Z",
+  "socketPath": "/Users/u/Library/Application Support/Berth/berthd.sock",
+  "daemonVersion": "dev",
+  "executable": "/Applications/Berth.app/Contents/Helpers/berthd"
+}

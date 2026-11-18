@@ -92,9 +92,21 @@ type fixtureCase struct {
 	Out string `json:"out"`
 }
 
+func fixtureStatus() *berthv1.StatusResponse {
+	return &berthv1.StatusResponse{
+		State: "Serving", StateVersion: 9007199254740993, Pid: 4321, StartedAt: &timestamppb.Timestamp{Seconds: 1763380000},
+		SocketPath: "/Users/u/Library/Application Support/Berth/berthd.sock", DaemonVersion: "dev",
+		Executable: "/Applications/Berth.app/Contents/Helpers/berthd",
+	}
+}
+
 func TestSwiftFixtures(t *testing.T) {
 	want := fixtureSessions()
 	requireEveryField(t, want[0].GetSnapshot().GetSessions()[0].ProtoReflect())
+	messageFixture(t, "sessions.json", want, func() *berthv1.WatchSessionsResponse { return &berthv1.WatchSessionsResponse{} })
+	requireEveryField(t, fixtureStatus().ProtoReflect())
+	messageFixture(t, "status.json", []*berthv1.StatusResponse{fixtureStatus()}, func() *berthv1.StatusResponse { return &berthv1.StatusResponse{} })
+
 	cases := make([]fixtureCase, 0, len(shownCorpus))
 	for _, in := range shownCorpus {
 		cases = append(cases, fixtureCase{In: in, Out: shown(in)})
@@ -102,34 +114,11 @@ func TestSwiftFixtures(t *testing.T) {
 	if shown("rtl\u202eabc") == "rtl\u202eabc" || shown("claude") != "claude" {
 		t.Fatal("the corpus no longer exercises both of shown's branches")
 	}
-	sessionsPath := filepath.Join(swiftFixtures, "sessions.json")
 	shownPath := filepath.Join(swiftFixtures, "shown.json")
 	if *updateSwift {
-		writeFixtures(t, sessionsPath, shownPath, want, cases)
+		writeJSON(t, shownPath, cases)
 	}
-
-	raw, err := os.ReadFile(sessionsPath)
-	if err != nil {
-		t.Fatalf("%v; run go test ./internal/cli -run TestSwiftFixtures -update-swift", err)
-	}
-	var messages []json.RawMessage
-	if err := json.Unmarshal(raw, &messages); err != nil {
-		t.Fatal(err)
-	}
-	if len(messages) != len(want) {
-		t.Fatalf("%d messages in %s, want %d; rerun with -update-swift", len(messages), sessionsPath, len(want))
-	}
-	for i, m := range messages {
-		got := &berthv1.WatchSessionsResponse{}
-		if err := protojson.Unmarshal(m, got); err != nil {
-			t.Fatalf("message %d: %v", i, err)
-		}
-		if !proto.Equal(got, want[i]) {
-			t.Fatalf("message %d of %s is stale; rerun with -update-swift", i, sessionsPath)
-		}
-	}
-
-	raw, err = os.ReadFile(shownPath)
+	raw, err := os.ReadFile(shownPath)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -147,26 +136,60 @@ func TestSwiftFixtures(t *testing.T) {
 	}
 }
 
-func writeFixtures(t *testing.T, sessionsPath, shownPath string, messages []*berthv1.WatchSessionsResponse, cases []fixtureCase) {
+// messageFixture writes want with protojson under -update-swift, and otherwise checks that the
+// committed file still holds exactly want. A file of one message holds it alone, else a list.
+func messageFixture[M proto.Message](t *testing.T, name string, want []M, fresh func() M) {
 	t.Helper()
-	var list []json.RawMessage
-	for _, m := range messages {
-		b, err := protojson.Marshal(m)
-		if err != nil {
-			t.Fatal(err)
+	path := filepath.Join(swiftFixtures, name)
+	if *updateSwift {
+		list := make([]json.RawMessage, 0, len(want))
+		for _, m := range want {
+			b, err := protojson.Marshal(m)
+			if err != nil {
+				t.Fatal(err)
+			}
+			list = append(list, b)
 		}
-		list = append(list, b)
+		if len(list) == 1 {
+			writeJSON(t, path, list[0])
+		} else {
+			writeJSON(t, path, list)
+		}
 	}
-	for path, v := range map[string]any{sessionsPath: list, shownPath: cases} {
-		var buf bytes.Buffer
-		enc := json.NewEncoder(&buf)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(v); err != nil {
-			t.Fatal(err)
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("%v; run go test ./internal/cli -run TestSwiftFixtures -update-swift", err)
+	}
+	var messages []json.RawMessage
+	if len(want) == 1 {
+		messages = []json.RawMessage{raw}
+	} else if err := json.Unmarshal(raw, &messages); err != nil {
+		t.Fatal(err)
+	}
+	if len(messages) != len(want) {
+		t.Fatalf("%d messages in %s, want %d; rerun with -update-swift", len(messages), path, len(want))
+	}
+	for i, m := range messages {
+		got := fresh()
+		if err := protojson.Unmarshal(m, got); err != nil {
+			t.Fatalf("message %d of %s: %v", i, path, err)
 		}
-		if err := os.WriteFile(path, buf.Bytes(), 0o600); err != nil {
-			t.Fatal(err)
+		if !proto.Equal(got, want[i]) {
+			t.Fatalf("message %d of %s is stale; rerun with -update-swift", i, path)
 		}
+	}
+}
+
+func writeJSON(t *testing.T, path string, v any) {
+	t.Helper()
+	var buf bytes.Buffer
+	enc := json.NewEncoder(&buf)
+	enc.SetIndent("", "  ")
+	if err := enc.Encode(v); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, buf.Bytes(), 0o600); err != nil {
+		t.Fatal(err)
 	}
 }
 

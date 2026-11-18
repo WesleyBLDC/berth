@@ -35,6 +35,9 @@ message StatusResponse {
   google.protobuf.Timestamp started_at = 4;
   string socket_path = 5;
   string daemon_version = 6;
+  // executable is the path of the berthd answering, symlinks resolved, so the app can say
+  // whether the login item's berthd or one started by hand serves the socket.
+  string executable = 7;
 }
 
 message ShutdownRequest {

@@ -316,8 +316,10 @@ func (s *shell) serve(ctx context.Context) error {
 		agent = connect.NewServer(api.AgentOnly(), api.AgentToken(s.agents))
 		servers = append(servers, agent)
 	}
+	// Status reports an empty path when the kernel will not give it; nothing decides on it.
+	self, _ := paths.Self()
 	api.Register(api.Deps{
-		Version: s.cfg.Version, PID: os.Getpid(), StartedAt: s.start, Socket: s.sock,
+		Version: s.cfg.Version, PID: os.Getpid(), StartedAt: s.start, Socket: s.sock, Executable: self,
 		Store: s.store, Requests: s.store, Clock: clock.System{}, Log: s.log,
 		RequestStop: func(ctx context.Context) error {
 			return s.actor.Send(ctx, daemon.Event{Kind: daemon.StopRequested, Note: "Shutdown call"})

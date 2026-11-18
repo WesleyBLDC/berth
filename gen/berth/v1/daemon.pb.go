@@ -171,6 +171,9 @@ type StatusResponse struct {
 	StartedAt     *timestamppb.Timestamp `protobuf:"bytes,4,opt,name=started_at,json=startedAt,proto3" json:"started_at,omitempty"`
 	SocketPath    string                 `protobuf:"bytes,5,opt,name=socket_path,json=socketPath,proto3" json:"socket_path,omitempty"`
 	DaemonVersion string                 `protobuf:"bytes,6,opt,name=daemon_version,json=daemonVersion,proto3" json:"daemon_version,omitempty"`
+	// executable is the path of the berthd answering, symlinks resolved, so the app can say
+	// whether the login item's berthd or one started by hand serves the socket.
+	Executable    string `protobuf:"bytes,7,opt,name=executable,proto3" json:"executable,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -243,6 +246,13 @@ func (x *StatusResponse) GetSocketPath() string {
 func (x *StatusResponse) GetDaemonVersion() string {
 	if x != nil {
 		return x.DaemonVersion
+	}
+	return ""
+}
+
+func (x *StatusResponse) GetExecutable() string {
+	if x != nil {
+		return x.Executable
 	}
 	return ""
 }
@@ -348,7 +358,7 @@ const file_berth_v1_daemon_proto_rawDesc = "" +
 	"\x11HandshakeResponse\x12)\n" +
 	"\x10protocol_version\x18\x01 \x01(\rR\x0fprotocolVersion\x12%\n" +
 	"\x0edaemon_version\x18\x02 \x01(\tR\rdaemonVersion\"\x0f\n" +
-	"\rStatusRequest\"\xe0\x01\n" +
+	"\rStatusRequest\"\x80\x02\n" +
 	"\x0eStatusResponse\x12\x14\n" +
 	"\x05state\x18\x01 \x01(\tR\x05state\x12#\n" +
 	"\rstate_version\x18\x02 \x01(\x03R\fstateVersion\x12\x10\n" +
@@ -357,7 +367,10 @@ const file_berth_v1_daemon_proto_rawDesc = "" +
 	"started_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tstartedAt\x12\x1f\n" +
 	"\vsocket_path\x18\x05 \x01(\tR\n" +
 	"socketPath\x12%\n" +
-	"\x0edaemon_version\x18\x06 \x01(\tR\rdaemonVersion\"<\n" +
+	"\x0edaemon_version\x18\x06 \x01(\tR\rdaemonVersion\x12\x1e\n" +
+	"\n" +
+	"executable\x18\a \x01(\tR\n" +
+	"executable\"<\n" +
 	"\x0fShutdownRequest\x12)\n" +
 	"\n" +
 	"request_id\x18\x01 \x01(\tB\n" +

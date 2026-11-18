@@ -169,6 +169,14 @@ func TestShutdownCallStopsTheDaemon(t *testing.T) {
 	h := home(t)
 	d := start(t, h)
 	c := waitServing(t, h)
+	// The app's settings say which berthd answers from this path.
+	st, err := c.Daemon.Status(t.Context(), &berthv1.StatusRequest{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want, _ := filepath.EvalSymlinks(filepath.Join(binDir, "berthd")); st.GetExecutable() != want {
+		t.Fatalf("Status names %q as berthd, want %q", st.GetExecutable(), want)
+	}
 	if _, err := c.Daemon.Shutdown(context.Background(), &berthv1.ShutdownRequest{RequestId: "e2e-shutdown-1"}); err != nil {
 		t.Fatal(err)
 	}

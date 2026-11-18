@@ -33,13 +33,18 @@ func AgentSocket(ownerUID int) string {
 // Beside returns name in the folder of the running executable, with symlinks resolved, so a
 // helper installed next to berthd or berth is found wherever the pair was put.
 func Beside(name string) (string, error) {
-	exe, err := os.Executable()
-	if err != nil {
-		return "", err
-	}
-	exe, err = filepath.EvalSymlinks(exe)
+	exe, err := Self()
 	if err != nil {
 		return "", err
 	}
 	return filepath.Join(filepath.Dir(exe), name), nil
+}
+
+// Self returns the running executable's path with symlinks resolved.
+func Self() (string, error) {
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(exe)
 }

@@ -5,6 +5,9 @@ import SwiftUI
 @main
 struct BerthApp: App {
     @State private var model = SessionsModel(source: DaemonClient.standard())
+    @State private var loginItem = LoginItemModel(
+        service: LaunchAgentLoginItem(), source: DaemonClient.standard(),
+        bundledDaemon: LaunchAgentLoginItem.bundledDaemon)
 
     var body: some Scene {
         MenuBarExtra {
@@ -14,7 +17,10 @@ struct BerthApp: App {
             MenuLabel(count: model.store.counts.live).task { await model.run() }
         }
         Window("Berth", id: "sessions") {
-            SessionsWindow(model: model)
+            TabView {
+                Tab("Sessions", systemImage: "macwindow.on.rectangle") { SessionsWindow(model: model) }
+                Tab("Settings", systemImage: "gearshape") { SettingsSection(loginItem: loginItem) }
+            }
         }
         .defaultSize(width: 980, height: 520)
     }

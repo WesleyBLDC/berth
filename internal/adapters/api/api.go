@@ -31,9 +31,11 @@ type Deps struct {
 	PID       int
 	StartedAt time.Time
 	Socket    string
-	Store     ports.Store
-	Requests  ports.RequestLog
-	Clock     ports.Clock
+	// Executable is berthd's own path, symlinks resolved.
+	Executable string
+	Store      ports.Store
+	Requests   ports.RequestLog
+	Clock      ports.Clock
 	// Log hears which client each handshake names; nil discards it.
 	Log *slog.Logger
 	// RequestStop asks the daemon machine to stop; it must not block.
@@ -129,6 +131,7 @@ func (h *handlers) Status(ctx context.Context, _ *berthv1.StatusRequest) (*berth
 		StartedAt:     timestamppb.New(h.d.StartedAt),
 		SocketPath:    h.d.Socket,
 		DaemonVersion: h.d.Version,
+		Executable:    h.d.Executable,
 	}, nil
 }
 

@@ -7,8 +7,13 @@ public protocol SessionSource: Sendable {
     func watch(after: Int64) -> AsyncThrowingStream<WatchSessionsResponse, any Error>
 }
 
+/// Where the settings read which berthd answers; the real one is DaemonClient.
+public protocol StatusSource: Sendable {
+    func status() async throws -> StatusResponse
+}
+
 /// The calls the app makes to berthd.
-public struct DaemonClient: SessionSource {
+public struct DaemonClient: SessionSource, StatusSource {
     public var connect: ConnectClient
     public var clientName: String
 
@@ -31,6 +36,11 @@ public struct DaemonClient: SessionSource {
             throw ClientError.protocolMismatch(response.protocolVersion)
         }
         return response
+    }
+
+    public func status() async throws -> StatusResponse {
+        _ = try await handshake()
+        return try await connect.unary("/berth.v1.DaemonService/Status", StatusRequest(), as: StatusResponse.self)
     }
 
     public func watch(after: Int64) -> AsyncThrowingStream<WatchSessionsResponse, any Error> {

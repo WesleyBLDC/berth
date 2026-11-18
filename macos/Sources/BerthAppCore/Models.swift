@@ -348,3 +348,36 @@ public struct HandshakeResponse: Decodable, Sendable, Equatable {
         daemonVersion = try c.value(.daemonVersion, "")
     }
 }
+
+struct StatusRequest: Encodable {}
+
+public struct StatusResponse: Decodable, Sendable, Equatable {
+    public var state = ""
+    public var stateVersion: Int64 = 0
+    public var pid: Int32 = 0
+    public var startedAt: Date?
+    public var socketPath = ""
+    public var daemonVersion = ""
+    public var executable = ""
+
+    enum CodingKeys: String, CodingKey {
+        case state, stateVersion, pid, startedAt, socketPath, daemonVersion, executable
+    }
+
+    public init(pid: Int32, daemonVersion: String, executable: String) {
+        self.pid = pid
+        self.daemonVersion = daemonVersion
+        self.executable = executable
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        state = try c.value(.state, "")
+        stateVersion = try c.int64(.stateVersion)
+        pid = try c.value(.pid, 0)
+        startedAt = try c.date(.startedAt)
+        socketPath = try c.value(.socketPath, "")
+        daemonVersion = try c.value(.daemonVersion, "")
+        executable = try c.value(.executable, "")
+    }
+}
