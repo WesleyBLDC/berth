@@ -142,10 +142,7 @@ func TestAllowedPassesAndDeniedIsAnsweredByTheProxy(t *testing.T) {
 	if m["id"] != float64(2) || m["sessionId"] != "S" || !strings.Contains(m["error"].(map[string]any)["message"].(string), "refused by Berth: SystemInfo.getInfo") {
 		t.Fatalf("refusal = %v", m)
 	}
-	deadline := time.Now().Add(2 * time.Second)
-	for len(fb.Sent()) == 0 && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
-	}
+	testutil.Eventually(func() bool { return len(fb.Sent()) > 0 })
 	if sent := fb.Sent(); len(sent) != 1 || !strings.Contains(string(sent[0]), "Page.enable") {
 		t.Fatalf("browser got %q; only the allowed message may reach it", sent)
 	}
@@ -215,10 +212,8 @@ func TestASlowAgentIsDroppedPastTheByteLimit(t *testing.T) {
 	const sent = 64
 	// The handshake can finish before the proxy sets its sink, and the proxy lets go of the sink
 	// once it drops the agent, so wait for the first message to land and stop at the drop.
-	for deadline := time.Now().Add(5 * time.Second); fb.Emit(big) != nil; time.Sleep(time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatal("the proxy never took the browser's messages")
-		}
+	if !testutil.Eventually(func() bool { return fb.Emit(big) == nil }) {
+		t.Fatal("the proxy never took the browser's messages")
 	}
 	for range sent - 1 {
 		if fb.Emit(big) != nil {
@@ -271,15 +266,12 @@ func write(t *testing.T, ws *websocket.Conn, raw string) {
 // redial connects again once the previous connection's state is undone and its slot free.
 func redial(t *testing.T, endpoint string) *websocket.Conn {
 	t.Helper()
-	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(10 * time.Millisecond) {
-		ws, _, err := dial(t, endpoint, true)
-		if err == nil {
-			return ws
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("no new connection after the first ended: %v", err)
-		}
+	var ws *websocket.Conn
+	var err error
+	if !testutil.Eventually(func() bool { ws, _, err = dial(t, endpoint, true); return err == nil }) {
+		t.Fatalf("no new connection after the first ended: %v", err)
 	}
+	return ws
 }
 
 // The browser and its pipe outlive each connection, so whatever one connection turned on must
@@ -297,10 +289,8 @@ func TestAnEndedConnectionLeavesNothingToTheNext(t *testing.T) {
 	write(t, ws, `{"id":2,"method":"Fetch.enable"}`)
 	write(t, ws, `{"id":3,"method":"Target.attachToTarget","params":{"targetId":"T2","flatten":true}}`)
 	write(t, ws, `{"id":7,"method":"Target.getTargets"}`)
-	for deadline := time.Now().Add(5 * time.Second); len(fb.Sent()) < 4; time.Sleep(5 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatal("the browser never got the messages")
-		}
+	if !testutil.Eventually(func() bool { return len(fb.Sent()) >= 4 }) {
+		t.Fatal("the browser never got the messages")
 	}
 	for _, raw := range []string{
 		`{"id":1,"result":{}}`, `{"id":2,"result":{}}`,
@@ -365,10 +355,8 @@ func TestAnIDLeftInFlightIsRefusedToTheNextConnection(t *testing.T) {
 		t.Fatal(err)
 	}
 	write(t, ws, `{"id":5,"method":"Target.getTargets"}`)
-	for deadline := time.Now().Add(5 * time.Second); len(fb.Sent()) < 1; time.Sleep(5 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatal("the browser never got the message")
-		}
+	if !testutil.Eventually(func() bool { return len(fb.Sent()) >= 1 }) {
+		t.Fatal("the browser never got the message")
 	}
 	_ = ws.CloseNow()
 	next := redial(t, endpoint)
@@ -452,10 +440,8 @@ func TestOnlyWebContentCanBeAttachedTo(t *testing.T) {
 	}
 	fb.Answer("Target.getTargetInfo", `{"targetInfo":{"targetId":"P","type":"page","url":"https://a.example/"}}`)
 	write(t, ws, `{"id":2,"method":"Target.attachToTarget","params":{"targetId":"P","flatten":true}}`)
-	for deadline := time.Now().Add(5 * time.Second); len(fb.Sent()) < 1; time.Sleep(5 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatal("an attach to a web page never reached the browser")
-		}
+	if !testutil.Eventually(func() bool { return len(fb.Sent()) >= 1 }) {
+		t.Fatal("an attach to a web page never reached the browser")
 	}
 	if sent := fb.Sent(); len(sent) != 1 || !strings.Contains(string(sent[0]), `"targetId":"P"`) {
 		t.Fatalf("browser got %q; only the attach to the page may reach it", sent)
@@ -493,10 +479,8 @@ func TestOnlyWebContentCanBeAttachedTo(t *testing.T) {
 
 func waitSent(t *testing.T, fb *testutil.FakeBrowser, n int) {
 	t.Helper()
-	for deadline := time.Now().Add(5 * time.Second); len(fb.Sent()) < n; time.Sleep(5 * time.Millisecond) {
-		if time.Now().After(deadline) {
-			t.Fatalf("the browser got %d messages, want %d", len(fb.Sent()), n)
-		}
+	if !testutil.Eventually(func() bool { return len(fb.Sent()) >= n }) {
+		t.Fatalf("the browser got %d messages, want %d", len(fb.Sent()), n)
 	}
 }
 
@@ -605,15 +589,12 @@ func attach(t *testing.T, fb *testutil.FakeBrowser, ws *websocket.Conn, session,
 // waitCall waits until Berth made a call of method about session.
 func waitCall(t *testing.T, fb *testutil.FakeBrowser, session, method string) {
 	t.Helper()
-	for deadline := time.Now().Add(5 * time.Second); ; time.Sleep(5 * time.Millisecond) {
-		if slices.ContainsFunc(fb.Calls(), func(c testutil.FakeCall) bool {
+	if !testutil.Eventually(func() bool {
+		return slices.ContainsFunc(fb.Calls(), func(c testutil.FakeCall) bool {
 			return c.Method == method && (c.Session == session || strings.Contains(c.Params, `"`+session+`"`))
-		}) {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("no %s call about %s; calls %v", method, session, fb.Calls())
-		}
+		})
+	}) {
+		t.Fatalf("no %s call about %s; calls %v", method, session, fb.Calls())
 	}
 }
 

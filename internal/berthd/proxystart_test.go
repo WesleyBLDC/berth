@@ -305,10 +305,7 @@ func TestStartProxyLimitsEachAgentSession(t *testing.T) {
 			_ = f.s.StartProxy(ctx, &berthv1.StartProxyRequest{Names: []string{"gh-token"}}, func(*berthv1.StartProxyResponse) error { return nil })
 		})
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for fs.starts() < maxStartedProxies && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
+	testutil.Eventually(func() bool { return fs.starts() >= maxStartedProxies })
 	err := f.s.StartProxy(ctx, &berthv1.StartProxyRequest{Names: []string{"gh-token"}}, func(*berthv1.StartProxyResponse) error { return nil })
 	if !errors.Is(err, api.ErrRateLimited) || fs.starts() != maxStartedProxies {
 		t.Fatalf("one start too many: %v, %d starts", err, fs.starts())
@@ -318,9 +315,7 @@ func TestStartProxyLimitsEachAgentSession(t *testing.T) {
 	go func() {
 		ownerDone <- f.s.StartProxy(ownerCtx, &berthv1.StartProxyRequest{Names: []string{"gh-token"}}, func(*berthv1.StartProxyResponse) error { return nil })
 	}()
-	for fs.starts() < maxStartedProxies+1 && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
+	testutil.Eventually(func() bool { return fs.starts() >= maxStartedProxies+1 })
 	if fs.starts() != maxStartedProxies+1 {
 		t.Fatalf("the owner was limited: %d starts", fs.starts())
 	}

@@ -16,6 +16,7 @@ import (
 	berthv1 "berth/gen/berth/v1"
 	"berth/gen/berth/v1/berthv1connect"
 	"berth/internal/client"
+	"berth/internal/testutil"
 )
 
 const canary = "canary-7f3a9c-not-a-secret"
@@ -89,17 +90,11 @@ func TestRunForwardsSIGTERMButNotSIGINT(t *testing.T) {
 	}()
 	waitFor := func(want string) string {
 		t.Helper()
-		deadline := time.Now().Add(5 * time.Second)
-		for time.Now().Before(deadline) {
-			b, _ := os.ReadFile(log)
-			if strings.Contains(string(b), want) {
-				return string(b)
-			}
-			time.Sleep(20 * time.Millisecond)
+		var b []byte
+		if !testutil.Eventually(func() bool { b, _ = os.ReadFile(log); return strings.Contains(string(b), want) }) {
+			t.Fatalf("child never logged %q; log %q", want, b)
 		}
-		b, _ := os.ReadFile(log)
-		t.Fatalf("child never logged %q; log %q", want, b)
-		return ""
+		return string(b)
 	}
 	waitFor("ready")
 	if err := syscall.Kill(os.Getpid(), syscall.SIGINT); err != nil {

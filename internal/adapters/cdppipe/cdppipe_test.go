@@ -18,6 +18,7 @@ import (
 
 	"berth/internal/adapters/cdppipe"
 	"berth/internal/core/ports"
+	"berth/internal/testutil"
 )
 
 // TestMain doubles as a fake Chrome: launched with the pipe flags, it answers on fds 3 and 4.
@@ -141,10 +142,7 @@ func TestCallsRepliesAndTheSink(t *testing.T) {
 	if _, err := c.Call(ctx, "", "Runtime.enable", nil); err != nil {
 		t.Fatal(err)
 	}
-	deadline := time.Now().Add(5 * time.Second)
-	for len(s.all()) < 1 && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
+	testutil.Eventually(func() bool { return len(s.all()) >= 1 })
 	if all := s.all(); len(all) != 1 || !strings.Contains(all[0], `"id":7`) {
 		t.Fatalf("sink got %v, want only the reply to id 7", all)
 	}
@@ -330,14 +328,8 @@ func TestRealChromiumOverThePipe(t *testing.T) {
 	case <-time.After(10 * time.Second):
 		t.Fatal("the browser outlived Kill")
 	}
-	for deadline := time.Now().Add(5 * time.Second); ; {
-		if err := syscall.Kill(-pgid, 0); errors.Is(err, syscall.ESRCH) {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("a process of the browser's group outlived Kill")
-		}
-		time.Sleep(50 * time.Millisecond)
+	if !testutil.Eventually(func() bool { return errors.Is(syscall.Kill(-pgid, 0), syscall.ESRCH) }) {
+		t.Fatal("a process of the browser's group outlived Kill")
 	}
 }
 
@@ -421,14 +413,8 @@ func TestHelpersOutlivingTheLeaderAreKilled(t *testing.T) {
 		t.Fatalf("no helper pid: %v", err)
 	}
 	t.Cleanup(func() { _ = syscall.Kill(pid, syscall.SIGKILL) })
-	for deadline := time.Now().Add(5 * time.Second); ; {
-		if err := syscall.Kill(pid, 0); errors.Is(err, syscall.ESRCH) {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatal("a helper outlived its browser's leader")
-		}
-		time.Sleep(20 * time.Millisecond)
+	if !testutil.Eventually(func() bool { return errors.Is(syscall.Kill(pid, 0), syscall.ESRCH) }) {
+		t.Fatal("a helper outlived its browser's leader")
 	}
 }
 

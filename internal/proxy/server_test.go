@@ -22,6 +22,7 @@ import (
 	"time"
 
 	berthv1 "berth/gen/berth/v1"
+	"berth/internal/testutil"
 )
 
 const (
@@ -565,14 +566,9 @@ func TestConnectionCap(t *testing.T) {
 	_ = resp.Body.Close()
 	_ = held[0].Close()
 	head := fmt.Sprintf("CONNECT %s HTTP/1.1\r\nHost: %s\r\nProxy-Authorization: %s\r\n\r\n", a.authority(), a.authority(), basic(testCred))
-	deadline := time.Now().Add(5 * time.Second)
-	for {
-		if r := f.raw(t, head); r.StatusCode == http.StatusOK {
-			return
-		} else if time.Now().After(deadline) {
-			t.Fatalf("a freed slot was not reused: %d", r.StatusCode)
-		}
-		time.Sleep(20 * time.Millisecond)
+	status := 0
+	if !testutil.Eventually(func() bool { status = f.raw(t, head).StatusCode; return status == http.StatusOK }) {
+		t.Fatalf("a freed slot was not reused: %d", status)
 	}
 }
 

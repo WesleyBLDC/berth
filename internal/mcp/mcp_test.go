@@ -12,7 +12,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connectinprocess"
@@ -22,6 +21,7 @@ import (
 
 	berthv1 "berth/gen/berth/v1"
 	"berth/gen/berth/v1/berthv1connect"
+	"berth/internal/testutil"
 )
 
 // toolsSHA256 pins tools.json: a changed tool definition must change this on purpose, since MCP
@@ -294,14 +294,8 @@ func TestServeRemovesTokenFilesWhenItEnds(t *testing.T) {
 	opened, _ := s.call(1, "browser_open", `{}`)
 	_ = s.in.Close()
 	file := opened["token_file"].(string)
-	for deadline := time.Now().Add(5 * time.Second); ; {
-		if _, err := os.Stat(file); os.IsNotExist(err) {
-			break
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("token file %s in %s survived the server", file, dir)
-		}
-		time.Sleep(10 * time.Millisecond)
+	if !testutil.Eventually(func() bool { _, err := os.Stat(file); return os.IsNotExist(err) }) {
+		t.Fatalf("token file %s in %s survived the server", file, dir)
 	}
 }
 

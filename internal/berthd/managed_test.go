@@ -107,12 +107,8 @@ func (f *managedFixture) events(t *testing.T, id string) []string {
 
 func waitBrowserClosed(t *testing.T, m *managed, id string) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for m.state(id) != browser.Closed {
-		if time.Now().After(deadline) {
-			t.Fatalf("browser %s is %s, want Closed", id, m.state(id))
-		}
-		time.Sleep(5 * time.Millisecond)
+	if !testutil.Eventually(func() bool { return m.state(id) == browser.Closed }) {
+		t.Fatalf("browser %s is %s, want Closed", id, m.state(id))
 	}
 }
 

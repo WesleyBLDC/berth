@@ -54,14 +54,9 @@ func (f *fixture) state(t *testing.T, entity string) string {
 // eventually waits for an entity to reach a state the shell moves it to in the background.
 func (f *fixture) eventually(t *testing.T, entity, want string) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if f.state(t, entity) == want {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
+	if !testutil.Eventually(func() bool { return f.state(t, entity) == want }) {
+		t.Fatalf("%s is %s, want %s", entity, f.state(t, entity), want)
 	}
-	t.Fatalf("%s is %s, want %s", entity, f.state(t, entity), want)
 }
 
 // watcher runs WatchProxySession as the proxy would, collecting what berthd sends.
@@ -812,10 +807,7 @@ func TestAgentSessionEndStopsItsProxies(t *testing.T) {
 // after its step returns.
 func actorsSettle(t *testing.T, what string, count func() int, want int) {
 	t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for count() != want && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
-	}
+	testutil.Eventually(func() bool { return count() == want })
 	if got := count(); got != want {
 		t.Fatalf("%d %s actors still run, want %d", got, what, want)
 	}

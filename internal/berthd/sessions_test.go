@@ -131,10 +131,7 @@ func TestStopSignalsAndEndsWhenTheBrowserGoes(t *testing.T) {
 		}
 		done <- resp
 	}()
-	deadline := time.Now().Add(2 * time.Second)
-	for len(f.procs.Signals()) == 0 && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
+	testutil.Eventually(func() bool { return len(f.procs.Signals()) > 0 })
 	if got := f.procs.Signals(); !slices.Equal(got, []testutil.SentSignal{{PID: 100, Signal: ports.SignalTerm}}) {
 		t.Fatalf("signals %v, want SIGTERM to 100", got)
 	}
@@ -206,10 +203,7 @@ func (f *browsersFixture) set(t *testing.T, rows ...testutil.FakeProcess) {
 
 func waitSignals(t *testing.T, procs *testutil.Processes, n int) []testutil.SentSignal {
 	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for len(procs.Signals()) < n && time.Now().Before(deadline) {
-		time.Sleep(5 * time.Millisecond)
-	}
+	testutil.Eventually(func() bool { return len(procs.Signals()) >= n })
 	return procs.Signals()
 }
 
