@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"log/slog"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -120,5 +122,39 @@ func TestAnySliceOfAUniversalBinaryIsTrusted(t *testing.T) {
 		if got := f.Runs(t.Context(), ports.Peer{PID: 9}); got != want {
 			t.Errorf("slice %x trusted %v, want %v", h[:1], got, want)
 		}
+	}
+}
+
+// Callers that find no match while a pin runs wait for it rather than start their own, and the
+// interval before the next pin counts from when a pin finished, so a slow pin is not repeated at
+// once.
+func TestRepinsAreSingleFlightAndSpacedFromTheirEnd(t *testing.T) {
+	clock := testutil.NewClock()
+	release := make(chan struct{})
+	var pins atomic.Int32
+	pin := func(context.Context, string, string) ([]ports.CDHash, bool, error) {
+		if pins.Add(1) > 1 {
+			return []ports.CDHash{{1}}, true, nil
+		}
+		<-release
+		// The first pin takes longer than the interval.
+		clock.Advance(codetrust.RepinInterval + time.Second)
+		return []ports.CDHash{{1}}, true, nil
+	}
+	peer := &live{code: ports.LiveCode{CDHash: ports.CDHash{2}, Status: ports.CSValid | ports.CSRuntime}}
+	f := codetrust.Deferred("/b/berthd", codetrust.DaemonSigningID, pin, peer, clock, slog.New(slog.DiscardHandler))
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Go(func() { f.Runs(t.Context(), ports.Peer{PID: 7}) })
+	}
+	time.Sleep(50 * time.Millisecond)
+	close(release)
+	wg.Wait()
+	if got := pins.Load(); got != 1 {
+		t.Fatalf("%d pins for 8 concurrent mismatches, want 1", got)
+	}
+	f.Runs(t.Context(), ports.Peer{PID: 7})
+	if got := pins.Load(); got != 1 {
+		t.Fatalf("pinned again right after a slow pin finished: %d pins", got)
 	}
 }

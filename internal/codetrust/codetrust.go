@@ -1,7 +1,8 @@
 // Package codetrust recognises Berth's own signed binaries in running processes: berthd uses it
-// for the berth CLI, berth-native and berth-proxy, and berth and berth-proxy use it for berthd. A file is pinned by the
-// cdhash of a private copy that satisfies the signing requirement, and a process counts as that
-// file only when the kernel reports the same cdhash, a valid signature and the hardened runtime.
+// for the berth CLI, berth-native, berth-proxy and Berth.app, and berth and berth-proxy use it for
+// berthd. A file is pinned by the cdhash of each architecture slice whose code satisfies the
+// signing requirement, and a process counts as that file only when the kernel reports one of
+// those cdhashes, a valid signature and the hardened runtime.
 package codetrust
 
 import (
@@ -38,13 +39,13 @@ func Requirement(identifier string) string {
 // the file must not be trusted.
 type Pinner func(ctx context.Context, path, identifier string) ([]ports.CDHash, bool, error)
 
-// SignedFiles checks a private copy of a file against a requirement and reads its cdhash
+// SignedFiles returns the cdhash of every slice of a file whose code satisfies a requirement
 // (execid.Identity implements it).
 type SignedFiles interface {
 	PinSigned(ctx context.Context, path, requirement string) ([]ports.CDHash, bool, error)
 }
 
-// SignedPinner is the release rule: a private copy of the file must satisfy Requirement.
+// SignedPinner is the release rule: each pinned slice's code must satisfy Requirement.
 func SignedPinner(x SignedFiles) Pinner {
 	return func(ctx context.Context, path, identifier string) ([]ports.CDHash, bool, error) {
 		return x.PinSigned(ctx, path, Requirement(identifier))
@@ -65,7 +66,13 @@ type File struct {
 	ok       bool
 	pinnedAt time.Time
 	pinned   bool
+	// inFlight is closed when the pin under way finishes; nil when none is.
+	inFlight chan struct{}
 }
+
+// pinTimeout bounds one pin, which runs on its own context so a caller that gives up does not
+// fail it for the callers waiting on it.
+const pinTimeout = time.Minute
 
 // New pins the file at path now.
 func New(ctx context.Context, path, identifier string, pin Pinner, code ports.CodeInspector, clock ports.Clock, log *slog.Logger) *File {
@@ -81,23 +88,36 @@ func Deferred(path, identifier string, pin Pinner, code ports.CodeInspector, clo
 }
 
 // repin reads the file again, for example after make build replaced it, at most once per
-// RepinInterval.
+// RepinInterval counted from the end of the last pin. Callers that arrive while a pin runs wait
+// for it instead of starting another.
 func (f *File) repin(ctx context.Context) {
-	now := f.clock.Now()
 	f.mu.Lock()
-	if f.pinned && now.Sub(f.pinnedAt) < RepinInterval {
+	if wait := f.inFlight; wait != nil {
+		f.mu.Unlock()
+		select {
+		case <-wait:
+		case <-ctx.Done():
+		}
+		return
+	}
+	if f.pinned && f.clock.Now().Sub(f.pinnedAt) < RepinInterval {
 		f.mu.Unlock()
 		return
 	}
-	f.pinned, f.pinnedAt = true, now
+	done := make(chan struct{})
+	f.inFlight = done
 	f.mu.Unlock()
-	h, ok, err := f.pin(ctx, f.path, f.identifier)
+	pinCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), pinTimeout)
+	h, ok, err := f.pin(pinCtx, f.path, f.identifier)
+	cancel()
 	if err != nil || !ok {
 		f.log.Warn("not trusting a Berth binary", "path", f.path, "identifier", f.identifier, "err", err)
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.cdhashes, f.ok = h, ok && err == nil
+	f.pinned, f.pinnedAt, f.inFlight = true, f.clock.Now(), nil
+	close(done)
 }
 
 func (f *File) matches(live ports.LiveCode) bool {

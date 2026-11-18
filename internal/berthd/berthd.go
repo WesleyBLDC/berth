@@ -145,6 +145,11 @@ func Run(ctx context.Context, cfg Config) (int, error) {
 	}
 	pin := cfg.Pinner
 	execs := execid.New(execid.DefaultCodesign)
+	// A pin interrupted by a crash leaves its copy behind; berth and berth-proxy pin berthd at any
+	// time, so only copies older than any pin could take are removed.
+	if err := execid.RemoveLeftoverPins(time.Hour, clock.System{}.Now()); err != nil {
+		cfg.Log.Warn("could not remove leftover pin copies", "err", err)
+	}
 	// Secret, grant and session transitions wake the WatchNeeds streams.
 	needStreams := newWatchSet()
 	if s.secrets, err = newSecretsFor(machineCtx, cfg, store, execs, pin, needStreams.wakeAll); err != nil {
