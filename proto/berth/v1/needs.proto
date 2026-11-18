@@ -1,0 +1,87 @@
+syntax = "proto3";
+
+package berth.v1;
+
+import "berth/v1/sessions.proto";
+import "buf/validate/validate.proto";
+
+// NeedsService tells the person what waits on them, so Berth.app can post a notification. It
+// sends only facts berthd verified: which entity waits, the kind of wait, and the secret's name
+// (already checked by its name rule) or the browser owner's name, both chosen by a process or an
+// agent, so a client shows them quoted and labelled. It is not on the agent surface.
+service NeedsService {
+  // WatchNeeds streams every need as it opens and resolves, built like WatchSessions: a client
+  // that stores the event_id of the last message it applied and reconnects with it gets every
+  // change after it, across a berthd restart too; one that fell more than 1,000 secret, grant
+  // and session events behind, or whose cursor berthd does not know, gets a snapshot instead.
+  // The stream ends without an error when berthd stops serving. At most 16 streams are open at
+  // once.
+  rpc WatchNeeds(WatchNeedsRequest) returns (stream WatchNeedsResponse);
+}
+
+// NeedKind is what waits on the person.
+enum NeedKind {
+  NEED_KIND_UNSPECIFIED = 0;
+  // STORE is a store dialog waiting for a value (the secret is Pending).
+  NEED_KIND_STORE = 1;
+  // ROTATE is a rotate dialog waiting for a new value and Touch ID (the secret is Rotating).
+  NEED_KIND_ROTATE = 2;
+  // REMOVE is a remove waiting for Touch ID (the secret is Removing).
+  NEED_KIND_REMOVE = 3;
+  // GRANT is a grant waiting for Touch ID (the grant is Requested).
+  NEED_KIND_GRANT = 4;
+  // LEFTOVER is a browser whose owner exited (the session is Leftover).
+  NEED_KIND_LEFTOVER = 5;
+}
+
+// Need is one thing that waits on the person.
+message Need {
+  // id is the machine entity that waits, such as secret/<name>, grant/<id> or session/<id>; it
+  // is the same for the need's whole life, so a client replaces a notification by it.
+  string id = 1;
+  NeedKind kind = 2;
+  // secret_name is set for STORE, ROTATE, REMOVE and GRANT.
+  string secret_name = 3;
+  // owner_name is the process name of a LEFTOVER browser's owner as berthd last saw it; usually
+  // empty, since a browser becomes a leftover when its owner exits.
+  string owner_name = 4;
+  // browser is a LEFTOVER browser's kind, which berthd read from its executable.
+  BrowserKind browser = 5;
+}
+
+// NeedEvent is what happened to a need.
+enum NeedEvent {
+  NEED_EVENT_UNSPECIFIED = 0;
+  // OPENED means the need began; a client that already shows it ignores the repeat.
+  NEED_EVENT_OPENED = 1;
+  // RESOLVED means the need ended, whatever the outcome.
+  NEED_EVENT_RESOLVED = 2;
+}
+
+message WatchNeedsRequest {
+  // after_event_id is the event_id of the last message the client applied; 0 starts with a
+  // snapshot.
+  int64 after_event_id = 1 [(buf.validate.field).int64.gte = 0];
+}
+
+// NeedsSnapshot holds every open need; the client replaces everything it holds with it.
+message NeedsSnapshot {
+  // event_id is the cursor the snapshot is consistent with; changes after it follow.
+  int64 event_id = 1;
+  repeated Need needs = 2;
+  SnapshotReason reason = 3;
+}
+
+message NeedChange {
+  // event_id only grows, with gaps, since events that open or resolve no need are skipped.
+  int64 event_id = 1;
+  NeedEvent event = 2;
+  Need need = 3;
+}
+
+message WatchNeedsResponse {
+  oneof update {
+    NeedsSnapshot snapshot = 1;
+    NeedChange change = 2;
+  }
+}

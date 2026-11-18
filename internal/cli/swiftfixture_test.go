@@ -6,6 +6,7 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	"strconv"
 	"testing"
 
 	"google.golang.org/protobuf/encoding/protojson"
@@ -90,6 +91,8 @@ func requireEveryField(t *testing.T, m protoreflect.Message) {
 type fixtureCase struct {
 	In  string `json:"in"`
 	Out string `json:"out"`
+	// Quoted is the text always quoted, as the app labels agent chosen text in notifications.
+	Quoted string `json:"quoted"`
 }
 
 func fixtureStatus() *berthv1.StatusResponse {
@@ -100,16 +103,40 @@ func fixtureStatus() *berthv1.StatusResponse {
 	}
 }
 
+func fixtureNeeds() []*berthv1.WatchNeedsResponse {
+	full := &berthv1.Need{
+		Id: "session/4242-1763380000123456", Kind: berthv1.NeedKind_NEED_KIND_LEFTOVER, SecretName: "gh-token",
+		OwnerName: "node\u202e", Browser: berthv1.BrowserKind_BROWSER_KIND_HEADLESS_SHELL,
+	}
+	return []*berthv1.WatchNeedsResponse{
+		{Update: &berthv1.WatchNeedsResponse_Snapshot{Snapshot: &berthv1.NeedsSnapshot{
+			EventId: 9007199254740993, Needs: []*berthv1.Need{full}, Reason: berthv1.SnapshotReason_SNAPSHOT_REASON_BEHIND,
+		}}},
+		{Update: &berthv1.WatchNeedsResponse_Change{Change: &berthv1.NeedChange{
+			EventId: 9007199254740995, Event: berthv1.NeedEvent_NEED_EVENT_OPENED, Need: full,
+		}}},
+		{Update: &berthv1.WatchNeedsResponse_Change{Change: &berthv1.NeedChange{
+			EventId: 9007199254740996, Event: berthv1.NeedEvent_NEED_EVENT_RESOLVED,
+			Need: &berthv1.Need{Id: "grant/7", Kind: berthv1.NeedKind_NEED_KIND_GRANT, SecretName: "gh-token"},
+		}}},
+	}
+}
+
 func TestSwiftFixtures(t *testing.T) {
 	want := fixtureSessions()
 	requireEveryField(t, want[0].GetSnapshot().GetSessions()[0].ProtoReflect())
 	messageFixture(t, "sessions.json", want, func() *berthv1.WatchSessionsResponse { return &berthv1.WatchSessionsResponse{} })
+	needs := fixtureNeeds()
+	requireEveryField(t, needs[0].GetSnapshot().ProtoReflect())
+	requireEveryField(t, needs[0].GetSnapshot().GetNeeds()[0].ProtoReflect())
+	requireEveryField(t, needs[1].GetChange().ProtoReflect())
+	messageFixture(t, "needs.json", needs, func() *berthv1.WatchNeedsResponse { return &berthv1.WatchNeedsResponse{} })
 	requireEveryField(t, fixtureStatus().ProtoReflect())
 	messageFixture(t, "status.json", []*berthv1.StatusResponse{fixtureStatus()}, func() *berthv1.StatusResponse { return &berthv1.StatusResponse{} })
 
 	cases := make([]fixtureCase, 0, len(shownCorpus))
 	for _, in := range shownCorpus {
-		cases = append(cases, fixtureCase{In: in, Out: shown(in)})
+		cases = append(cases, fixtureCase{In: in, Out: shown(in), Quoted: strconv.QuoteToGraphic(in)})
 	}
 	if shown("rtl\u202eabc") == "rtl\u202eabc" || shown("claude") != "claude" {
 		t.Fatal("the corpus no longer exercises both of shown's branches")
@@ -131,7 +158,7 @@ func TestSwiftFixtures(t *testing.T) {
 	}
 	for i := range cases {
 		if got[i] != cases[i] {
-			t.Fatalf("%s case %d is %q, shown says %q; rerun with -update-swift", shownPath, i, got[i].Out, cases[i].Out)
+			t.Fatalf("%s case %d is %+v, Go says %+v; rerun with -update-swift", shownPath, i, got[i], cases[i])
 		}
 	}
 }

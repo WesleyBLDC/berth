@@ -5,7 +5,12 @@ import Foundation
 /// owner name or profile folder cannot hide text behind control, bidi or format characters.
 /// The cases in Fixtures/shown.json come from the Go function itself.
 public func shown(_ text: String) -> String {
-    guard !text.unicodeScalars.allSatisfy(isGraphic) else { return text }
+    text.unicodeScalars.allSatisfy(isGraphic) ? text : quoted(text)
+}
+
+/// Text always quoted with Go's escapes (strconv.QuoteToGraphic), for where a person must see
+/// where agent or process chosen text starts and ends, as in a notification.
+public func quoted(_ text: String) -> String {
     var out = "\""
     for scalar in text.unicodeScalars {
         switch scalar {

@@ -4,6 +4,7 @@ import SwiftUI
 /// The window's settings: each change starts from a button the person presses.
 struct SettingsSection: View {
     var loginItem: LoginItemModel
+    var notifications: NotificationSetting
 
     var body: some View {
         Form {
@@ -21,6 +22,14 @@ struct SettingsSection: View {
                     }
                     Button("Open Login Items") { loginItem.openSettings() }
                     Button("Refresh") { Task { await loginItem.refresh() } }
+                }
+            }
+            Section("Notifications") {
+                LabeledContent("Notifications", value: notifications.text)
+                if notifications.isOn {
+                    Button("Turn Off") { notifications.turnOff() }
+                } else {
+                    Button("Turn On") { Task { await notifications.turnOn() } }
                 }
             }
         }

@@ -13,7 +13,7 @@ public protocol StatusSource: Sendable {
 }
 
 /// The calls the app makes to berthd.
-public struct DaemonClient: SessionSource, StatusSource {
+public struct DaemonClient: SessionSource, NeedSource, StatusSource {
     public var connect: ConnectClient
     public var clientName: String
 
@@ -44,15 +44,29 @@ public struct DaemonClient: SessionSource, StatusSource {
     }
 
     public func watch(after: Int64) -> AsyncThrowingStream<WatchSessionsResponse, any Error> {
+        stream(
+            "/berth.v1.SessionsService/WatchSessions", WatchSessionsRequest(afterEventId: ProtoInt64(after)),
+            as: WatchSessionsResponse.self)
+    }
+
+    public func watchNeeds(after: Int64) -> AsyncThrowingStream<WatchNeedsResponse, any Error> {
+        stream(
+            "/berth.v1.NeedsService/WatchNeeds", WatchNeedsRequest(afterEventId: ProtoInt64(after)),
+            as: WatchNeedsResponse.self)
+    }
+
+    /// Handshakes, then relays one server stream.
+    private func stream<Request: Encodable & Sendable, Response: Decodable & Sendable>(
+        _ path: String, _ request: Request, as: Response.Type
+    ) -> AsyncThrowingStream<Response, any Error> {
         let client = self
         return AsyncThrowingStream { continuation in
             let task = Task {
                 do {
                     _ = try await client.handshake()
-                    let stream = client.connect.serverStream(
-                        "/berth.v1.SessionsService/WatchSessions",
-                        WatchSessionsRequest(afterEventId: ProtoInt64(after)), as: WatchSessionsResponse.self)
-                    for try await message in stream { continuation.yield(message) }
+                    for try await message in client.connect.serverStream(path, request, as: Response.self) {
+                        continuation.yield(message)
+                    }
                     continuation.finish()
                 } catch {
                     continuation.finish(throwing: error)

@@ -173,7 +173,7 @@ func newFixtureWith(t *testing.T, approver ports.Approver, tickets ports.TicketS
 		Log: log, Store: store, Records: store, Sessions: store, Clock: clock,
 		Approver: approver, Execs: execs, Peers: peers, Tickets: tickets,
 		CLI: trusted(codetrust.CLISigningID), Helper: trusted(codetrust.HelperSigningID), Proxy: trusted(codetrust.ProxySigningID),
-		PID: berthdPID, Exits: f.exits.watch,
+		PID: berthdPID, Exits: f.exits.watch, Changed: func() {},
 		// Tests that start a proxy or end an agent session replace these.
 		StartProxyProcess: func(context.Context) (*proxyproc.Process, error) {
 			return nil, errors.New("no berth-proxy in this test")

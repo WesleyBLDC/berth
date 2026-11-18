@@ -142,3 +142,28 @@ func TestAppliedIsToldAfterEffectsRun(t *testing.T) {
 		t.Fatalf("order: %s", got)
 	}
 }
+
+// Saved hears of a transition once it is stored and before its effect runs, so a watcher sees a
+// prompt while the effect still waits on it.
+func TestSavedIsToldBeforeEffectsRun(t *testing.T) {
+	store := testutil.NewStore()
+	var order []string
+	a, err := machine.NewActor(context.Background(), machine.Config[light, press, blink]{
+		Entity: "lamp", Kind: "light", Initial: off, Transition: lightTransition,
+		Run:   func(context.Context, blink) ([]press, error) { order = append(order, "effect"); return nil, nil },
+		Store: store, Clock: testutil.NewClock(),
+		Saved: func(rec ports.TransitionRecord) {
+			order = append(order, "saved "+rec.To+" with "+strings.Repeat("row ", len(store.Events())))
+		},
+		Applied: func(ports.TransitionRecord) { order = append(order, "applied") },
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := runFor(t, a, press{"Press"}, press{"Nope"}); err != nil {
+		t.Fatal(err)
+	}
+	if got := strings.Join(order, ", "); got != "saved On with row , effect, applied" {
+		t.Fatalf("order: %s", got)
+	}
+}

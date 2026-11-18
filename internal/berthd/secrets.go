@@ -52,6 +52,9 @@ type secretsDeps struct {
 	// AgentLive reports whether an agent session still serves calls. berthd sets it once both
 	// secrets and agents exist, before serving.
 	AgentLive func(ctx context.Context, id string) bool
+	// Changed is told as soon as each secret or grant transition is saved, before a
+	// prompt it opens is answered; it must not block.
+	Changed func()
 }
 
 // secrets runs one actor per secret and per grant and performs their effects. It implements
@@ -96,14 +99,16 @@ func newSecrets(ctx context.Context, d secretsDeps) *secrets {
 	s.secrets = &actors[secret.State, secret.Event, secret.Effect]{
 		ctx: ctx, log: d.Log, store: d.Store, clock: d.Clock,
 		kind: secret.Kind, initial: secret.Initial, transition: secret.Transition, run: s.runSecret,
-		final: []secret.State{secret.Denied, secret.Failed, secret.Removed},
-		live:  map[string]*slot[secret.State, secret.Event, secret.Effect]{},
+		final:     []secret.State{secret.Denied, secret.Failed, secret.Removed},
+		live:      map[string]*slot[secret.State, secret.Event, secret.Effect]{},
+		persisted: func(ports.TransitionRecord) { s.Changed() },
 	}
 	s.grants = &actors[grant.State, grant.Event, grant.Effect]{
 		ctx: ctx, log: d.Log, store: d.Store, clock: d.Clock,
 		kind: grant.Kind, initial: grant.Initial, transition: grant.Transition, run: s.runGrant,
-		final: []grant.State{grant.Denied, grant.Stale, grant.Revoked},
-		live:  map[string]*slot[grant.State, grant.Event, grant.Effect]{},
+		final:     []grant.State{grant.Denied, grant.Stale, grant.Revoked},
+		live:      map[string]*slot[grant.State, grant.Event, grant.Effect]{},
+		persisted: func(ports.TransitionRecord) { s.Changed() },
 	}
 	s.sessions = &actors[proxysession.State, proxysession.Event, proxysession.Effect]{
 		ctx: ctx, log: d.Log, store: d.Store, clock: d.Clock,

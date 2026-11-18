@@ -6,6 +6,7 @@ import Testing
 private struct ShownCase: Decodable {
     var `in`: String
     var out: String
+    var quoted: String
 }
 
 /// Every case was written by the Go test from the CLI's own shown.
@@ -14,6 +15,7 @@ private struct ShownCase: Decodable {
     #expect(cases.count > 20)
     for c in cases {
         #expect(shown(c.in) == c.out, "input \(c.in.unicodeScalars.map { String($0.value, radix: 16) })")
+        #expect(quoted(c.in) == c.quoted, "input \(c.in.unicodeScalars.map { String($0.value, radix: 16) })")
     }
 }
 

@@ -38,6 +38,9 @@ type actors[S ~string, E machine.Event, F any] struct {
 	// saved, when set, is told about every transition once it is saved and its effects have run.
 	// It must not block, since it runs on the actor's goroutine.
 	saved func(ports.TransitionRecord)
+	// persisted, when set, is told about every transition as soon as it is saved, before its
+	// effects run, on the actor's goroutine; it must not block.
+	persisted func(ports.TransitionRecord)
 
 	mu   sync.Mutex
 	live map[string]*slot[S, E, F]
@@ -91,7 +94,7 @@ func (a *actors[S, E, F]) get(ctx context.Context, entity string) (*slot[S, E, F
 	var actor *machine.Actor[S, E, F]
 	actor, err := machine.NewActor(ctx, machine.Config[S, E, F]{
 		Entity: entity, Kind: a.kind, Initial: a.initial, Transition: a.transition, Run: a.run(entity),
-		Store: a.store, Clock: a.clock,
+		Store: a.store, Clock: a.clock, Saved: a.persisted,
 		Rejected: func(err error) {
 			final := slices.Contains(a.final, actor.State())
 			if final {

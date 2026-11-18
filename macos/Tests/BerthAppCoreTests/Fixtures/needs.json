@@ -1,0 +1,41 @@
+[
+  {
+    "snapshot": {
+      "eventId": "9007199254740993",
+      "needs": [
+        {
+          "id": "session/4242-1763380000123456",
+          "kind": "NEED_KIND_LEFTOVER",
+          "secretName": "gh-token",
+          "ownerName": "node‮",
+          "browser": "BROWSER_KIND_HEADLESS_SHELL"
+        }
+      ],
+      "reason": "SNAPSHOT_REASON_BEHIND"
+    }
+  },
+  {
+    "change": {
+      "eventId": "9007199254740995",
+      "event": "NEED_EVENT_OPENED",
+      "need": {
+        "id": "session/4242-1763380000123456",
+        "kind": "NEED_KIND_LEFTOVER",
+        "secretName": "gh-token",
+        "ownerName": "node‮",
+        "browser": "BROWSER_KIND_HEADLESS_SHELL"
+      }
+    }
+  },
+  {
+    "change": {
+      "eventId": "9007199254740996",
+      "event": "NEED_EVENT_RESOLVED",
+      "need": {
+        "id": "grant/7",
+        "kind": "NEED_KIND_GRANT",
+        "secretName": "gh-token"
+      }
+    }
+  }
+]

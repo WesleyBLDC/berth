@@ -110,6 +110,7 @@ type shell struct {
 	browsers   *browsers
 	agents     *agents
 	managed    *managed
+	needs      *needs
 	// app is Berth.app, pinned on the first call to a method marked app.
 	app *codetrust.File
 	// stopScans ends the browser scan loop StartServing began.
@@ -144,7 +145,9 @@ func Run(ctx context.Context, cfg Config) (int, error) {
 	}
 	pin := cfg.Pinner
 	execs := execid.New(execid.DefaultCodesign)
-	if s.secrets, err = newSecretsFor(machineCtx, cfg, store, execs, pin); err != nil {
+	// Secret, grant and session transitions wake the WatchNeeds streams.
+	needStreams := newWatchSet()
+	if s.secrets, err = newSecretsFor(machineCtx, cfg, store, execs, pin, needStreams.wakeAll); err != nil {
 		return 1, err
 	}
 	appPath, err := appExecutable(cfg)
@@ -169,7 +172,11 @@ func Run(ctx context.Context, cfg Config) (int, error) {
 	s.secrets.AgentLive = s.agents.live
 	s.browsers = newBrowsers(machineCtx, browsersDeps{
 		Log: cfg.Log, Source: procs, Store: store, List: store, Events: store, Clock: clock.System{},
-		UID: uint32(os.Getuid()), //nolint:gosec // user IDs fit in 32 bits
+		UID:     uint32(os.Getuid()), //nolint:gosec // user IDs fit in 32 bits
+		Changed: needStreams.wakeAll,
+	})
+	s.needs = newNeeds(needsDeps{
+		Events: store, List: store, Grant: store.Grant, Leftovers: s.browsers.leftovers, Leftover: s.browsers.leftoverNeed, Streams: needStreams,
 	})
 	s.managed = newManaged(machineCtx, managedDeps{
 		Log: cfg.Log, Store: store, List: store, Clock: clock.System{}, Driver: cdppipe.Driver{},
@@ -245,8 +252,9 @@ func (s *shell) run(ctx context.Context, effect daemon.Effect) ([]daemon.Event, 
 		// Managed browsers close while their exits can still be recorded; launchd's SIGTERM must
 		// not leave a Chrome process group behind.
 		s.managed.stop(ctx, managedStopTimeout)
-		// Open session streams end first, or the server shutdown below would wait out its grace.
+		// Open session and need streams end first, or the server shutdown below would wait out its grace.
 		s.browsers.closeWatches()
+		s.needs.closeWatches()
 		// Proxy sessions are told to stop and open prompts end first, while the server still
 		// takes their EndProxySession calls and their callers still get an answer.
 		if !s.secrets.stop(stopPromptsTimeout) {
@@ -290,7 +298,7 @@ func appExecutable(cfg Config) (string, error) {
 	return paths.Beside(filepath.Join("..", "MacOS", "Berth"))
 }
 
-func newSecretsFor(ctx context.Context, cfg Config, store *sqlite.Store, execs *execid.Identity, pin codetrust.Pinner) (*secrets, error) {
+func newSecretsFor(ctx context.Context, cfg Config, store *sqlite.Store, execs *execid.Identity, pin codetrust.Pinner, changed func()) (*secrets, error) {
 	helper, cli, proxy := cfg.Helper, cfg.CLI, cfg.Proxy
 	for _, f := range []struct {
 		path *string
@@ -315,7 +323,7 @@ func newSecretsFor(ctx context.Context, cfg Config, store *sqlite.Store, execs *
 		CLI: trusted(cli, codetrust.CLISigningID), Helper: trusted(helper, codetrust.HelperSigningID),
 		Proxy: trusted(proxy, codetrust.ProxySigningID), PID: os.Getpid(), Exits: procscan.WatchPID,
 		StartProxyProcess: func(ctx context.Context) (*proxyproc.Process, error) { return proxyproc.Start(ctx, proxy, os.Stderr) },
-		AllowLocalTargets: cfg.AllowLocalProxyTargets,
+		AllowLocalTargets: cfg.AllowLocalProxyTargets, Changed: changed,
 	}), nil
 }
 
@@ -344,7 +352,7 @@ func (s *shell) serve(ctx context.Context) error {
 		RequestStop: func(ctx context.Context) error {
 			return s.actor.Send(ctx, daemon.Event{Kind: daemon.StopRequested, Note: "Shutdown call"})
 		},
-		Secrets: s.secrets, Sessions: s.browsers, Agents: s.agents, Browsers: s.managed,
+		Secrets: s.secrets, Sessions: s.browsers, Agents: s.agents, Browsers: s.managed, Needs: s.needs,
 	}, servers...)
 	s.listen(ln, s.sock, owner, false)
 	if agent != nil {

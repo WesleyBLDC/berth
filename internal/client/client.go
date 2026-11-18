@@ -26,6 +26,7 @@ type Client struct {
 	Sessions berthv1connect.SessionsServiceClient
 	Agents   berthv1connect.AgentServiceClient
 	Browsers berthv1connect.BrowsersServiceClient
+	Needs    berthv1connect.NeedsServiceClient
 }
 
 // Connect dials the socket and performs the protocol handshake before returning.
@@ -84,6 +85,7 @@ func dial(ctx context.Context, socketPath, name string, verify func(*net.UnixCon
 		Sessions: berthv1connect.NewSessionsServiceClient(c),
 		Agents:   berthv1connect.NewAgentServiceClient(c),
 		Browsers: berthv1connect.NewBrowsersServiceClient(c),
+		Needs:    berthv1connect.NewNeedsServiceClient(c),
 	}
 	if _, err := cl.Daemon.Handshake(ctx, &berthv1.HandshakeRequest{ProtocolVersion: api.ProtocolVersion, ClientName: name}); err != nil {
 		if reason := api.ReasonOf(err); reason == berthv1.ErrorReason_ERROR_REASON_PROTOCOL_MISMATCH {

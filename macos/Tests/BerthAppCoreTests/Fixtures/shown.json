@@ -1,114 +1,142 @@
 [
   {
     "in": "",
-    "out": ""
+    "out": "",
+    "quoted": "\"\""
   },
   {
     "in": "claude",
-    "out": "claude"
+    "out": "claude",
+    "quoted": "\"claude\""
   },
   {
     "in": "Ghostty",
-    "out": "Ghostty"
+    "out": "Ghostty",
+    "quoted": "\"Ghostty\""
   },
   {
     "in": "a b",
-    "out": "a b"
+    "out": "a b",
+    "quoted": "\"a b\""
   },
   {
     "in": "café",
-    "out": "café"
+    "out": "café",
+    "quoted": "\"café\""
   },
   {
     "in": "日本語",
-    "out": "日本語"
+    "out": "日本語",
+    "quoted": "\"日本語\""
   },
   {
     "in": "emoji 🙂",
-    "out": "emoji 🙂"
+    "out": "emoji 🙂",
+    "quoted": "\"emoji 🙂\""
   },
   {
     "in": "quote\"back\\slash",
-    "out": "quote\"back\\slash"
+    "out": "quote\"back\\slash",
+    "quoted": "\"quote\\\"back\\\\slash\""
   },
   {
     "in": "tab\there",
-    "out": "\"tab\\there\""
+    "out": "\"tab\\there\"",
+    "quoted": "\"tab\\there\""
   },
   {
     "in": "line\nbreak",
-    "out": "\"line\\nbreak\""
+    "out": "\"line\\nbreak\"",
+    "quoted": "\"line\\nbreak\""
   },
   {
     "in": "cr\rlf",
-    "out": "\"cr\\rlf\""
+    "out": "\"cr\\rlf\"",
+    "quoted": "\"cr\\rlf\""
   },
   {
     "in": "\u001b[31mred",
-    "out": "\"\\x1b[31mred\""
+    "out": "\"\\x1b[31mred\"",
+    "quoted": "\"\\x1b[31mred\""
   },
   {
     "in": "bell\u0007",
-    "out": "\"bell\\a\""
+    "out": "\"bell\\a\"",
+    "quoted": "\"bell\\a\""
   },
   {
     "in": "bs\b",
-    "out": "\"bs\\b\""
+    "out": "\"bs\\b\"",
+    "quoted": "\"bs\\b\""
   },
   {
     "in": "ff\f",
-    "out": "\"ff\\f\""
+    "out": "\"ff\\f\"",
+    "quoted": "\"ff\\f\""
   },
   {
     "in": "vt\u000b",
-    "out": "\"vt\\v\""
+    "out": "\"vt\\v\"",
+    "quoted": "\"vt\\v\""
   },
   {
     "in": "del",
-    "out": "\"del\\x7f\""
+    "out": "\"del\\x7f\"",
+    "quoted": "\"del\\x7f\""
   },
   {
     "in": "nul\u0000x",
-    "out": "\"nul\\x00x\""
+    "out": "\"nul\\x00x\"",
+    "quoted": "\"nul\\x00x\""
   },
   {
     "in": "rtl‮abc",
-    "out": "\"rtl\\u202eabc\""
+    "out": "\"rtl\\u202eabc\"",
+    "quoted": "\"rtl\\u202eabc\""
   },
   {
     "in": "nel",
-    "out": "\"nel\\u0085\""
+    "out": "\"nel\\u0085\"",
+    "quoted": "\"nel\\u0085\""
   },
   {
     "in": "zwsp​",
-    "out": "\"zwsp\\u200b\""
+    "out": "\"zwsp\\u200b\"",
+    "quoted": "\"zwsp\\u200b\""
   },
   {
     "in": "bom﻿",
-    "out": "\"bom\\ufeff\""
+    "out": "\"bom\\ufeff\"",
+    "quoted": "\"bom\\ufeff\""
   },
   {
     "in": "ls\u2028",
-    "out": "\"ls\\u2028\""
+    "out": "\"ls\\u2028\"",
+    "quoted": "\"ls\\u2028\""
   },
   {
     "in": "ps\u2029",
-    "out": "\"ps\\u2029\""
+    "out": "\"ps\\u2029\"",
+    "quoted": "\"ps\\u2029\""
   },
   {
     "in": "quote\" and \u001b",
-    "out": "\"quote\\\" and \\x1b\""
+    "out": "\"quote\\\" and \\x1b\"",
+    "quoted": "\"quote\\\" and \\x1b\""
   },
   {
     "in": "private",
-    "out": "\"private\\ue000\""
+    "out": "\"private\\ue000\"",
+    "quoted": "\"private\\ue000\""
   },
   {
     "in": "tag󠀁",
-    "out": "\"tag\\U000e0001\""
+    "out": "\"tag\\U000e0001\"",
+    "quoted": "\"tag\\U000e0001\""
   },
   {
     "in": "supp private󰀀",
-    "out": "\"supp private\\U000f0000\""
+    "out": "\"supp private\\U000f0000\"",
+    "quoted": "\"supp private\\U000f0000\""
   }
 ]

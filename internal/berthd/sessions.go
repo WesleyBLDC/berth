@@ -31,11 +31,6 @@ const (
 	// smaller, since anything that can start processes can churn through browsers.
 	endedMax = 200
 	endedAge = time.Hour
-	// watchBacklog is how many session events a stream replays; a client further behind gets a
-	// snapshot instead.
-	watchBacklog = 1000
-	// maxWatchers bounds the open session streams, since each holds a goroutine.
-	maxWatchers = 16
 )
 
 type browsersDeps struct {
@@ -46,6 +41,8 @@ type browsersDeps struct {
 	Events ports.EventLog
 	Clock  ports.Clock
 	UID    uint32
+	// Changed is told as soon as each session transition is saved; it must not block.
+	Changed func()
 }
 
 // browsers runs discovery: a scan every scanInterval, and at once when a watched browser exits,
@@ -71,12 +68,8 @@ type browsers struct {
 	// scanning admits one scan at a time.
 	scanning sync.Mutex
 
-	// watchers are the open session streams; a saved session transition wakes each one, and
-	// closing ends them all when berthd stops serving.
-	watchMu   sync.Mutex
-	watchers  map[*sessionStream]struct{}
-	closing   chan struct{}
-	closeOnce sync.Once
+	// streams are the open WatchSessions streams.
+	streams *watchSet
 	// backlog is watchBacklog, smaller in tests.
 	backlog int
 }
@@ -96,13 +89,14 @@ func newBrowsers(ctx context.Context, d browsersDeps) *browsers {
 	b := &browsers{
 		browsersDeps: d, ctx: ctx, kick: make(chan struct{}, 1), grace: stopGrace,
 		live: map[string]*tracked{}, ended: map[string]*tracked{}, scanner: discovery.NewScanner(d.Source, d.UID),
-		watchers: map[*sessionStream]struct{}{}, closing: make(chan struct{}), backlog: watchBacklog,
+		streams: newWatchSet(), backlog: watchBacklog,
 	}
 	b.actors = &actors[session.State, session.Event, session.Effect]{
 		ctx: ctx, log: d.Log, store: d.Store, clock: d.Clock,
 		kind: session.Kind, initial: session.Initial, final: []session.State{session.Stopped}, transition: session.Transition, run: b.runSession,
-		live:  map[string]*slot[session.State, session.Event, session.Effect]{},
-		saved: func(ports.TransitionRecord) { b.wakeWatchers() },
+		live:      map[string]*slot[session.State, session.Event, session.Effect]{},
+		saved:     func(ports.TransitionRecord) { b.streams.wakeAll() },
+		persisted: func(ports.TransitionRecord) { b.Changed() },
 	}
 	return b
 }

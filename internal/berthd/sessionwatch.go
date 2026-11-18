@@ -2,98 +2,35 @@ package berthd
 
 import (
 	"context"
+	"slices"
 	"strings"
 
 	"google.golang.org/protobuf/types/known/timestamppb"
 
 	berthv1 "berth/gen/berth/v1"
-	"berth/internal/adapters/api"
 	"berth/internal/core/ports"
 	"berth/internal/core/session"
 )
 
-// sessionStream is one open WatchSessions stream. wake holds at most one pending wake, so an
-// actor never waits.
-type sessionStream struct {
-	wake chan struct{}
-}
-
-// WatchSessions streams session changes from the event table, which is the only queue: an
-// actor saving a transition only wakes the watchers, and each reads the rows after its own
-// cursor at its client's pace, so a slow client holds one goroutine and one page of rows, never
-// an actor.
+// WatchSessions streams session changes from the event table (see serveStream).
 func (b *browsers) WatchSessions(ctx context.Context, after int64, send func(*berthv1.WatchSessionsResponse) error) error {
-	w, err := b.watch()
-	if err != nil {
-		return err
-	}
-	defer b.unwatch(w)
-	cursor, reason := after, berthv1.SnapshotReason_SNAPSHOT_REASON_UNSPECIFIED
-	if after == 0 {
-		reason = berthv1.SnapshotReason_SNAPSHOT_REASON_START
-	} else if last, err := b.Events.LastEventID(ctx); err != nil {
-		return err
-	} else if after > last {
-		reason = berthv1.SnapshotReason_SNAPSHOT_REASON_UNKNOWN_CURSOR
-	}
-	if reason != berthv1.SnapshotReason_SNAPSHOT_REASON_UNSPECIFIED {
-		if cursor, err = b.snapshot(ctx, reason, send); err != nil {
-			return err
-		}
-	}
-	for {
-		if cursor, err = b.catchUp(ctx, cursor, send); err != nil {
-			return err
-		}
-		select {
-		case <-w.wake:
-		case <-b.closing:
-			return nil
-		case <-ctx.Done():
-			return ctx.Err()
-		}
-	}
+	return serveStream(ctx, b.streams, feed[*berthv1.WatchSessionsResponse]{
+		events: b.Events, backlog: b.backlog, snapshot: b.snapshot,
+		rows: func(ctx context.Context, after int64, limit int) ([]ports.EventRecord, error) {
+			return b.Events.EventsAfter(ctx, session.Kind, after, limit)
+		},
+		change: func(r ports.EventRecord) (*berthv1.WatchSessionsResponse, bool) { return b.change(r), true },
+	}, after, send)
 }
 
-// catchUp sends every session event after cursor, or a snapshot when there are more than the
-// backlog, and returns the new cursor.
-func (b *browsers) catchUp(ctx context.Context, cursor int64, send func(*berthv1.WatchSessionsResponse) error) (int64, error) {
-	for {
-		select {
-		case <-b.closing:
-			return cursor, nil
-		default:
-		}
-		rows, err := b.Events.EventsAfter(ctx, session.Kind, cursor, b.backlog+1)
-		if err != nil {
-			return cursor, err
-		}
-		if len(rows) > b.backlog {
-			if cursor, err = b.snapshot(ctx, berthv1.SnapshotReason_SNAPSHOT_REASON_BEHIND, send); err != nil {
-				return cursor, err
-			}
-			continue
-		}
-		if len(rows) == 0 {
-			return cursor, nil
-		}
-		for _, r := range rows {
-			if err := send(b.change(r)); err != nil {
-				return cursor, err
-			}
-			cursor = r.ID
-		}
-	}
-}
-
-// snapshot sends every live session and returns the cursor it is consistent with. The cursor is
+// snapshot holds every live session and the cursor it is consistent with. The cursor is
 // read before the states, so no state is older than it; a change after it that the snapshot
 // already shows is applied again, which is harmless since a change carries the whole state. Only
 // the live sessions' rows are read, so a snapshot costs the same however long the history.
-func (b *browsers) snapshot(ctx context.Context, reason berthv1.SnapshotReason, send func(*berthv1.WatchSessionsResponse) error) (int64, error) {
+func (b *browsers) snapshot(ctx context.Context, reason berthv1.SnapshotReason) (*berthv1.WatchSessionsResponse, int64, error) {
 	last, err := b.Events.LastEventID(ctx)
 	if err != nil {
-		return 0, err
+		return nil, 0, err
 	}
 	b.mu.Lock()
 	ids := make([]string, 0, len(b.live))
@@ -105,7 +42,7 @@ func (b *browsers) snapshot(ctx context.Context, reason berthv1.SnapshotReason, 
 	for _, id := range ids {
 		saved, found, err := b.Store.LoadState(ctx, session.Entity(id))
 		if err != nil {
-			return 0, err
+			return nil, 0, err
 		}
 		b.mu.Lock()
 		t, ok := b.live[id]
@@ -126,7 +63,46 @@ func (b *browsers) snapshot(ctx context.Context, reason berthv1.SnapshotReason, 
 		snap.Sessions = append(snap.Sessions, s)
 	}
 	sortSessions(snap.Sessions)
-	return last, send(&berthv1.WatchSessionsResponse{Update: &berthv1.WatchSessionsResponse_Snapshot{Snapshot: snap}})
+	return &berthv1.WatchSessionsResponse{Update: &berthv1.WatchSessionsResponse_Snapshot{Snapshot: snap}}, last, nil
+}
+
+// leftovers is every live session saved as Leftover, as a need, for WatchNeeds' snapshot; like
+// snapshot it reads only the live sessions' rows.
+func (b *browsers) leftovers(ctx context.Context) ([]*berthv1.Need, error) {
+	b.mu.Lock()
+	ids := make([]string, 0, len(b.live))
+	for id := range b.live {
+		ids = append(ids, id)
+	}
+	b.mu.Unlock()
+	slices.Sort(ids)
+	var out []*berthv1.Need
+	for _, id := range ids {
+		saved, found, err := b.Store.LoadState(ctx, session.Entity(id))
+		if err != nil {
+			return nil, err
+		}
+		if found && session.State(saved.State) == session.Leftover {
+			out = append(out, b.leftoverNeed(id))
+		}
+	}
+	return out, nil
+}
+
+// leftoverNeed is a LEFTOVER need for a session with the facts berthd still holds about it:
+// the owner's name as last seen and the browser's kind.
+func (b *browsers) leftoverNeed(id string) *berthv1.Need {
+	need := &berthv1.Need{Id: session.Entity(id), Kind: berthv1.NeedKind_NEED_KIND_LEFTOVER}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	t, ok := b.live[id]
+	if !ok {
+		t, ok = b.ended[id]
+	}
+	if ok {
+		need.OwnerName, need.Browser = t.obs.Owner.Name, kindProto[t.obs.Signature.Kind]
+	}
+	return need
 }
 
 // change turns one event row into a stream message: the state and its time from the row, the
@@ -149,37 +125,5 @@ func (b *browsers) change(r ports.EventRecord) *berthv1.WatchSessionsResponse {
 	}}}
 }
 
-func (b *browsers) watch() (*sessionStream, error) {
-	b.watchMu.Lock()
-	defer b.watchMu.Unlock()
-	if len(b.watchers) >= maxWatchers {
-		return nil, api.ErrTooManyWatchers
-	}
-	w := &sessionStream{wake: make(chan struct{}, 1)}
-	b.watchers[w] = struct{}{}
-	return w, nil
-}
-
-func (b *browsers) unwatch(w *sessionStream) {
-	b.watchMu.Lock()
-	defer b.watchMu.Unlock()
-	delete(b.watchers, w)
-}
-
-// wakeWatchers runs on an actor's goroutine after each saved session transition, so it never
-// blocks: a watcher that has a wake pending already will read this row too.
-func (b *browsers) wakeWatchers() {
-	b.watchMu.Lock()
-	defer b.watchMu.Unlock()
-	for w := range b.watchers {
-		select {
-		case w.wake <- struct{}{}:
-		default:
-		}
-	}
-}
-
 // closeWatches ends every open stream, and any opened later, when berthd stops serving.
-func (b *browsers) closeWatches() {
-	b.closeOnce.Do(func() { close(b.closing) })
-}
+func (b *browsers) closeWatches() { b.streams.close() }

@@ -51,6 +51,7 @@ type Actor[S ~string, E Event, F any] struct {
 	clock      ports.Clock
 	inbox      chan E
 	rejected   func(error)
+	saved      func(ports.TransitionRecord)
 	applied    func(ports.TransitionRecord)
 }
 
@@ -65,6 +66,9 @@ type Config[S ~string, E Event, F any] struct {
 	Clock      ports.Clock
 	// Rejected is told about illegal events; they never stop the actor.
 	Rejected func(error)
+	// Saved is told about each transition as soon as it is saved, before its effects run, so a
+	// watcher of the event table hears of a prompt while it is still open. It must not block.
+	Saved func(ports.TransitionRecord)
 	// Applied is told about each transition once it is saved and its effects have run, so a
 	// shell answering a request can wait for the outcome it needs. It must not block.
 	Applied func(ports.TransitionRecord)
@@ -82,6 +86,7 @@ func NewActor[S ~string, E Event, F any](ctx context.Context, cfg Config[S, E, F
 		clock:      cfg.Clock,
 		inbox:      make(chan E, 64),
 		rejected:   cfg.Rejected,
+		saved:      cfg.Saved,
 		applied:    cfg.Applied,
 	}
 	saved, found, err := cfg.Store.LoadState(ctx, cfg.Entity)
@@ -154,6 +159,9 @@ func (a *Actor[S, E, F]) apply(ctx context.Context, event E) error {
 		return fmt.Errorf("save %s %s: %w", a.entity, event.Name(), err)
 	}
 	a.state, a.version = next, rec.Version
+	if a.saved != nil {
+		a.saved(rec)
+	}
 	for _, effect := range effects {
 		followUps, err := a.run(ctx, effect)
 		if err != nil {

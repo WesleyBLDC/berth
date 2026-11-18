@@ -43,13 +43,14 @@ type browsersFixture struct {
 	rows  []testutil.FakeProcess
 }
 
-func newBrowsersFixture(t *testing.T) *browsersFixture {
-	t.Helper()
+// fixtureProcesses is the process table every browsers test starts from: a Playwright browser
+// under a terminal, the person's Chrome, and another user's browser.
+func fixtureProcesses() []testutil.FakeProcess {
 	launchd := row(1, 0, 0, "/sbin/launchd")
 	launchd.Opaque = true
 	theirs := row(300, 1, 502, shellPath)
 	theirs.Opaque = true
-	f := &browsersFixture{procs: &testutil.Processes{}, store: testutil.NewStore(), rows: []testutil.FakeProcess{
+	return []testutil.FakeProcess{
 		launchd,
 		row(30, 1, testUID, "/Applications/Ghostty.app/Contents/MacOS/ghostty"),
 		row(80, 30, testUID, "/opt/homebrew/bin/node", "node", "playwright", "test"),
@@ -57,10 +58,16 @@ func newBrowsersFixture(t *testing.T) *browsersFixture {
 		row(101, 100, testUID, shellPath, shellPath, "--type=renderer"),
 		row(200, 1, testUID, chromeApp, chromeApp),
 		theirs,
-	}}
+	}
+}
+
+func newBrowsersFixture(t *testing.T) *browsersFixture {
+	t.Helper()
+	f := &browsersFixture{procs: &testutil.Processes{}, store: testutil.NewStore(), rows: fixtureProcesses()}
 	f.procs.Set(f.rows...)
 	f.b = newBrowsers(t.Context(), browsersDeps{
 		Log: slog.New(slog.DiscardHandler), Source: f.procs, Store: f.store, List: f.store, Events: f.store, Clock: testutil.NewClock(), UID: testUID,
+		Changed: func() {},
 	})
 	if err := f.b.recover(t.Context()); err != nil {
 		t.Fatal(err)

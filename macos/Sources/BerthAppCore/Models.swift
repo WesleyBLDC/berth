@@ -381,3 +381,119 @@ public struct StatusResponse: Decodable, Sendable, Equatable {
         executable = try c.value(.executable, "")
     }
 }
+
+public enum NeedKind: String, ProtoEnum {
+    case unspecified = "NEED_KIND_UNSPECIFIED"
+    case store = "NEED_KIND_STORE"
+    case rotate = "NEED_KIND_ROTATE"
+    case remove = "NEED_KIND_REMOVE"
+    case grant = "NEED_KIND_GRANT"
+    case leftover = "NEED_KIND_LEFTOVER"
+}
+
+public enum NeedEvent: String, ProtoEnum {
+    case unspecified = "NEED_EVENT_UNSPECIFIED"
+    case opened = "NEED_EVENT_OPENED"
+    case resolved = "NEED_EVENT_RESOLVED"
+}
+
+public struct Need: Decodable, Sendable, Equatable, Identifiable {
+    public var id = ""
+    public var kind = NeedKind.unspecified
+    public var secretName = ""
+    public var ownerName = ""
+    public var browser = BrowserKind.unspecified
+
+    enum CodingKeys: String, CodingKey { case id, kind, secretName, ownerName, browser }
+
+    public init(
+        id: String, kind: NeedKind, secretName: String = "", ownerName: String = "", browser: BrowserKind = .unspecified
+    ) {
+        self.id = id
+        self.kind = kind
+        self.secretName = secretName
+        self.ownerName = ownerName
+        self.browser = browser
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.value(.id, "")
+        kind = try c.value(.kind, .unspecified)
+        secretName = try c.value(.secretName, "")
+        ownerName = try c.value(.ownerName, "")
+        browser = try c.value(.browser, .unspecified)
+    }
+}
+
+public struct NeedsSnapshot: Decodable, Sendable, Equatable {
+    public var eventID: Int64 = 0
+    public var needs: [Need] = []
+    public var reason = SnapshotReason.unspecified
+
+    enum CodingKeys: String, CodingKey {
+        case eventID = "eventId"
+        case needs, reason
+    }
+
+    public init(eventID: Int64, needs: [Need], reason: SnapshotReason) {
+        self.eventID = eventID
+        self.needs = needs
+        self.reason = reason
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        eventID = try c.int64(.eventID)
+        needs = try c.value(.needs, [])
+        reason = try c.value(.reason, .unspecified)
+    }
+}
+
+public struct NeedChange: Decodable, Sendable, Equatable {
+    public var eventID: Int64 = 0
+    public var event = NeedEvent.unspecified
+    public var need = Need(id: "", kind: .unspecified)
+
+    enum CodingKeys: String, CodingKey {
+        case eventID = "eventId"
+        case event, need
+    }
+
+    public init(eventID: Int64, event: NeedEvent, need: Need) {
+        self.eventID = eventID
+        self.event = event
+        self.need = need
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        eventID = try c.int64(.eventID)
+        event = try c.value(.event, .unspecified)
+        need = try c.value(.need, Need(id: "", kind: .unspecified))
+    }
+}
+
+/// WatchNeedsResponse: a snapshot or a change; a message holding neither decodes as .unknown.
+public enum WatchNeedsResponse: Decodable, Sendable, Equatable {
+    case snapshot(NeedsSnapshot)
+    case change(NeedChange)
+    case unknown
+
+    enum CodingKeys: String, CodingKey { case snapshot, change }
+
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        if let snapshot = try c.decodeIfPresent(NeedsSnapshot.self, forKey: .snapshot) {
+            self = .snapshot(snapshot)
+        } else if let change = try c.decodeIfPresent(NeedChange.self, forKey: .change) {
+            self = .change(change)
+        } else {
+            self = .unknown
+        }
+    }
+}
+
+struct WatchNeedsRequest: Encodable {
+    var afterEventId: ProtoInt64
+}

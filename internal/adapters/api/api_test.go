@@ -248,7 +248,7 @@ func TestNoFieldCarriesAValue(t *testing.T) {
 
 // TestMutatingMethodsTakeARequestID keeps every method that changes something idempotent.
 func TestMutatingMethodsTakeARequestID(t *testing.T) {
-	readOnly := []string{"Handshake", "Status", "GetState", "ListSecrets", "WatchProxySession", "ListSessions", "InspectSession", "WatchSessions", "ListAgentSessions", "ListBrowsers", "ListAgentBrowsers"}
+	readOnly := []string{"Handshake", "Status", "GetState", "ListSecrets", "WatchProxySession", "ListSessions", "InspectSession", "WatchSessions", "WatchNeeds", "ListAgentSessions", "ListBrowsers", "ListAgentBrowsers"}
 	eachMethod(func(m protoreflect.MethodDescriptor) {
 		if slices.Contains(readOnly, string(m.Name())) {
 			return
