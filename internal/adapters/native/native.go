@@ -20,6 +20,7 @@ import (
 	"golang.org/x/sys/unix"
 
 	"berth/internal/core/ports"
+	"berth/internal/strictjson"
 )
 
 // DefaultHelper is where the signed berth-native helper is installed.
@@ -218,14 +219,9 @@ func parseOutcome(b []byte) (outcome, error) {
 	if bytes.IndexByte(b, '\n') >= 0 {
 		return outcome{}, errors.New("reply is more than one line")
 	}
-	dec := json.NewDecoder(bytes.NewReader(b))
-	dec.DisallowUnknownFields()
 	var out outcome
-	if err := dec.Decode(&out); err != nil {
+	if err := strictjson.Decode(b, &out); err != nil {
 		return outcome{}, errors.New("malformed reply")
-	}
-	if dec.More() {
-		return outcome{}, errors.New("trailing data after reply")
 	}
 	return out, nil
 }

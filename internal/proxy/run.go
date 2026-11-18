@@ -2,7 +2,6 @@ package proxy
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"crypto/rand"
 	"crypto/x509"
@@ -21,6 +20,7 @@ import (
 	"berth/gen/berth/v1/berthv1connect"
 	"berth/internal/logging"
 	"berth/internal/proxyctl"
+	"berth/internal/strictjson"
 	"berth/internal/token"
 )
 
@@ -268,13 +268,8 @@ func readRequest(in *bufio.Reader) (proxyctl.Request, error) {
 		return proxyctl.Request{}, errRequestLine
 	}
 	var req proxyctl.Request
-	dec := json.NewDecoder(bytes.NewReader(line))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&req); err != nil {
-		return proxyctl.Request{}, errRequestLine
-	}
 	// Anything after the object is a second reading of the line, which the starter never wrote.
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+	if err := strictjson.Decode(line, &req); err != nil {
 		return proxyctl.Request{}, errRequestLine
 	}
 	if req.Mode != proxyctl.ModeOwner && req.Mode != proxyctl.ModeAgent {

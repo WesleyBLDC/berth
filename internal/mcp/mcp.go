@@ -22,6 +22,7 @@ import (
 
 	berthv1 "berth/gen/berth/v1"
 	"berth/gen/berth/v1/berthv1connect"
+	"berth/internal/strictjson"
 )
 
 // tools is the tools/list reply's tool array, fixed text pinned by a golden test, so a client
@@ -289,9 +290,7 @@ func strict(raw json.RawMessage, into any) error {
 	if len(raw) == 0 || string(raw) == "null" {
 		raw = json.RawMessage("{}")
 	}
-	dec := json.NewDecoder(bytes.NewReader(raw))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(into); err != nil {
+	if err := strictjson.Decode(raw, into); err != nil {
 		return fmt.Errorf("bad arguments: %w", err)
 	}
 	return nil

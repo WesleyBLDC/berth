@@ -4,7 +4,6 @@ package proxyproc
 
 import (
 	"bufio"
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -20,6 +19,7 @@ import (
 	"time"
 
 	"berth/internal/proxyctl"
+	"berth/internal/strictjson"
 )
 
 // Process is a started berth-proxy. Stdin carries the request and stays open for the run;
@@ -121,12 +121,7 @@ func Handshake(p *Process, names []string, mode string, timeout time.Duration) (
 // Parse decodes a control line strictly and never echoes it, since it holds the run's credential.
 func Parse(line []byte) (proxyctl.Control, error) {
 	var ctl proxyctl.Control
-	dec := json.NewDecoder(bytes.NewReader(line))
-	dec.DisallowUnknownFields()
-	if err := dec.Decode(&ctl); err != nil {
-		return proxyctl.Control{}, errors.New("its control line is malformed")
-	}
-	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
+	if err := strictjson.Decode(line, &ctl); err != nil {
 		return proxyctl.Control{}, errors.New("its control line is malformed")
 	}
 	return ctl, Check(ctl)
