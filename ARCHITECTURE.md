@@ -532,6 +532,7 @@ Agents may store a secret (the person types it into a native dialog) and use one
 - In Go a value is a `[]byte`, zeroed after use, never a `string`, never in a log, error, event note or reply.
 - Keychain items Berth creates use the service prefix `berth.` so they never collide with existing items.
 - Dialog and Touch ID text is built only from facts `berthd` verified from the kernel (peer process, executable, process tree, working directory) and from the file on disk (path, SHA-256, code signature); the requester's reason is shown quoted and labelled as the requester's claim, and never stored in an event.
+  The process tree is read one parent at a time with the same start time check as an agent's lineage, so a reused parent pid ends the tree instead of joining it.
 - Granting a consumer, removing a secret and rotating one are power actions that need Touch ID; revoking a grant is not, since it only lowers privilege.
 
 How a use travels (E2a):
