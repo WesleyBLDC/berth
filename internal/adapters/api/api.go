@@ -177,7 +177,7 @@ func onceKeeping[T proto.Message](ctx context.Context, h *handlers, method, requ
 	principal := Principal(ctx)
 	release, err := h.claim(ctx, principal+"\x00"+requestID)
 	if err != nil {
-		return zero, connect.NewError(connect.CodeCanceled, "gave up waiting for an earlier call with this request id")
+		return zero, err
 	}
 	defer release()
 	storedMethod, stored, found, err := h.d.Requests.Recall(ctx, principal, requestID)
@@ -241,7 +241,8 @@ func Principal(ctx context.Context) string {
 	return fmt.Sprintf("%s:%d:%x", kind, c.UID, peerOf(ctx).AuditToken)
 }
 
-// claim waits until no other call holds key, then holds it until release.
+// claim waits until no other call holds key, then holds it until release; a caller that gives
+// up first gets the Connect error to answer with.
 func (h *handlers) claim(ctx context.Context, key string) (release func(), err error) {
 	for {
 		h.mu.Lock()
@@ -261,7 +262,7 @@ func (h *handlers) claim(ctx context.Context, key string) (release func(), err e
 		select {
 		case <-busy:
 		case <-ctx.Done():
-			return nil, ctx.Err()
+			return nil, connect.NewError(connect.CodeCanceled, "gave up waiting for an earlier call with this request id")
 		}
 	}
 }

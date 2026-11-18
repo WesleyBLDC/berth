@@ -248,7 +248,7 @@ func (h *handlers) StartProxy(ctx context.Context, req *berthv1.StartProxyReques
 	// only holds back a retry while the stream it repeats still runs.
 	release, err := h.claim(ctx, Principal(ctx)+"\x00"+req.GetRequestId())
 	if err != nil {
-		return connect.NewError(connect.CodeCanceled, "gave up waiting for an earlier call with this request id")
+		return err
 	}
 	defer release()
 	return secretsError(h.d.Secrets.StartProxy(ctx, req, stream.Send))
