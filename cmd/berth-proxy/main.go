@@ -4,14 +4,12 @@ package main
 
 import (
 	"context"
-	"errors"
 	"os"
 	"os/signal"
 	"syscall"
 
 	"berth/gen/berth/v1/berthv1connect"
 	"berth/internal/adapters/native"
-	"berth/internal/core/ports"
 	"berth/internal/peertrust"
 	"berth/internal/proxy"
 	"berth/internal/proxyctl"
@@ -26,7 +24,7 @@ func main() {
 		Stdout:       os.Stdout,
 		Stderr:       os.Stderr,
 		Connect:      connectTrusted,
-		Read:         read,
+		Read:         native.Reader(nativeHelper),
 		Roots:        roots(),
 		AllowLocal:   allowLocal,
 		SystemBundle: proxyctl.SystemBundle,
@@ -43,19 +41,4 @@ func connectTrusted(ctx context.Context) (berthv1connect.SecretsServiceClient, e
 		return nil, err
 	}
 	return cl.Secrets, nil
-}
-
-// read hands the ticket to the berth-native beside berth-proxy, which writes the value only over
-// a socket whose peer the kernel shows is its parent, running the signed berth-proxy.
-func read(ctx context.Context, ticket []byte) ([]byte, error) {
-	var t ports.Ticket
-	if len(ticket) != len(t) {
-		return nil, errors.New("berthd sent a ticket of the wrong length")
-	}
-	copy(t[:], ticket)
-	helper, err := nativeHelper()
-	if err != nil {
-		return nil, err
-	}
-	return native.Read(ctx, helper, t)
 }

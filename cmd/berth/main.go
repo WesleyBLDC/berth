@@ -3,13 +3,11 @@ package main
 
 import (
 	"context"
-	"errors"
 	"os"
 
 	"berth/internal/adapters/native"
 	"berth/internal/cli"
 	"berth/internal/client"
-	"berth/internal/core/ports"
 	"berth/internal/paths"
 	"berth/internal/peertrust"
 )
@@ -34,7 +32,7 @@ func main() {
 			return client.Connect(ctx, paths.Socket(home), "berth-cli")
 		},
 		ConnectTrusted: connectTrusted,
-		Read:           read,
+		Read:           native.Reader(nativeHelper),
 		StartProxy:     startProxy,
 		Agent:          os.Getenv("BERTH_AGENT_SOCKET") != "",
 		BeforeStart:    beforeStart,
@@ -54,20 +52,4 @@ func startProxy(ctx context.Context) (*cli.ProxyProcess, error) {
 // connectTrusted refuses any server but the signed berthd beside this berth.
 func connectTrusted(ctx context.Context) (*client.Client, error) {
 	return peertrust.ConnectDaemon(ctx, "berth-cli", "berth")
-}
-
-// read hands the ticket to the berth-native beside berth. Which file that is does not decide
-// who gets the value: berth-native writes it only over a socket whose peer the kernel shows is
-// its parent, running the signed berth.
-func read(ctx context.Context, ticket []byte) ([]byte, error) {
-	var t ports.Ticket
-	if len(ticket) != len(t) {
-		return nil, errors.New("berthd sent a ticket of the wrong length")
-	}
-	copy(t[:], ticket)
-	helper, err := nativeHelper()
-	if err != nil {
-		return nil, err
-	}
-	return native.Read(ctx, helper, t)
 }

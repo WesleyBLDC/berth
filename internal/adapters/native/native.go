@@ -226,6 +226,25 @@ func parseOutcome(b []byte) (outcome, error) {
 	return out, nil
 }
 
+// Reader is the Read berth and berth-proxy hand their runs: it reads the value with the ticket
+// berthd sent, through the helper path names. Which file that is does not decide who gets the
+// value: berth-native writes it only over a socket whose peer the kernel shows is its parent,
+// running the signed caller.
+func Reader(path func() (string, error)) func(ctx context.Context, ticket []byte) ([]byte, error) {
+	return func(ctx context.Context, ticket []byte) ([]byte, error) {
+		var t ports.Ticket
+		if len(ticket) != len(t) {
+			return nil, errors.New("berthd sent a ticket of the wrong length")
+		}
+		copy(t[:], ticket)
+		helper, err := path()
+		if err != nil {
+			return nil, err
+		}
+		return Read(ctx, helper, t)
+	}
+}
+
 // ValueFD is the file descriptor on which berth-native read writes the value: one end of a
 // Unix socketpair whose other end berth holds, so the helper can ask the kernel who will
 // receive the value before it writes. stdout stays free and carries nothing.

@@ -452,3 +452,11 @@ func TestFakeHelperRefusesAReceiverThatIsNotItsSignedParent(t *testing.T) {
 		})
 	}
 }
+
+func TestReaderRefusesATicketOfTheWrongLengthBeforeFindingTheHelper(t *testing.T) {
+	looked := false
+	read := native.Reader(func() (string, error) { looked = true; return "", errors.New("no helper") })
+	if _, err := read(t.Context(), []byte("short")); err == nil || looked {
+		t.Fatalf("err %v, looked for the helper %v", err, looked)
+	}
+}
