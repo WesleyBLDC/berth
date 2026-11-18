@@ -46,7 +46,10 @@ func (m *managed) OpenAgentBrowser(ctx context.Context, _ *berthv1.OpenAgentBrow
 		return nil, err
 	}
 	// Headless until M5, since a window on the person's screen is not the agent's to drive.
-	b, token := m.newBrowser("", exe, true, agent)
+	b, tok, err := m.newBrowser("", exe, true, agent)
+	if err != nil {
+		return nil, err
+	}
 	err = m.start(ctx, b, func() error { return m.admitAgent(b) })
 	if errors.Is(err, api.ErrRateLimited) {
 		m.Log.Warn("refused an agent browser over the session's limit", "agent_session", agent)
@@ -55,7 +58,7 @@ func (m *managed) OpenAgentBrowser(ctx context.Context, _ *berthv1.OpenAgentBrow
 		return nil, err
 	}
 	m.Log.Info("opened an agent browser", "agent_session", agent, "browser", b.id)
-	return &berthv1.OpenAgentBrowserResponse{Browser: m.agentProto(b), CdpToken: token}, nil
+	return &berthv1.OpenAgentBrowserResponse{Browser: m.agentProto(b), CdpToken: tok}, nil
 }
 
 // admitAgent counts an open against the session's limits and names its profile; it runs under

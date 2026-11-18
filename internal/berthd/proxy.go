@@ -2,8 +2,6 @@ package berthd
 
 import (
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"math"
@@ -20,6 +18,7 @@ import (
 	"berth/internal/core/ports"
 	"berth/internal/core/proxysession"
 	"berth/internal/core/secret"
+	"berth/internal/token"
 )
 
 const (
@@ -152,8 +151,8 @@ func (s *secrets) activeProxyGrant(ctx context.Context, name string) (ports.Gran
 // openSession records the session row before any ticket exists, so a revoke that lands while
 // tickets are issued already finds the session to stop. The proxy's exit is watched from here on.
 func (s *secrets) openSession(ctx context.Context, peer ports.Peer, grants []ports.GrantRecord) (*proxySession, error) {
-	raw := make([]byte, 16)
-	if _, err := rand.Read(raw); err != nil {
+	id, err := token.Hex(16)
+	if err != nil {
 		return nil, err
 	}
 	// The watch outlives this call, so it hangs off berthd's context, not the caller's.
@@ -174,7 +173,7 @@ func (s *secrets) openSession(ctx context.Context, peer ports.Peer, grants []por
 		// A proxy berthd started for an agent session calls on the owner socket, as every proxy does.
 		agent = s.startedFor(peer.PID)
 	}
-	rec := ports.ProxySessionRecord{ID: hex.EncodeToString(raw), PID: peer.PID, CreatedAt: s.Clock.Now(), AgentSession: agent}
+	rec := ports.ProxySessionRecord{ID: id, PID: peer.PID, CreatedAt: s.Clock.Now(), AgentSession: agent}
 	for _, g := range grants {
 		rec.Grants = append(rec.Grants, g.ID)
 	}

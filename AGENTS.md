@@ -42,7 +42,7 @@ Build tag: `berth_e2e` compiles the test only pin rule, the test root of `berth-
 | `internal/client/` | The Go client every Go tool uses to reach the daemon | gen, api |
 | `internal/cli/` | The `berth` command logic and the `berth top` TUI, testable against an in process server | client, gen, api |
 | `internal/proxy/`, `internal/proxyctl/`, `internal/proxyproc/` | The `berth-proxy` logic; the two JSON lines it exchanges with its starter and the rules every end checks (standard library only); the starter `berth` and `berthd` share | gen, api, adapters; never a UI module |
-| `internal/peertrust/`, `internal/codetrust/`, `internal/spawn/`, `internal/mask/`, `internal/paths/`, `internal/logging/` | Trust in signed Berth peers, the suspended start for `berth run --env`, output masking, default paths, the redacting log handler | |
+| `internal/peertrust/`, `internal/codetrust/`, `internal/spawn/`, `internal/mask/`, `internal/paths/`, `internal/logging/`, `internal/token/` | Trust in signed Berth peers, the suspended start for `berth run --env`, output masking, default paths, the redacting log handler, random ids and tokens with the hashes berthd keeps | |
 | `internal/testutil/` | Fakes for ports (in memory store, fake clock, scriptable secrets, process table and browser driver) | ports |
 | `internal/mcp/` | `berth-mcp`: MCP over stdio for agents without a shell; its tools are fixed text in `tools.json`, and its test maps every agent method to a tool or a reason | client, gen; never a UI module |
 | `cmd/` | `berthd`, `berth`, `berth-proxy` and `berth-mcp` entry points, thin | internal |

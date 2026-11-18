@@ -2,10 +2,6 @@ package berthd
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/hex"
 	"errors"
 	"log/slog"
 	"strconv"
@@ -20,6 +16,7 @@ import (
 	"berth/internal/core/agentsession"
 	"berth/internal/core/machine"
 	"berth/internal/core/ports"
+	"berth/internal/token"
 )
 
 // Provisional defaults, awaiting the maintainer (docs/plans/e3-isolated-agents.md, item 4).
@@ -235,26 +232,29 @@ func (a *agents) recover(ctx context.Context) error {
 }
 
 func (a *agents) CreateAgentSession(ctx context.Context, req *berthv1.CreateAgentSessionRequest) (*berthv1.CreateAgentSessionResponse, error) {
-	raw := make([]byte, 16+32)
-	if _, err := rand.Read(raw); err != nil {
+	id, err := token.Hex(16)
+	if err != nil {
 		return nil, err
 	}
-	defer clear(raw)
-	token := agentTokenPrefix + base64.RawURLEncoding.EncodeToString(raw[16:])
+	secret, err := token.Base64(32)
+	if err != nil {
+		return nil, err
+	}
+	tok := agentTokenPrefix + secret
 	ttl := defaultAgentTTL
 	if s := req.GetTtlSeconds(); s > 0 {
 		ttl = time.Duration(s) * time.Second
 	}
 	now := a.Clock.Now()
 	rec := ports.AgentSessionRecord{
-		ID: hex.EncodeToString(raw[:16]), Name: req.GetName(), TokenHash: sha256.Sum256([]byte(token)),
+		ID: id, Name: req.GetName(), TokenHash: token.Hash(tok),
 		CreatedAt: now, ExpiresAt: now.Add(ttl),
 	}
 	if err := a.Records.AddAgentSession(ctx, rec); err != nil {
 		return nil, err
 	}
 	a.watchExpiry(rec)
-	return &berthv1.CreateAgentSessionResponse{Session: agentSessionProto(rec, agentsession.Initial), Token: token}, nil
+	return &berthv1.CreateAgentSessionResponse{Session: agentSessionProto(rec, agentsession.Initial), Token: tok}, nil
 }
 
 func (a *agents) ListAgentSessions(ctx context.Context) (*berthv1.ListAgentSessionsResponse, error) {
@@ -295,8 +295,8 @@ func (a *agents) RevokeAgentSession(ctx context.Context, req *berthv1.RevokeAgen
 // Authenticate accepts a token only for a live session, from the agent user, and from inside the
 // session's process tree. The first accepted call binds the session to its tree: the highest
 // ancestor of the caller that still runs as the agent user (agentsession.Root).
-func (a *agents) Authenticate(ctx context.Context, token string, peer ports.Peer) (string, error) {
-	rec, found, err := a.Records.AgentSessionByToken(ctx, sha256.Sum256([]byte(token)))
+func (a *agents) Authenticate(ctx context.Context, tok string, peer ports.Peer) (string, error) {
+	rec, found, err := a.Records.AgentSessionByToken(ctx, token.Hash(tok))
 	if err != nil {
 		return "", err
 	}

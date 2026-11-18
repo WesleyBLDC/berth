@@ -2,9 +2,6 @@ package berthd
 
 import (
 	"context"
-	"crypto/rand"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +22,7 @@ import (
 	"berth/internal/core/discovery"
 	"berth/internal/core/machine"
 	"berth/internal/core/ports"
+	"berth/internal/token"
 )
 
 const (
@@ -321,12 +319,6 @@ func (m *managed) send(ctx context.Context, id string, e browser.Event) {
 	}
 }
 
-func randomHex(n int) string {
-	b := make([]byte, n)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
-}
-
 // executable picks the browser to run: the request's, which must be a Chromium family browser
 // by its path, else berthd's -browser flag, else the first one found.
 func (m *managed) executable(requested string) (string, error) {
@@ -377,20 +369,30 @@ func (m *managed) LaunchBrowser(ctx context.Context, req *berthv1.LaunchBrowserR
 	if err != nil {
 		return nil, err
 	}
-	b, token := m.newBrowser(req.GetProfile(), exe, req.GetHeadless(), "")
+	b, tok, err := m.newBrowser(req.GetProfile(), exe, req.GetHeadless(), "")
+	if err != nil {
+		return nil, err
+	}
 	if err := m.start(ctx, b, nil); err != nil {
 		return nil, err
 	}
-	return &berthv1.LaunchBrowserResponse{Browser: m.proto(b), CdpToken: token}, nil
+	return &berthv1.LaunchBrowserResponse{Browser: m.proto(b), CdpToken: tok}, nil
 }
 
 // newBrowser makes a browser's facts and its proxy token, of which berthd keeps only the hash.
-func (m *managed) newBrowser(profile, exe string, headless bool, agent string) (*managedBrowser, string) {
-	token := randomHex(32)
+func (m *managed) newBrowser(profile, exe string, headless bool, agent string) (*managedBrowser, string, error) {
+	tok, err := token.Hex(32)
+	if err != nil {
+		return nil, "", err
+	}
+	id, err := token.Hex(8)
+	if err != nil {
+		return nil, "", err
+	}
 	return &managedBrowser{
-		id: randomHex(8), profile: profile, executable: exe, headless: headless, agent: agent,
-		tokenHash: sha256.Sum256([]byte(token)), state: browser.Requested, since: m.Clock.Now(),
-	}, token
+		id: id, profile: profile, executable: exe, headless: headless, agent: agent,
+		tokenHash: token.Hash(tok), state: browser.Requested, since: m.Clock.Now(),
+	}, tok, nil
 }
 
 // start takes b's profile and launches it, answering once it is ready or failed. admit, when set,

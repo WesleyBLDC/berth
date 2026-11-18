@@ -5,8 +5,6 @@ package cdpproxy
 
 import (
 	"context"
-	"crypto/sha256"
-	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"log/slog"
@@ -21,6 +19,7 @@ import (
 
 	"berth/internal/core/cdppolicy"
 	"berth/internal/core/ports"
+	"berth/internal/token"
 )
 
 const (
@@ -167,8 +166,7 @@ type client struct {
 // and refuses any request a web page could have made.
 func (e *endpoint) gate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		got := sha256.Sum256([]byte(r.Header.Get(TokenHeader)))
-		if subtle.ConstantTimeCompare(got[:], e.tokenHash[:]) != 1 {
+		if !token.Matches(r.Header.Get(TokenHeader), e.tokenHash) {
 			// A caller without the token keeps no connection open.
 			w.Header().Set("Connection", "close")
 			http.Error(w, "unauthorized", http.StatusUnauthorized)

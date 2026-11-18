@@ -6,7 +6,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/x509"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,6 +21,7 @@ import (
 	"berth/gen/berth/v1/berthv1connect"
 	"berth/internal/logging"
 	"berth/internal/proxyctl"
+	"berth/internal/token"
 )
 
 // Exit codes.
@@ -101,7 +101,7 @@ func run(ctx context.Context, d Deps) (int, []*Grant) {
 	if err != nil {
 		return fail(ExitError, "cannot reach the signed berthd", err), nil
 	}
-	resp, err := cl.AuthorizeProxy(ctx, &berthv1.AuthorizeProxyRequest{RequestId: randomHex(16), Names: names})
+	resp, err := cl.AuthorizeProxy(ctx, &berthv1.AuthorizeProxyRequest{RequestId: rand.Text(), Names: names})
 	if err != nil {
 		return fail(ExitError, "berthd refused to authorize the proxy", err), nil
 	}
@@ -148,7 +148,11 @@ func run(ctx context.Context, d Deps) (int, []*Grant) {
 	if err != nil {
 		return fail(ExitError, "cannot listen on loopback", err), grants
 	}
-	credential := randomHex(16)
+	credential, err := token.Hex(16)
+	if err != nil {
+		_ = ln.Close()
+		return fail(ExitError, "cannot make the proxy credential", err), grants
+	}
 	srv := NewServer(ServerConfig{
 		Grants: grants, CA: ca, Credential: credential, Roots: d.Roots, Dial: d.Dial, Log: log,
 		GrantedOnly: req.Mode == proxyctl.ModeAgent,
@@ -214,7 +218,7 @@ func run(ctx context.Context, d Deps) (int, []*Grant) {
 		injected, refused := srv.Counts()
 		endCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), endTimeout)
 		_, err := cl.EndProxySession(endCtx, &berthv1.EndProxySessionRequest{
-			RequestId: randomHex(16),
+			RequestId: rand.Text(),
 			SessionId: resp.GetSessionId(),
 			Injected:  injected,
 			Refused:   refused,
@@ -356,10 +360,4 @@ func watch(ctx context.Context, cl berthv1connect.SecretsServiceClient, session 
 		}
 	}()
 	return out, nil
-}
-
-func randomHex(n int) string {
-	b := make([]byte, n)
-	_, _ = rand.Read(b)
-	return hex.EncodeToString(b)
 }
