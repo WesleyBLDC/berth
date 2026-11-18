@@ -46,10 +46,9 @@ const (
 type CDP string
 
 const (
-	CDPUnknown CDP = ""
-	CDPNone    CDP = "None"
-	CDPPipe    CDP = "Pipe"
-	CDPPort    CDP = "Port"
+	CDPNone CDP = "None"
+	CDPPipe CDP = "Pipe"
+	CDPPort CDP = "Port"
 )
 
 // Signature is everything the rules learned about one process.

@@ -86,10 +86,10 @@ type secretsDeps struct {
 	Exits func(ctx context.Context, pid int) (<-chan struct{}, error)
 	// AllowLocalTargets accepts localhost and IP literal proxy grants; only berth_e2e builds.
 	AllowLocalTargets bool
-	// StartProxyProcess starts the berth-proxy beside berthd for StartProxy; nil refuses it.
+	// StartProxyProcess starts the berth-proxy beside berthd for StartProxy.
 	StartProxyProcess func(ctx context.Context) (*proxyproc.Process, error)
-	// AgentLive reports whether an agent session still serves calls; nil means none ever does.
-	// berthd sets it once both secrets and agents exist, before serving.
+	// AgentLive reports whether an agent session still serves calls. berthd sets it once both
+	// secrets and agents exist, before serving.
 	AgentLive func(ctx context.Context, id string) bool
 }
 
@@ -132,7 +132,6 @@ type flight struct {
 type useRequest struct {
 	grantID int64
 	name    string
-	sha256  [32]byte
 	pid     int
 	kind    ports.ConsumerKind
 }
@@ -149,7 +148,6 @@ type liveTicket struct {
 	// grantID is the grant a use ticket was issued on, so a revoke can drop it; 0 for actions.
 	grantID int64
 	name    string
-	sha256  [32]byte
 	pid     int
 	kind    ports.ConsumerKind
 	action  ports.TicketAction
@@ -534,7 +532,7 @@ func (s *secrets) issue(ctx context.Context, entity string) {
 	}
 	expires := now.Add(ticketLife)
 	s.mu.Lock()
-	s.live[t] = liveTicket{grantID: u.grantID, name: u.name, sha256: u.sha256, pid: u.pid, kind: u.kind, action: ports.TicketUse, expires: expires}
+	s.live[t] = liveTicket{grantID: u.grantID, name: u.name, pid: u.pid, kind: u.kind, action: ports.TicketUse, expires: expires}
 	s.mu.Unlock()
 	s.grants.output(entity, issued{ticket: t, expires: expires})
 }
@@ -605,7 +603,7 @@ func (s *secrets) AuthorizeUse(ctx context.Context, req *berthv1.AuthorizeUseReq
 		}
 	}
 	if match != nil {
-		return s.authorize(ctx, *match, exe, peer)
+		return s.authorize(ctx, *match, peer)
 	}
 	outcome := berthv1.UseOutcome_USE_OUTCOME_NO_GRANT
 	if stale {
@@ -629,8 +627,8 @@ func (s *secrets) AuthorizeUse(ctx context.Context, req *berthv1.AuthorizeUseReq
 	return &berthv1.AuthorizeUseResponse{Outcome: outcome}, nil
 }
 
-func (s *secrets) authorize(ctx context.Context, g ports.GrantRecord, exe ports.Executable, peer ports.Peer) (*berthv1.AuthorizeUseResponse, error) {
-	got, err := s.issueFor(ctx, useRequest{grantID: g.ID, name: g.Secret, sha256: exe.SHA256, pid: peer.PID, kind: kindOf(g)})
+func (s *secrets) authorize(ctx context.Context, g ports.GrantRecord, peer ports.Peer) (*berthv1.AuthorizeUseResponse, error) {
+	got, err := s.issueFor(ctx, useRequest{grantID: g.ID, name: g.Secret, pid: peer.PID, kind: kindOf(g)})
 	if err != nil {
 		return nil, err
 	}

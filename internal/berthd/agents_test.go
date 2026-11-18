@@ -95,7 +95,8 @@ func (f *agentsFixture) newAgents(t *testing.T, store ports.Store) *agents {
 			}
 			f.stopped <- id
 		},
-		WatchExit: f.exits.watch, After: f.timers.after,
+		CloseBrowsers: func(context.Context, string) {},
+		WatchExit:     f.exits.watch, After: f.timers.after,
 	})
 }
 

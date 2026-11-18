@@ -81,7 +81,7 @@ func (s *secrets) runSession(entity string) machine.Runner[proxysession.Event, p
 // TrustProxy accepts only a peer running the signed berth-proxy beside berthd, judged by the
 // kernel's live code identity.
 func (s *secrets) TrustProxy(ctx context.Context, peer ports.Peer) error {
-	if s.Proxy == nil || !s.Proxy.Runs(ctx, peer) {
+	if !s.Proxy.Runs(ctx, peer) {
 		return api.ErrPeerNotTrusted
 	}
 	return nil
@@ -182,7 +182,7 @@ func (s *secrets) openSession(ctx context.Context, peer ports.Peer, grants []por
 	}
 	// The agent session's end stops the proxy sessions it finds recorded, so one that ended
 	// before this row existed is caught here: either it sees the row or this sees its end.
-	agentEnded := agent != "" && (s.AgentLive == nil || !s.AgentLive(ctx, agent))
+	agentEnded := agent != "" && !s.AgentLive(ctx, agent)
 	ps := &proxySession{
 		id: rec.ID, pid: peer.PID, token: peer.AuditToken, cancel: cancel,
 		stop: make(chan proxysession.StopReason, 1), done: make(chan struct{}),

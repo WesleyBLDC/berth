@@ -46,9 +46,9 @@ type Config struct {
 	Helper string
 	CLI    string
 	Proxy  string
-	// Pinner decides which files berthd trusts as the berth CLI, berth-native and berth-proxy.
-	// Nil means codetrust.SignedPinner (Apple's chain, Berth's team and identifier); cmd/berthd
-	// passes peertrust.Pinner, which is that rule in every release build, and nothing reads the
+	// Pinner decides which files berthd trusts as the berth CLI, berth-native and berth-proxy;
+	// it is required. cmd/berthd passes peertrust.Pinner, which is codetrust.SignedPinner (Apple's
+	// chain, Berth's team and identifier) in every release build, and nothing reads the
 	// environment for it.
 	Pinner codetrust.Pinner
 	// AllowLocalProxyTargets lets a proxy grant name localhost or an IP literal; only binaries
@@ -280,11 +280,11 @@ func newSecretsFor(ctx context.Context, cfg Config, store *sqlite.Store) (*secre
 		}
 		*f.path = p
 	}
-	execs := execid.New(execid.DefaultCodesign)
-	pin := cfg.Pinner
-	if pin == nil {
-		pin = codetrust.SignedPinner(execs)
+	if cfg.Pinner == nil {
+		return nil, errors.New("berthd needs a Pinner to know which binaries to trust")
 	}
+	pin := cfg.Pinner
+	execs := execid.New(execid.DefaultCodesign)
 	code := peer.NewCode()
 	trusted := func(path, identifier string) *codetrust.File {
 		return codetrust.New(ctx, path, identifier, pin, code, clock.System{}, cfg.Log)

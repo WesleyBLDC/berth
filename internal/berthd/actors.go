@@ -153,13 +153,6 @@ func (a *actors[S, E, F]) holds(entity string, sl *slot[S, E, F]) bool {
 	return a.live[entity] == sl
 }
 
-// count is how many actors are running, for tests that check they stay bounded.
-func (a *actors[S, E, F]) count() int {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return len(a.live)
-}
-
 // input is called from an effect to read what its step carried in.
 func (a *actors[S, E, F]) input(entity string) any {
 	a.mu.Lock()

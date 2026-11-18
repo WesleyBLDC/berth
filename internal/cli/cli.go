@@ -280,10 +280,6 @@ func reportError(w io.Writer, err error, name, target string) int {
 		line = "berthd saw this request id before with different input; try again"
 	case berthv1.ErrorReason_ERROR_REASON_NOT_SERVING:
 		line = "berthd is not serving right now; try again once berth status shows Serving"
-	case berthv1.ErrorReason_ERROR_REASON_PROTOCOL_MISMATCH:
-		line = "berth and berthd are different versions; restart berthd"
-	case berthv1.ErrorReason_ERROR_REASON_TICKET_INVALID:
-		line = "the use ticket was invalid, used or expired; run the command again"
 	case berthv1.ErrorReason_ERROR_REASON_PEER_NOT_TRUSTED:
 		line = "berthd gives secrets only to the signed berth binary; run make build and use bin/berth beside bin/berthd"
 	case berthv1.ErrorReason_ERROR_REASON_INTERPRETER:
@@ -321,8 +317,10 @@ func reportError(w io.Writer, err error, name, target string) int {
 		return ExitProxyFailed
 	case berthv1.ErrorReason_ERROR_REASON_ENTITY_NOT_FOUND:
 		line = fmt.Sprintf("no state machine entity named %s", target)
-	case berthv1.ErrorReason_ERROR_REASON_UNSPECIFIED:
-		line = err.Error()
+	// The handshake answers a version mismatch before any command's call, and only berth-native
+	// redeems tickets, so berth never gets these here.
+	case berthv1.ErrorReason_ERROR_REASON_UNSPECIFIED, berthv1.ErrorReason_ERROR_REASON_PROTOCOL_MISMATCH,
+		berthv1.ErrorReason_ERROR_REASON_TICKET_INVALID:
 	}
 	if line == "" {
 		line = err.Error()

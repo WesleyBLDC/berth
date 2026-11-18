@@ -46,9 +46,6 @@ func (s *secrets) StartProxy(ctx context.Context, req *berthv1.StartProxyRequest
 			return send(&berthv1.StartProxyResponse{Outcome: berthv1.UseOutcome_USE_OUTCOME_NO_GRANT})
 		}
 	}
-	if s.StartProxyProcess == nil {
-		return api.ErrProxyNotStarted
-	}
 	// The proxy outlives this call by up to stopWait, so it hangs off berthd's context.
 	p, err := s.StartProxyProcess(s.ctx) //nolint:contextcheck // see above
 	if err != nil {
@@ -156,7 +153,7 @@ func (s *secrets) releaseStart(agent string) {
 	if agent == "" {
 		return
 	}
-	live := s.AgentLive == nil || s.AgentLive(s.ctx, agent)
+	live := s.AgentLive(s.ctx, agent)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.starting[agent]--; s.starting[agent] <= 0 {

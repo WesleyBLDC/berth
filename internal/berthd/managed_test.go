@@ -81,6 +81,7 @@ func newManagedFixture(t *testing.T) *managedFixture {
 	f.m = newManaged(t.Context(), managedDeps{
 		Log: slog.New(slog.DiscardHandler), Store: f.store, List: f.store, Clock: testutil.NewClock(),
 		Driver: f.driver, Proxy: f.proxy, Seen: f.seen, Home: home, Browser: exe,
+		AgentLive: func(context.Context, string) bool { return true },
 	})
 	f.m.grace = 20 * time.Millisecond
 	f.m.launch = 200 * time.Millisecond

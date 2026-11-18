@@ -23,9 +23,6 @@ import (
 	"berth/internal/strictjson"
 )
 
-// DefaultHelper is where the signed berth-native helper is installed.
-const DefaultHelper = "/Applications/Berth.app/Contents/MacOS/berth-native"
-
 const (
 	// maxOutcome bounds a store or confirm reply; a real one is a few dozen bytes.
 	maxOutcome = 64 << 10

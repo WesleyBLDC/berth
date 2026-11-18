@@ -91,7 +91,6 @@ type ProxySessionRecord struct {
 type ProxySessionRecords interface {
 	// AddProxySession stores r with its grants; EndedAt and the counts are ignored.
 	AddProxySession(ctx context.Context, r ProxySessionRecord) error
-	ProxySession(ctx context.Context, id string) (ProxySessionRecord, bool, error)
 	// ProxySessionsForGrant lists the ids of sessions holding the grant that have not ended.
 	ProxySessionsForGrant(ctx context.Context, grantID int64) ([]string, error)
 	// ProxySessionsForAgentSession lists the ids of sessions authorized through the agent session

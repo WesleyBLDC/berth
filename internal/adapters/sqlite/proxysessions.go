@@ -30,6 +30,8 @@ func (s *Store) AddProxySession(ctx context.Context, r ports.ProxySessionRecord)
 	return tx.Commit()
 }
 
+// ProxySession reads one session's facts back. berthd never needs them, so it is not part of
+// ports.ProxySessionRecords; the store's and berthd's tests check what was recorded with it.
 func (s *Store) ProxySession(ctx context.Context, id string) (ports.ProxySessionRecord, bool, error) {
 	r := ports.ProxySessionRecord{ID: id}
 	var created int64

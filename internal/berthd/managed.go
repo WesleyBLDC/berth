@@ -60,8 +60,7 @@ type managedDeps struct {
 	Seen    profileSessions
 	Home    string
 	Browser string
-	// AgentLive reports whether an agent session still serves calls; nil treats every session
-	// as live.
+	// AgentLive reports whether an agent session still serves calls.
 	AgentLive func(ctx context.Context, id string) bool
 }
 
@@ -296,11 +295,9 @@ func (m *managed) spawn(ctx context.Context, b *managedBrowser) []browser.Event 
 	_ = json.Unmarshal(raw, &version)
 	var endpoint string
 	var stop func()
-	if m.Proxy != nil {
-		if endpoint, stop, err = m.Proxy.Serve(b.id, conn, b.tokenHash); err != nil {
-			kill()
-			return failed("the CDP proxy could not listen")
-		}
+	if endpoint, stop, err = m.Proxy.Serve(b.id, conn, b.tokenHash); err != nil {
+		kill()
+		return failed("the CDP proxy could not listen")
 	}
 	m.mu.Lock()
 	b.product, b.endpoint, b.stopProxy = discovery.Clip(version.Product), endpoint, stop

@@ -153,7 +153,7 @@ func (m *managed) forgetAgent(agent string) {
 }
 
 func (m *managed) agentLive(ctx context.Context, agent string) bool {
-	return m.AgentLive == nil || m.AgentLive(ctx, agent)
+	return m.AgentLive(ctx, agent)
 }
 
 // removeProfile deletes an agent browser's profile; the name was made by admitAgent, so the

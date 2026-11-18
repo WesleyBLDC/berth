@@ -273,6 +273,7 @@ func TestAgentSessionRevokeClosesItsBrowsers(t *testing.T) {
 	a := newAgents(t.Context(), agentsDeps{
 		Log: slog.New(slog.DiscardHandler), Store: af.store, Records: af.store, Clock: af.clock,
 		Lineage: af.procs, Code: anyLive{af.procs}, AgentUID: agentUID, After: af.timers.after,
+		StopProxies: func(context.Context, string) {}, WatchExit: af.exits.watch,
 		CloseBrowsers: func(ctx context.Context, id string) {
 			if ctx.Err() == nil {
 				f.m.closeAgent(ctx, id)

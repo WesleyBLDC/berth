@@ -16,6 +16,7 @@ import (
 	"berth/internal/codetrust"
 	"berth/internal/core/grant"
 	"berth/internal/core/ports"
+	"berth/internal/proxyproc"
 	"berth/internal/testutil"
 )
 
@@ -164,6 +165,11 @@ func newFixtureWith(t *testing.T, approver ports.Approver, tickets ports.TicketS
 		Approver: approver, Execs: execs, Peers: peers, Tickets: tickets,
 		CLI: trusted(codetrust.CLISigningID), Helper: trusted(codetrust.HelperSigningID), Proxy: trusted(codetrust.ProxySigningID),
 		PID: berthdPID, Exits: f.exits.watch,
+		// Tests that start a proxy or end an agent session replace these.
+		StartProxyProcess: func(context.Context) (*proxyproc.Process, error) {
+			return nil, errors.New("no berth-proxy in this test")
+		},
+		AgentLive: func(context.Context, string) bool { return true },
 	})
 	return f
 }

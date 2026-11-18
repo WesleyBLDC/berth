@@ -120,12 +120,8 @@ func (a *agents) ended(id string) {
 			w.stopRoot()
 		}
 	}
-	if a.StopProxies != nil {
-		a.StopProxies(a.ctx, id)
-	}
-	if a.CloseBrowsers != nil {
-		a.CloseBrowsers(a.ctx, id)
-	}
+	a.StopProxies(a.ctx, id)
+	a.CloseBrowsers(a.ctx, id)
 }
 
 // watchExpiry sends Expire at the session's expiry, so a session nobody calls still ends and
@@ -148,9 +144,6 @@ const rootRetry = 30 * time.Second
 // the start time, so a reused pid never counts). It reports false when the root was already gone
 // and RootExited was applied at once.
 func (a *agents) watchRoot(id string, root ports.ProcessRef) bool {
-	if a.WatchExit == nil {
-		return true
-	}
 	a.mu.Lock()
 	w := a.watches[id]
 	if w == nil || w.stopRoot != nil {
@@ -211,9 +204,7 @@ func (a *agents) recover(ctx context.Context) error {
 			return err
 		}
 		if !agentsession.Live(st) {
-			if a.StopProxies != nil {
-				a.StopProxies(a.ctx, rec.ID) //nolint:contextcheck // the stop must outlive the boot step, so it uses berthd's context
-			}
+			a.StopProxies(a.ctx, rec.ID) //nolint:contextcheck // the stop must outlive the boot step, so it uses berthd's context
 			continue
 		}
 		if st, err = a.refresh(ctx, rec, true); err != nil {
