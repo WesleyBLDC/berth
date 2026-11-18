@@ -6,6 +6,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -33,6 +34,8 @@ type Deps struct {
 	Store     ports.Store
 	Requests  ports.RequestLog
 	Clock     ports.Clock
+	// Log hears which client each handshake names; nil discards it.
+	Log *slog.Logger
 	// RequestStop asks the daemon machine to stop; it must not block.
 	RequestStop func(ctx context.Context) error
 	// Secrets runs SecretsService; nil leaves it unimplemented.
@@ -63,6 +66,9 @@ type handlers struct {
 // Register mounts every service on each server. The servers share one set of handlers, so a
 // request ID in flight on one socket holds back its retry on the other.
 func Register(d Deps, servers ...*connect.Server) {
+	if d.Log == nil {
+		d.Log = slog.New(slog.DiscardHandler)
+	}
 	h := &handlers{d: d, inFlight: map[string]chan struct{}{}}
 	for _, server := range servers {
 		berthv1connect.RegisterDaemonServiceHandler(server, h)
@@ -97,10 +103,12 @@ func AgentOnly() connect.ServerInterceptor {
 	}
 }
 
-func (h *handlers) Handshake(_ context.Context, req *berthv1.HandshakeRequest) (*berthv1.HandshakeResponse, error) {
+func (h *handlers) Handshake(ctx context.Context, req *berthv1.HandshakeRequest) (*berthv1.HandshakeResponse, error) {
 	if err := validate(req); err != nil {
 		return nil, err
 	}
+	// The name is the client's own claim, at most 64 characters, so it only helps read the log.
+	h.d.Log.DebugContext(ctx, "handshake", "client", req.GetClientName(), "protocol", req.GetProtocolVersion(), "pid", peerOf(ctx).PID)
 	if req.GetProtocolVersion() != ProtocolVersion {
 		return nil, withReason(connect.Errorf(connect.CodeFailedPrecondition,
 			"client speaks protocol %d, berthd speaks %d; update the older one", req.GetProtocolVersion(), ProtocolVersion),

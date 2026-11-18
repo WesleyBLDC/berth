@@ -3,6 +3,7 @@ package api_test
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -88,6 +89,27 @@ func TestProtocolMismatchIsATypedError(t *testing.T) {
 	_, err := f.daemon.Handshake(context.Background(), &berthv1.HandshakeRequest{ProtocolVersion: 99})
 	if connect.CodeOf(err) != connect.CodeFailedPrecondition || api.ReasonOf(err) != berthv1.ErrorReason_ERROR_REASON_PROTOCOL_MISMATCH {
 		t.Fatalf("got %v (%v)", err, api.ReasonOf(err))
+	}
+}
+
+func TestHandshakeLogsTheClientName(t *testing.T) {
+	store, err := sqlite.Open(context.Background(), filepath.Join(t.TempDir(), "b.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = store.Close() })
+	var log strings.Builder
+	server := connect.NewServer()
+	api.Register(api.Deps{
+		Store: store, Requests: store, Clock: testutil.NewClock(),
+		Log: slog.New(slog.NewTextHandler(&log, &slog.HandlerOptions{Level: slog.LevelDebug})),
+	}, server)
+	daemon := berthv1connect.NewDaemonServiceClient(connect.NewClient(connectinprocess.New(server)))
+	if _, err := daemon.Handshake(t.Context(), &berthv1.HandshakeRequest{ProtocolVersion: api.ProtocolVersion, ClientName: "berth-cli"}); err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(log.String(), "client=berth-cli") {
+		t.Fatalf("log %q", log.String())
 	}
 }
 

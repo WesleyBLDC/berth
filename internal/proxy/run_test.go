@@ -285,9 +285,12 @@ func TestStopOrDroppedStreamZeroesAndExits(t *testing.T) {
 				_ = c.Close()
 				t.Fatal("still listening after the session ended")
 			}
-			// Only a STOP leaves a berthd to hear the end.
+			// Only a STOP leaves a berthd to hear the end, and says why it came.
 			if got, want := len(d.endings()), map[string]int{"stop": 1, "drop": 0}[how]; got != want {
 				t.Fatalf("EndProxySession called %d times, want %d", got, want)
+			}
+			if said := strings.Contains(r.stderr.String(), "PROXY_STOP_REASON_GRANT_REVOKED"); said != (how == "stop") {
+				t.Fatalf("stop reason in the log %v; stderr %s", said, r.stderr.String())
 			}
 		})
 	}

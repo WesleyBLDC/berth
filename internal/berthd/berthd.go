@@ -318,7 +318,7 @@ func (s *shell) serve(ctx context.Context) error {
 	}
 	api.Register(api.Deps{
 		Version: s.cfg.Version, PID: os.Getpid(), StartedAt: s.start, Socket: s.sock,
-		Store: s.store, Requests: s.store, Clock: clock.System{},
+		Store: s.store, Requests: s.store, Clock: clock.System{}, Log: s.log,
 		RequestStop: func(ctx context.Context) error {
 			return s.actor.Send(ctx, daemon.Event{Kind: daemon.StopRequested, Note: "Shutdown call"})
 		},

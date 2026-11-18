@@ -290,7 +290,7 @@ func waitForEnd(ctx context.Context, events <-chan event, stdinClosed <-chan str
 				continue
 			}
 			// STOP or a broken stream: fail closed. Only after a STOP is berthd there to hear the end.
-			log.Info("session ended by berthd", "stopped", ev.err == nil)
+			log.Info("session ended by berthd", "stopped", ev.err == nil, "reason", ev.reason.String())
 			return ExitStopped, ev.err == nil
 		case <-expiry:
 			log.Info("the run CA expired")
@@ -356,7 +356,9 @@ func buildGrants(names []string, tickets []*berthv1.ProxyTicket, allowLocal bool
 
 type event struct {
 	kind berthv1.ProxySessionEventKind
-	err  error
+	// reason is why berthd stopped the session, on STOP.
+	reason berthv1.ProxyStopReason
+	err    error
 }
 
 // watch opens the session stream and delivers its events; a broken stream arrives as an error.
@@ -390,7 +392,7 @@ func watch(ctx context.Context, cl berthv1connect.SecretsServiceClient, session 
 				}
 			case berthv1.ProxySessionEventKind_PROXY_SESSION_EVENT_KIND_STOP,
 				berthv1.ProxySessionEventKind_PROXY_SESSION_EVENT_KIND_UNSPECIFIED:
-				send(event{kind: berthv1.ProxySessionEventKind_PROXY_SESSION_EVENT_KIND_STOP})
+				send(event{kind: berthv1.ProxySessionEventKind_PROXY_SESSION_EVENT_KIND_STOP, reason: msg.GetEvent().GetStopReason()})
 				return
 			}
 		}
