@@ -59,7 +59,7 @@ The person's `berth` on `PATH` becomes a symlink to `Contents/Helpers/berth` onc
 - **Server streams**: `Content-Type: application/connect+json`, the request in one envelope (one flag byte, a four byte big endian length, the JSON); the answer is chunked, one envelope per message, ending with an end of stream envelope (flag `0x02`) whose JSON holds an `error` or nothing. Envelopes over 16 MiB and heads over 64 KiB end the stream as malformed.
 - **Proto JSON**: field names in lowerCamelCase, enums by name (an unknown name decodes as unknown, never a crash), 64 bit integers as strings, timestamps as RFC 3339 with 0 to 9 fractional digits, default values omitted.
 - **Client streaming is not possible over HTTP/1.1** in Connect, so input for takeover is a unary `SendInput` carrying a batch of events (item 9).
-- **berthd side, a pin for the app** (item 7): `berthd` pins `../MacOS/Berth` from its own folder (`Contents/Helpers`) with identifier `com.wesleybldc.berth`, the same `codetrust.File` rule as the CLI. The listing and watching methods stay open to any owner socket client, as today; the pin gates only the live view and takeover methods, which show page content and send input. It lands with the first method that checks it, so no unused pin ships.
+- **berthd side, a pin for the app** (item 7): `berthd` pins `../MacOS/Berth` from its own folder (`Contents/Helpers`) with identifier `com.wesleybldc.berth`, the same `codetrust.File` rule as the CLI. The listing and watching methods stay open to any owner socket client, as today; the pin gates only the live view and takeover methods, which show page content and send input. It was to land with the first method that checks it; the second pass built it ahead of that method, with no method marked and the file pinned only on first use (decision 13).
 
 ### The session list and the menu bar (items 3 and 4)
 
@@ -79,7 +79,7 @@ The person's `berth` on `PATH` becomes a symlink to `Contents/Helpers/berth` onc
 ### Notifications (item 8)
 
 - "Needs you" events: a store or rotate dialog waiting (secret `Pending`, `Rotating`, `Removing`), a grant waiting for Touch ID (grant `Requested`), and a new leftover browser (session `Leftover`).
-- A new server stream, `WatchNeeds`, resumable on the same `machine_event` cursor and built like `WatchSessions`, sends only facts `berthd` verified: the entity id, the kind, the secret name (already validated by its name rule) or the session's owner name. It is not on the agent surface.
+- A new server stream, `WatchNeeds`, resumable on the same `machine_event` cursor and built like `WatchSessions`, sends only facts `berthd` verified: the entity id, the kind, the secret name (already validated by its name rule) or the session's owner name and browser kind. It is not on the agent surface.
 - The app posts one `UNUserNotificationCenter` notification per need, with the agent controlled text quoted and labelled (checklist item 5); clicking it opens the window. It asks for notification permission the first time the person turns notifications on, never at launch.
 - Tests: the stream in Go (`internal/berthd`, end to end with a fake helper's open dialog and a real leftover), the notification text builder in Swift; posting is a manual check.
 
@@ -146,7 +146,7 @@ ERROR_REASON_CONTROL_HELD;
 ## Work items
 
 Each part ends with `make check` passing and its own commit.
-Items 2 to 5 are built in this pass; the rest follow.
+Items 2 to 5 were built in the first pass and items 6 to 8 in the second (see the exit notes); the rest follow.
 
 | # | Item | Depends on | Owns | Tests |
 |---|---|---|---|---|
@@ -187,8 +187,8 @@ These need the maintainer's hands: a signed build, a permission grant or a GUI.
 1. `make app` builds and signs `bin/Berth.app`; `codesign --verify --deep --strict bin/Berth.app` passes and `codesign -dv` shows team `XPJ7XA42J4` and `com.wesleybldc.berth`.
 2. With `berthd` running (`bin/berthd` or the bundle's), open `bin/Berth.app`: the menu bar shows the template icon and the number of live sessions; "Open Berth" shows the window with the same sessions as `berth ps`.
 3. Start a Playwright browser: it appears in the window and the count grows; close it: it shows stopped and the count drops. Quit `berthd`: the status says reconnecting; start it again: the list catches up with no duplicate rows.
-4. Login item (item 6): turn on "Start berthd at login", allow Berth in System Settings, General, Login Items; log out and in; `launchctl print gui/$(id -u)/com.wesleybldc.berth.daemon` shows it running from inside the bundle, and `berth status` answers.
-5. Notifications (item 8): allow notifications when asked; a store dialog requested by an agent and a leftover browser each post one notification, with agent text quoted.
+4. Login item (item 6): in the window's Settings tab, press Register under "Start berthd at login", allow Berth in System Settings, General, Login Items (Open Login Items goes there); log out and in; `launchctl print gui/$(id -u)/com.wesleybldc.berth.daemon` shows it running from inside the bundle, `berth status` answers, and the tab's "Answering" line says the bundle's `berthd`. With a `bin/berthd` already running, the line says a `berthd` started by hand instead.
+5. Notifications (item 8): press Turn On under Notifications in Settings and allow notifications when macOS asks (it must not ask at launch); a store dialog requested by an agent and a leftover browser each post one notification, with the secret's or owner's name quoted and labelled; answering the dialog or stopping the browser removes it; clicking one opens the window; quitting and reopening the app neither asks again nor posts the same open need twice in one run.
 6. Live view and takeover (items 10 to 12): launch a managed browser, drive it with Playwright MCP; the app shows it live; take over, type into the page; the agent's next step waits; release, and the agent continues.
 7. Window pictures (item 13): grant Screen Recording to Berth in System Settings, Privacy and Security; a Safari session's detail shows its window.
 8. A headful agent browser (item 14) opens on screen and can be taken over from the app.
@@ -199,7 +199,10 @@ These need the maintainer's hands: a signed build, a permission grant or a GUI.
 - **Hand written models.** The app decodes only the fields it uses; a new field is ignored until the app learns it. The fixture test catches renames and removals, not additions the app should show.
 - **One connection per call.** Every unary call and every stream pays a connect and a code signing check (well under a millisecond each locally); fine for a list and for input batches, measured again in item 12.
 - **Accessory app.** No Dock icon, so the window is reached only from the menu bar (or a notification).
-- **Anything on the owner socket can still watch** sessions, as with `berth top`; only screen and input need the app's signature.
+- **Anything on the owner socket can still watch** sessions and needs, as with `berth top`; only screen and input will need the app's signature.
+- **A needs snapshot reads every secret and grant row**, not only the open ones, since nothing indexes rows by state; both grow only with what the person stores and grants, and nothing prunes them yet.
+- **A leftover's owner is usually unknown** to a need: the owner exited, which is what made the browser a leftover, so the notification names the browser's kind instead.
+- **Notifications are remembered per app run only**: a relaunched app posts the needs still open once more.
 - **Direct input to a headful agent window does not pause the agent** (item 14).
 
 ## Decisions for the maintainer
@@ -218,6 +221,12 @@ Defaults taken while he was away; each is cheap to reverse before M5 closes.
 10. **The app never registers the login item or asks for notifications or Screen Recording on its own**; each starts from a button.
 11. **Reconnect backoff** 1 second doubling to 10; **200 stopped sessions** kept, like `berth top`.
 12. **Shared fixtures**: a Go test in `internal/cli` writes the session and `shown` fixtures the Swift tests read, so the hand written models and the escaping cannot drift silently from the schema and the CLI.
+13. **The app pin shipped before any method uses it** (items 6 to 8 pass): decision 7 said it lands with the first method that checks it, but the pass was asked to build item 7 and to keep listing and watching (`WatchNeeds` included) open, so the mechanism (the `(berth.v1.app)` method option, `api.AppOnly` on both sockets, `ERROR_REASON_NOT_BERTH_APP` = 25, the deferred `codetrust.File` for `../MacOS/Berth`) is built and tested and no method is marked; `TestAppSurface` pins the empty list until the screen methods mark themselves. The deferred pin reads no file until a marked method is called, so nothing runs for it today. Reverting is deleting the option, the interceptor and the reason before any client depends on them.
+14. **`WatchNeeds` stays open to the owner socket**, like `WatchSessions`: it shows only secret names (which `ListSecrets` already shows) and leftover browsers (which `ListSessions` shows). Gating it behind the app pin would also keep `berth` from ever reading it.
+15. **A leftover need carries the browser's kind**, a field the plan did not name (`Need.browser`): a browser becomes a leftover when its owner exits, so `owner_name` is almost always empty and the notification would say nothing about which browser.
+16. **`StatusResponse.executable`** is new, so the login item section can say which `berthd` answers, as the plan's design asked; it is the resolved path of the running `berthd`, served only on the owner socket (`Status` is not an agent method).
+17. **The machine kit gained a `Saved` hook**, told as soon as a transition is saved and before its effects run: a store dialog runs as the secret actor's effect, so the existing after effects hook would have told `WatchNeeds` of the dialog only after the person answered it.
+18. **Notifications are posted once per open need per app run**, in id order, including the needs of the first snapshot (a dialog already open, or leftovers the Mac already had, when the app starts); a need whose snapshot or change repeats is not posted again, and a resolved need's notification is removed. Turning notifications off removes every posted one and is remembered (`notificationsTurnedOff` in the app's defaults).
 
 ## Exit notes (2026-11-17, items 1 to 5)
 
@@ -249,3 +258,29 @@ Items 6 to 15 remain.
 6. No mutating method was added; the app makes no mutating call yet.
 7. Every client failure is a typed `ClientError` shown as "reconnecting" with its reason, and the loop backs off to 10 seconds; nothing retries silently.
 8. OWASP agentic risks: unchanged, except that the app refuses a `berthd` that is not the signed one (a fake daemon an agent started cannot feed the person's view or, later, receive their keystrokes).
+
+## Exit notes (2026-11-17, items 6 to 8)
+
+Built on branch `m5b` from local `main` at 8bebbe1: the login item, the app pin, then `WatchNeeds` with the app's notifications, each with its own commit and `make check` passing, then this file and `ARCHITECTURE.md`.
+Items 9 to 15 remain; they need the control machine, the screencast and the hold and replay in the CDP proxy, so they were not started.
+
+- **Proto changes, additive only, `buf breaking` clean against `main`:** `StatusResponse.executable` (7); the method option `app` (50002) beside `agent`; `ERROR_REASON_NOT_BERTH_APP` (25, after `ENTITY_NOT_FOUND`); `proto/berth/v1/needs.proto` with `NeedsService.WatchNeeds`, `Need` (id, kind, secret name, owner name, browser kind), `NeedKind`, `NeedEvent`, `NeedsSnapshot`, `NeedChange`. `ERROR_REASON_CONTROL_HELD` waits for item 11.
+- **Login item:** `LoginItemModel` in `BerthAppCore` (status, which `berthd` answers, the last error, all escaped) over a `LoginItemService` protocol; `LaunchAgentLoginItem` in the app wraps `SMAppService.agent(plistName:)`. Swift tests check that refreshing never registers, that the buttons register and unregister, and that failures and a foreign `berthd`'s facts are escaped; the Go e2e checks that `Status` names the running `berthd`; the plist keys were already in the bundle check.
+- **App pin:** `codetrust.Deferred` pins a file on the first `Runs`; `berthd` makes one for `Config.App`, default `../MacOS/Berth` from its own folder (`appExecutable`, tested). `api.AppOnly` reads the mark from the method descriptor like `AgentOnly`; its test builds a marked descriptor at run time, since no `berth.v1` method carries the mark, and checks that another peer gets `PermissionDenied` with `NOT_BERTH_APP` before the handler runs, that the app passes, and that an unmarked method never asks who calls. `TestReleaseTrustsOnlyAppleChain` covers the app's release requirement. There is no end to end test yet: one needs a marked method and `berth-app-probe` signed as `com.wesleybldc.berth` in a `MacOS` folder beside the test `berthd`, which item 10 can add.
+- **`WatchNeeds`:** `internal/berthd/watchers.go` now holds the stream machinery `WatchSessions` and `WatchNeeds` share (`watchSet`, `serveStream`, `catchUp`); `needs.go` reads the three kinds' rows after the cursor and merges them by id, so a result within the backlog is complete and one beyond it sends a snapshot. The snapshot reads secret and grant rows by kind and only the live sessions' rows. Tests: needs opening and resolving for a store, a grant and leftovers with a quiet use in between; an open dialog in the snapshot and the need opening while the dialog waits (this test fails with the old after effects hook); resume, unknown cursor and behind; the stream bound and the clean end at stop; which transitions open a need. End to end: a store dialog held open by the fake helper opens a need, and a stream resumed after its cursor sees it resolve from the next `berthd`; a real headless browser whose owner exits opens a leftover need with the right browser kind, and `berth stop` resolves it.
+- **App:** `NeedsStore` folds the stream and says what to post and remove; `NeedText` builds the title and body; `NeedsModel` runs the watch and posts only while turned on. `SessionsModel` and `NeedsModel` share one reconnect loop (`resumeWatching`, 1 second doubling to 10). `quoted`, the always quoting half of `shown`, is checked against Go's `strconv.QuoteToGraphic` for the whole injection corpus (`shown.json` gained a `quoted` column). The app's `SystemNotifier` and `NotificationSetting` (UserNotifications, the delegate that opens the window) are not unit tested: they are the manual check.
+- **Not run:** the GUI, `SMAppService` registration and notification posting (manual checks 4 and 5), and the signed `make app`.
+- **Deferred:** a need for an agent browser waiting on the person (none exists before takeover), a need for a power action other than a grant (none exists yet), and the menu bar's own badge for needs beyond the "waiting on you" line.
+
+### Agent safety checklist (M5, items 6 to 8)
+
+1. No agent method was added; `TestAgentSurface` is unchanged, and `TestAppSurface` checks that no method is both an agent and an app method.
+2. No value crosses `WatchNeeds`, `Status` or the app: a need holds an entity id, a kind, a secret's name, an owner's name and a browser kind; the fixtures hold no secret.
+3. No new path carries a value, so no new canary.
+4. No power action was added; registering the login item is macOS's own approval, and the app's buttons are its only start.
+5. The secret's and the owner's names in a notification are always quoted with Go's escapes and labelled with who chose them; nothing an agent chose is stored as an event note.
+6. No mutating method was added; `WatchNeeds` is read only (`TestMutatingMethodsTakeARequestID` lists it).
+7. A refused app method is a typed `NOT_BERTH_APP`; a needs stream beyond the limit is `RATE_LIMITED`; a client failure shows as reconnecting with its escaped reason and backs off.
+8. OWASP agentic risks: unchanged; the app pin is ready for item 10, so a process that is not the signed app cannot reach screen or input methods once they exist.
+9. Needs streams are bounded at 16, each holding one goroutine and one page of rows; the app's posted set is bounded by the open needs, which a snapshot replaces.
+10. Owner names and secret names reach the window and notifications only through `shown` or `quoted`.
