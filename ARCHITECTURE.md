@@ -88,7 +88,7 @@ The helper reads one JSON object on one line from stdin and writes one JSON line
 
 The exact message shapes are in [the E2 plan](docs/plans/e2-terminal-secrets.md#native-helper-protocol-items-2-4-and-6-must-match-it-exactly) and, for `rotate`, `remove` and the proxy confirm, [the E2b plan](docs/plans/e2b-header-proxy.md#notes-for-the-integration-item-item-6).
 `berthd` starts the helper for `rotate` and `remove` itself, so their action tickets are bound to `berthd`'s pid, the parent the redeem must come from.
-Go tests use a fake helper written in Go ([`internal/adapters/native/fakehelper`](internal/adapters/native/fakehelper)), never the Swift binary.
+Go tests use a fake helper written in Go ([`internal/testutil/fakehelper`](internal/testutil/fakehelper)), never the Swift binary.
 `scripts/build-native.sh` builds the helper in release mode, and `scripts/sign.sh` signs it (and `make build` signs `bin/berth`, `bin/berthd` and `bin/berth-proxy`) with a stable Apple Development identity, identifier and the hardened runtime, because `berthd` trusts the CLI, the helper and the proxy by team, identifier and cdhash, `berth` and `berth-proxy` trust `berthd` the same way, and Keychain items trust the helper by its designated requirement.
 
 ### The proxy control protocol (built)

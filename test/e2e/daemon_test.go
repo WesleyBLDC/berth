@@ -30,7 +30,7 @@ func TestMain(m *testing.M) {
 	// so all three are signed ad hoc, with the hardened runtime the live checks still demand.
 	for _, args := range [][]string{
 		{"go", "build", "-tags", "berth_e2e", "-o", dir + "/", "berth/cmd/berthd", "berth/cmd/berth"},
-		{"go", "build", "-o", filepath.Join(dir, "berth-native"), "berth/internal/adapters/native/fakehelper"},
+		{"go", "build", "-o", filepath.Join(dir, "berth-native"), "berth/internal/testutil/fakehelper"},
 		{"go", "build", "-o", filepath.Join(dir, "berth-mcp"), "berth/cmd/berth-mcp"},
 		{"go", "build", "-o", filepath.Join(dir, "consumer"), "berth/test/e2e/consumer"},
 		{"go", "build", "-o", filepath.Join(dir, "marker"), "berth/test/e2e/marker"},

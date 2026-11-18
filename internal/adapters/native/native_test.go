@@ -28,7 +28,7 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	helper = filepath.Join(dir, "fakehelper")
-	build := exec.CommandContext(context.Background(), "go", "build", "-o", helper, "./fakehelper")
+	build := exec.CommandContext(context.Background(), "go", "build", "-o", helper, "berth/internal/testutil/fakehelper")
 	if out, err := build.CombinedOutput(); err != nil {
 		_ = os.RemoveAll(dir)
 		panic(fmt.Sprintf("build fake helper: %v\n%s", err, out))
