@@ -343,13 +343,7 @@ func (s *secrets) lose(ps *proxySession, note string) {
 // race on one session, so a second stop, illegal in Stopping, is expected and ignored.
 func (s *secrets) stopSessions(ctx context.Context, grantID int64, reason proxysession.StopReason) {
 	ids, err := s.Sessions.ProxySessionsForGrant(ctx, grantID)
-	if err != nil {
-		s.Log.Error("cannot list proxy sessions to stop", "grant", grantID, "err", err)
-		return
-	}
-	for _, id := range ids {
-		s.stopSession(ctx, id, reason)
-	}
+	s.stopListed(ctx, ids, err, reason, "grant", grantID)
 }
 
 // stopAgentSessions stops every open proxy session authorized through the agent session, once
@@ -360,12 +354,18 @@ func (s *secrets) stopAgentSessions(ctx context.Context, agentSession string) {
 	delete(s.startTimes, agentSession)
 	s.mu.Unlock()
 	ids, err := s.Sessions.ProxySessionsForAgentSession(ctx, agentSession)
+	s.stopListed(ctx, ids, err, proxysession.StopAgentSessionEnded, "agent_session", agentSession)
+}
+
+// stopListed stops each session a lookup listed, or logs, under key and value, why the lookup
+// failed.
+func (s *secrets) stopListed(ctx context.Context, ids []string, err error, reason proxysession.StopReason, key string, value any) {
 	if err != nil {
-		s.Log.Error("cannot list proxy sessions to stop", "agent_session", agentSession, "err", err)
+		s.Log.Error("cannot list proxy sessions to stop", key, value, "err", err)
 		return
 	}
 	for _, id := range ids {
-		s.stopSession(ctx, id, proxysession.StopAgentSessionEnded)
+		s.stopSession(ctx, id, reason)
 	}
 }
 
