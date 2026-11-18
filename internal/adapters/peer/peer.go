@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -27,7 +28,9 @@ const (
 	vnodeInfoSize     = 152
 	vnodePathInfoSize = 2 * (vnodeInfoSize + maxPathLen)
 	launchdPID        = 1
-	maxDepth          = 64
+	// maxDepth bounds the parent walk; process trees are far shallower.
+	maxDepth         = 64
+	processSysctlPID = "kern.proc.pid"
 )
 
 // Facts implements ports.PeerFacts.
@@ -52,46 +55,96 @@ func (*Facts) Facts(ctx context.Context, pid int) (ports.Requester, error) {
 		return ports.Requester{}, fmt.Errorf("working directory of process %d: %w", pid, err)
 	}
 	r := ports.Requester{PID: pid, Executable: exe, WorkingDir: cwd}
-	seen := map[int]bool{pid: true}
-	for cur := pid; cur != launchdPID && len(r.Tree) < maxDepth; {
-		if err := ctx.Err(); err != nil {
-			return ports.Requester{}, err
-		}
-		p, ok := visibleParent(cur)
-		if !ok || seen[p.PID] {
+	// Lineage fails only for a cancelled ctx or a peer that exited since its path was read, which
+	// has no parents left to describe. The chain stops at the first ancestor whose path the
+	// kernel will not give.
+	lineage, _ := Lineage(ctx, pid)
+	if err := ctx.Err(); err != nil {
+		return ports.Requester{}, err
+	}
+	for _, p := range lineage[min(1, len(lineage)):] {
+		exe, ok := visibleExecutable(p.PID)
+		if !ok {
 			break
 		}
-		seen[p.PID] = true
-		r.Tree = append(r.Tree, p)
-		cur = p.PID
+		r.Tree = append(r.Tree, ports.Process{PID: p.PID, Executable: exe})
 	}
 	return r, nil
 }
 
-// visibleParent is false when the parent has exited or the kernel will not describe it, which
-// ends the chain rather than failing the whole lookup.
-func visibleParent(pid int) (ports.Process, bool) {
-	ppid, err := parent(pid)
-	if err != nil || ppid <= 0 {
-		return ports.Process{}, false
-	}
-	exe, err := executable(ppid)
-	if err != nil {
-		return ports.Process{}, false
-	}
-	return ports.Process{PID: ppid, Executable: exe}, true
+// visibleExecutable is false when the process has exited or the kernel will not describe it,
+// which ends the chain rather than failing the whole lookup.
+func visibleExecutable(pid int) (string, bool) {
+	exe, err := executable(pid)
+	return exe, err == nil
 }
 
-func parent(pid int) (int, error) {
-	k, err := unix.SysctlKinfoProc("kern.proc.pid", pid)
-	if err != nil {
-		return 0, err
+// Process reads one process's kernel record. It is ports.ErrProcessGone when pid names no
+// process; any other failure says nothing about the process, so it must not end what the process
+// stands for.
+func Process(pid int) (ports.ProcessInfo, error) {
+	if pid <= 0 {
+		return ports.ProcessInfo{}, ports.ErrProcessGone
 	}
-	// An exited pid comes back as an empty record rather than an error.
-	if int(k.Proc.P_pid) != pid {
-		return 0, unix.ESRCH
+	k, err := kinfoProc(processSysctlPID, pid)
+	switch {
+	// The kernel answers an exited pid with an empty record, which x/sys reports as EIO, its
+	// error for a record of the wrong size.
+	case errors.Is(err, unix.ESRCH), errors.Is(err, unix.EIO):
+		return ports.ProcessInfo{}, ports.ErrProcessGone
+	case err != nil:
+		return ports.ProcessInfo{}, fmt.Errorf("%s %d: %w", processSysctlPID, pid, err)
+	case int(k.Proc.P_pid) != pid:
+		return ports.ProcessInfo{}, ports.ErrProcessGone
 	}
-	return int(k.Eproc.Ppid), nil
+	return ports.ProcessInfo{
+		ProcessRef: ports.ProcessRef{PID: pid, Start: Start(k)},
+		PPID:       int(k.Eproc.Ppid),
+		UID:        k.Eproc.Ucred.Uid,
+	}, nil
+}
+
+// kinfoProc is unix.SysctlKinfoProc, replaced in tests.
+var kinfoProc = unix.SysctlKinfoProc
+
+// Start is the process's start time in its kernel record, which with its pid names one process.
+func Start(k *unix.KinfoProc) time.Time {
+	return time.Unix(k.Proc.P_starttime.Sec, int64(k.Proc.P_starttime.Usec)*1000)
+}
+
+// Lineage is the process and its ancestors, read with kern.proc.pid one at a time.
+func Lineage(ctx context.Context, pid int) ([]ports.ProcessInfo, error) {
+	return walkLineage(ctx, pid, func(cur int) (ports.ProcessInfo, bool) {
+		p, err := Process(cur)
+		return p, err == nil
+	})
+}
+
+// walkLineage follows parent pids through lookup. Each level is read at a different moment, so
+// a parent can exit between reading its child and reading it: a parent already gone ends the
+// lineage, and a pid that a later process took meanwhile is caught by its start time, since a
+// real parent never starts after its child. Either way the lineage only gets shorter, never
+// longer with a process the caller does not descend from.
+func walkLineage(ctx context.Context, pid int, lookup func(int) (ports.ProcessInfo, bool)) ([]ports.ProcessInfo, error) {
+	var out []ports.ProcessInfo
+	for cur := pid; cur > 0 && len(out) < maxDepth; {
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		p, ok := lookup(cur)
+		if !ok || (len(out) > 0 && p.Start.After(out[len(out)-1].Start)) {
+			break
+		}
+		out = append(out, p)
+		if cur == launchdPID || p.PPID == cur {
+			break
+		}
+		cur = p.PPID
+	}
+	if len(out) == 0 {
+		return nil, ports.ErrProcessGone
+	}
+	return out, nil
 }
 
 // executable is proc_pidpath: the kernel's path for the process's text vnode, not argv[0].

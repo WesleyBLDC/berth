@@ -22,14 +22,13 @@ import (
 // From <sys/proc_info.h>: PROC_PIDTASKINFO fills struct proc_taskinfo, whose pti_total_user
 // and pti_total_system, in mach time units, sit at bytes 16 and 24 of its 96.
 const (
-	procPIDTaskInfo  = 4
-	taskInfoSize     = 96
-	taskInfoUser     = 16
-	taskInfoSystem   = 24
-	nanosPerSecond   = 1_000_000_000
-	procargsSysctl   = "kern.procargs2"
-	processesSysctl  = "kern.proc.all"
-	processSysctlPID = "kern.proc.pid"
+	procPIDTaskInfo = 4
+	taskInfoSize    = 96
+	taskInfoUser    = 16
+	taskInfoSystem  = 24
+	nanosPerSecond  = 1_000_000_000
+	procargsSysctl  = "kern.procargs2"
+	processesSysctl = "kern.proc.all"
 )
 
 type Source struct {
@@ -67,7 +66,7 @@ func (*Source) List(ctx context.Context) ([]ports.ProcessInfo, error) {
 		// the process exited.
 		exe, _ := peer.Executable(pid)
 		out = append(out, ports.ProcessInfo{
-			ProcessRef: ports.ProcessRef{PID: pid, Start: start(k)},
+			ProcessRef: ports.ProcessRef{PID: pid, Start: peer.Start(k)},
 			PPID:       int(k.Eproc.Ppid),
 			UID:        k.Eproc.Ucred.Uid,
 			Executable: exe,
@@ -172,75 +171,18 @@ func (*Source) Signal(_ context.Context, p ports.ProcessRef, sig ports.Signal) e
 
 var _ ports.ProcessLineage = (*Source)(nil)
 
-// maxLineage bounds the parent walk; process trees are far shallower.
-const maxLineage = 64
-
-// Lineage walks parents with kern.proc.pid one at a time.
 func (*Source) Lineage(ctx context.Context, pid int) ([]ports.ProcessInfo, error) {
-	return walkLineage(ctx, pid, func(cur int) (ports.ProcessInfo, bool) {
-		k, err := unix.SysctlKinfoProc(processSysctlPID, cur)
-		// An exited pid comes back as an empty record rather than an error.
-		if err != nil || int(k.Proc.P_pid) != cur {
-			return ports.ProcessInfo{}, false
-		}
-		return ports.ProcessInfo{
-			ProcessRef: ports.ProcessRef{PID: cur, Start: start(k)},
-			PPID:       int(k.Eproc.Ppid),
-			UID:        k.Eproc.Ucred.Uid,
-		}, true
-	})
-}
-
-// walkLineage follows parent pids through lookup. Each level is read at a different moment, so
-// a parent can exit between reading its child and reading it: a parent already gone ends the
-// lineage, and a pid that a later process took meanwhile is caught by its start time, since a
-// real parent never starts after its child. Either way the lineage only gets shorter, never
-// longer with a process the caller does not descend from.
-func walkLineage(ctx context.Context, pid int, lookup func(int) (ports.ProcessInfo, bool)) ([]ports.ProcessInfo, error) {
-	var out []ports.ProcessInfo
-	for cur := pid; cur > 0 && len(out) < maxLineage; {
-		if err := ctx.Err(); err != nil {
-			return nil, err
-		}
-		p, ok := lookup(cur)
-		if !ok || (len(out) > 0 && p.Start.After(out[len(out)-1].Start)) {
-			break
-		}
-		out = append(out, p)
-		if cur == 1 || p.PPID == cur {
-			break
-		}
-		cur = p.PPID
-	}
-	if len(out) == 0 {
-		return nil, ports.ErrProcessGone
-	}
-	return out, nil
+	return peer.Lineage(ctx, pid)
 }
 
 // current is nil only when p.PID still names the process instance p started at p.Start.
 func current(p ports.ProcessRef) error {
-	if p.PID <= 0 {
-		return ports.ErrProcessGone
+	now, err := peer.Process(p.PID)
+	if err != nil {
+		return err
 	}
-	k, err := kinfoProc(processSysctlPID, p.PID)
-	switch {
-	// The kernel answers an exited pid with an empty record, which x/sys reports as EIO, its
-	// error for a record of the wrong size.
-	case errors.Is(err, unix.ESRCH), errors.Is(err, unix.EIO):
-		return ports.ErrProcessGone
-	case err != nil:
-		// Any other failure says nothing about the process, so it must not end what it stands for.
-		return fmt.Errorf("%s %d: %w", processSysctlPID, p.PID, err)
-	case int(k.Proc.P_pid) != p.PID || !start(k).Equal(p.Start):
+	if !now.Same(p) {
 		return ports.ErrProcessGone
 	}
 	return nil
-}
-
-// kinfoProc is unix.SysctlKinfoProc, replaced in tests.
-var kinfoProc = unix.SysctlKinfoProc
-
-func start(k *unix.KinfoProc) time.Time {
-	return time.Unix(k.Proc.P_starttime.Sec, int64(k.Proc.P_starttime.Usec)*1000)
 }
