@@ -12,9 +12,9 @@ import (
 
 type requirements struct{ got string }
 
-func (r *requirements) PinSigned(_ context.Context, _, requirement string) (ports.CDHash, bool, error) {
+func (r *requirements) PinSigned(_ context.Context, _, requirement string) ([]ports.CDHash, bool, error) {
 	r.got = requirement
-	return ports.CDHash{}, false, nil
+	return nil, false, nil
 }
 
 // TestReleaseTrustsOnlyAppleChain: a release build pins by Apple's chain and Berth's team, and

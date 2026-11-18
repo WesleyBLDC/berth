@@ -138,5 +138,25 @@
     "in": "supp private󰀀",
     "out": "\"supp private\\U000f0000\"",
     "quoted": "\"supp private\\U000f0000\""
+  },
+  {
+    "in": "́acute first",
+    "out": "́acute first",
+    "quoted": "\"\\u0301acute first\""
+  },
+  {
+    "in": "️selector first",
+    "out": "️selector first",
+    "quoted": "\"\\ufe0fselector first\""
+  },
+  {
+    "in": "󠄀supplement selector first",
+    "out": "󠄀supplement selector first",
+    "quoted": "\"\\U000e0100supplement selector first\""
+  },
+  {
+    "in": "é inner mark",
+    "out": "é inner mark",
+    "quoted": "\"é inner mark\""
   }
 ]

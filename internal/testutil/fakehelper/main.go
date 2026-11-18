@@ -490,7 +490,7 @@ func checkRecipient(ctx context.Context, uc *net.UnixConn, parent int, trust str
 		return kindProxy, nil
 	}
 	x := execid.New(execid.DefaultCodesign)
-	pin := func(ctx context.Context, path, identifier string) (ports.CDHash, bool, error) {
+	pin := func(ctx context.Context, path, identifier string) ([]ports.CDHash, bool, error) {
 		return x.PinSigned(ctx, path, `identifier "`+identifier+`"`)
 	}
 	for _, p := range []struct{ file, identifier, kind string }{

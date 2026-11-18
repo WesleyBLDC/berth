@@ -42,13 +42,15 @@ public enum NeedAction: Equatable, Sendable {
 }
 
 /// The open needs, folded from WatchNeeds. A need is posted once while it stays open, however
-/// often a snapshot or a repeated change shows it again, and its notification is removed when it
-/// resolves or a snapshot no longer holds it.
+/// often a snapshot or a repeated change shows it again; it is posted again, replacing its
+/// notification by id, when its facts change (a secret moving from one dialog to another), and
+/// its notification is removed when it resolves or a snapshot no longer holds it.
 public struct NeedsStore: Sendable, Equatable {
     public private(set) var open: [String: Need] = [:]
     /// The event id of the last message applied; a reconnect resumes after it.
     public private(set) var cursor: Int64 = 0
-    private var posted: Set<String> = []
+    /// What each posted notification shows, by need id.
+    private var posted: [String: Need] = [:]
 
     public init() {}
 
@@ -59,8 +61,8 @@ public struct NeedsStore: Sendable, Equatable {
         switch message {
         case .snapshot(let snapshot):
             let next = Dictionary(snapshot.needs.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
-            for id in posted.subtracting(next.keys).sorted() {
-                posted.remove(id)
+            for id in posted.keys.filter({ next[$0] == nil }).sorted() {
+                posted[id] = nil
                 actions.append(.remove(id))
             }
             open = next
@@ -72,26 +74,28 @@ public struct NeedsStore: Sendable, Equatable {
                 open[change.need.id] = change.need
             case .resolved:
                 open[change.need.id] = nil
-                if posted.remove(change.need.id) != nil { actions.append(.remove(change.need.id)) }
+                if posted.removeValue(forKey: change.need.id) != nil { actions.append(.remove(change.need.id)) }
             case .unspecified:
                 break
             }
+        case .cursor(let eventID):
+            cursor = eventID
         case .unknown:
             break
         }
         return actions + (posting ? unposted() : [])
     }
 
-    /// Needs open now that have not been posted, oldest id first, marking them posted.
+    /// Needs open now that are not posted as they are, in id order, marking them posted.
     public mutating func unposted() -> [NeedAction] {
-        let fresh = open.keys.filter { !posted.contains($0) }.sorted()
-        posted.formUnion(fresh)
-        return fresh.compactMap { open[$0] }.map(NeedAction.post)
+        let fresh = open.values.filter { posted[$0.id] != $0 }.sorted { $0.id < $1.id }
+        for need in fresh { posted[need.id] = need }
+        return fresh.map(NeedAction.post)
     }
 
     /// Forgets what was posted, when the person turns notifications off.
     public mutating func forgetPosted() -> [NeedAction] {
-        defer { posted = [] }
-        return posted.sorted().map(NeedAction.remove)
+        defer { posted = [:] }
+        return posted.keys.sorted().map(NeedAction.remove)
     }
 }

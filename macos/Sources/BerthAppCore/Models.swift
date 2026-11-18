@@ -474,13 +474,16 @@ public struct NeedChange: Decodable, Sendable, Equatable {
     }
 }
 
-/// WatchNeedsResponse: a snapshot or a change; a message holding neither decodes as .unknown.
+/// WatchNeedsResponse: a snapshot, a change, or the cursor past rows that changed no need; a
+/// message holding none of them decodes as .unknown.
 public enum WatchNeedsResponse: Decodable, Sendable, Equatable {
     case snapshot(NeedsSnapshot)
     case change(NeedChange)
+    case cursor(Int64)
     case unknown
 
-    enum CodingKeys: String, CodingKey { case snapshot, change }
+    enum CodingKeys: String, CodingKey { case snapshot, change, cursor }
+    enum CursorKeys: String, CodingKey { case eventID = "eventId" }
 
     public init(from decoder: any Decoder) throws {
         let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -488,6 +491,9 @@ public enum WatchNeedsResponse: Decodable, Sendable, Equatable {
             self = .snapshot(snapshot)
         } else if let change = try c.decodeIfPresent(NeedChange.self, forKey: .change) {
             self = .change(change)
+        } else if c.contains(.cursor) {
+            let cursor = try c.nestedContainer(keyedBy: CursorKeys.self, forKey: .cursor)
+            self = .cursor(try cursor.int64(.eventID))
         } else {
             self = .unknown
         }

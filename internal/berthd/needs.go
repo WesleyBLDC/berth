@@ -46,20 +46,33 @@ func (n *needs) WatchNeeds(ctx context.Context, after int64, send func(*berthv1.
 	return serveStream(ctx, n.Streams, feed[*berthv1.WatchNeedsResponse]{
 		events: n.Events, backlog: n.backlog, rows: n.rows, snapshot: n.snapshot,
 		change: func(r ports.EventRecord) (*berthv1.WatchNeedsResponse, bool) { return n.change(ctx, r) },
+		progress: func(cursor int64) *berthv1.WatchNeedsResponse {
+			return &berthv1.WatchNeedsResponse{Update: &berthv1.WatchNeedsResponse_Cursor{Cursor: &berthv1.NeedsCursor{EventId: cursor}}}
+		},
 	}, after, send)
 }
 
-// rows reads each kind's rows after the cursor and merges them in id order. A kind with more
-// than limit-1 rows makes the result longer than the backlog, so the stream sends a snapshot,
-// and a result within the backlog holds every row of every kind after the cursor.
+// rows reads each kind's rows after the cursor and merges them in id order. The newest id is read
+// first and rows above it are dropped: a row saved between the per kind reads could otherwise sit
+// below a row of a later kind and be skipped when the cursor passes it. A kind with more than
+// limit-1 rows makes the result longer than the backlog, so the stream sends a snapshot, and a
+// result within the backlog holds every row of every kind up to the newest id.
 func (n *needs) rows(ctx context.Context, after int64, limit int) ([]ports.EventRecord, error) {
+	last, err := n.Events.LastEventID(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var all []ports.EventRecord
 	for _, kind := range needKinds {
 		rows, err := n.Events.EventsAfter(ctx, kind, after, limit)
 		if err != nil {
 			return nil, err
 		}
-		all = append(all, rows...)
+		for _, r := range rows {
+			if r.ID <= last {
+				all = append(all, r)
+			}
+		}
 	}
 	slices.SortFunc(all, func(a, b ports.EventRecord) int { return cmp.Compare(a.ID, b.ID) })
 	return all, nil

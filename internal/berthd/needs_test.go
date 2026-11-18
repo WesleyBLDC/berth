@@ -5,6 +5,7 @@ import (
 	"errors"
 	"log/slog"
 	"slices"
+	"sync"
 	"testing"
 	"time"
 
@@ -88,10 +89,20 @@ func (s *needStream) next(t *testing.T) *berthv1.WatchNeedsResponse {
 	return nil
 }
 
+// nextChange waits for the next change, passing over cursor messages.
+func (s *needStream) nextChange(t *testing.T) *berthv1.NeedChange {
+	t.Helper()
+	for {
+		if m := s.next(t); m.GetCursor() == nil {
+			return m.GetChange()
+		}
+	}
+}
+
 // change waits for the next change and checks it.
 func (s *needStream) change(t *testing.T, event berthv1.NeedEvent, want *berthv1.Need) *berthv1.NeedChange {
 	t.Helper()
-	c := s.next(t).GetChange()
+	c := s.nextChange(t)
 	if c.GetEvent() != event || c.GetNeed().GetId() != want.GetId() || c.GetNeed().GetKind() != want.GetKind() ||
 		c.GetNeed().GetSecretName() != want.GetSecretName() || c.GetNeed().GetOwnerName() != want.GetOwnerName() {
 		t.Fatalf("change %v, want %v %v", c, event, want)
@@ -99,12 +110,19 @@ func (s *needStream) change(t *testing.T, event berthv1.NeedEvent, want *berthv1
 	return c
 }
 
+// quiet checks that no change follows; cursor messages may.
 func (s *needStream) quiet(t *testing.T) {
 	t.Helper()
-	select {
-	case m := <-s.msgs:
-		t.Fatalf("unexpected message %v", m)
-	case <-time.After(100 * time.Millisecond):
+	deadline := time.After(100 * time.Millisecond)
+	for {
+		select {
+		case m := <-s.msgs:
+			if m.GetCursor() == nil {
+				t.Fatalf("unexpected message %v", m)
+			}
+		case <-deadline:
+			return
+		}
 	}
 }
 
@@ -142,8 +160,12 @@ func TestNeedsOpenAndResolve(t *testing.T) {
 	f.grant(t, "")
 	s.change(t, berthv1.NeedEvent_NEED_EVENT_OPENED, grantNeed)
 	s.change(t, berthv1.NeedEvent_NEED_EVENT_RESOLVED, grantNeed)
-	// A use is a transition of the grant that waits on no one.
+	// A use is a transition of the grant that waits on no one: only the cursor moves past it.
 	f.use(t, "gh", "pr", "list")
+	last, _ := f.store.LastEventID(t.Context())
+	if c := s.next(t).GetCursor(); c.GetEventId() != last {
+		t.Fatalf("after a use: cursor %v, want %d", c, last)
+	}
 	s.quiet(t)
 
 	// The terminal and node exit, so the Playwright browser becomes a leftover; the other
@@ -158,7 +180,7 @@ func TestNeedsOpenAndResolve(t *testing.T) {
 	if err := f.b.scan(t.Context()); err != nil {
 		t.Fatal(err)
 	}
-	got := []*berthv1.NeedChange{s.next(t).GetChange(), s.next(t).GetChange()}
+	got := []*berthv1.NeedChange{s.nextChange(t), s.nextChange(t)}
 	slices.SortFunc(got, func(a, b *berthv1.NeedChange) int { return int(a.GetEvent()) - int(b.GetEvent()) })
 	ours := leftoverOf(100, "")
 	if got[0].GetEvent() != berthv1.NeedEvent_NEED_EVENT_OPENED || got[0].GetNeed().GetId() != ours.GetId() ||
@@ -286,4 +308,42 @@ func TestOnlyPromptsAndLeftoversAreNeeds(t *testing.T) {
 
 func rec(id int64, kind, event, from, to string) ports.EventRecord {
 	return ports.EventRecord{ID: id, TransitionRecord: ports.TransitionRecord{Entity: kind + "/x", Kind: kind, Event: event, From: from, To: to}}
+}
+
+// interleavingLog saves a secret row and then a grant row just before the first read of grant
+// rows, as an actor committing between the per kind reads would.
+type interleavingLog struct {
+	ports.EventLog
+	store ports.Store
+	wake  func()
+	once  sync.Once
+}
+
+func (l *interleavingLog) EventsAfter(ctx context.Context, kind string, after int64, limit int) ([]ports.EventRecord, error) {
+	if kind == "grant" {
+		l.once.Do(func() {
+			for _, r := range []ports.TransitionRecord{
+				{Entity: "secret/late", Kind: "secret", Version: 1, Event: "StoreRequested", From: "Pending", To: "Pending"},
+				{Entity: "grant/99", Kind: "grant", Version: 1, Event: "GrantRequested", From: "Requested", To: "Requested"},
+			} {
+				if err := l.store.SaveTransition(ctx, r); err != nil {
+					panic(err)
+				}
+			}
+			// As the actors' persisted hook does after each save.
+			l.wake()
+		})
+	}
+	return l.EventLog.EventsAfter(ctx, kind, after, limit)
+}
+
+// A secret row saved between the reads of secret and grant rows is sent, not skipped when the
+// cursor passes the grant row saved after it.
+func TestNeedsMissNoRowSavedBetweenKinds(t *testing.T) {
+	f := newNeedsFixture(t, &testutil.Approver{})
+	f.n.Events = &interleavingLog{EventLog: f.store, store: f.store, wake: f.n.Streams.wakeAll}
+	s := f.watch(t, 0)
+	s.next(t)
+	s.change(t, berthv1.NeedEvent_NEED_EVENT_OPENED, &berthv1.Need{Id: "secret/late", Kind: berthv1.NeedKind_NEED_KIND_STORE, SecretName: "late"})
+	s.change(t, berthv1.NeedEvent_NEED_EVENT_OPENED, &berthv1.Need{Id: "grant/99", Kind: berthv1.NeedKind_NEED_KIND_GRANT})
 }

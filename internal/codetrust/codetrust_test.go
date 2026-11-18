@@ -17,13 +17,13 @@ type files struct {
 	hash ports.CDHash
 }
 
-func (f files) PinSigned(_ context.Context, _, requirement string) (ports.CDHash, bool, error) {
-	return f.hash, f.ok && requirement == codetrust.Requirement(codetrust.DaemonSigningID), nil
+func (f files) PinSigned(_ context.Context, _, requirement string) ([]ports.CDHash, bool, error) {
+	return []ports.CDHash{f.hash}, f.ok && requirement == codetrust.Requirement(codetrust.DaemonSigningID), nil
 }
 
 func TestSignedPinnerNeedsTheRequirement(t *testing.T) {
 	h := ports.CDHash{1}
-	if got, ok, err := codetrust.SignedPinner(files{ok: true, hash: h})(t.Context(), "/b/berthd", codetrust.DaemonSigningID); err != nil || !ok || got != h {
+	if got, ok, err := codetrust.SignedPinner(files{ok: true, hash: h})(t.Context(), "/b/berthd", codetrust.DaemonSigningID); err != nil || !ok || len(got) != 1 || got[0] != h {
 		t.Fatalf("signed: %x %v %v", got, ok, err)
 	}
 	if _, ok, _ := codetrust.SignedPinner(files{hash: h})(t.Context(), "/b/berthd", codetrust.DaemonSigningID); ok {
@@ -48,9 +48,9 @@ func TestRunsNeedsMatchingHardenedCodeAndRepinsAtMostEveryInterval(t *testing.T)
 	clock := testutil.NewClock()
 	pinned := ports.CDHash{1}
 	var pins int
-	pin := func(context.Context, string, string) (ports.CDHash, bool, error) {
+	pin := func(context.Context, string, string) ([]ports.CDHash, bool, error) {
 		pins++
-		return pinned, true, nil
+		return []ports.CDHash{pinned}, true, nil
 	}
 	peer := &live{code: ports.LiveCode{CDHash: ports.CDHash{1}, Status: ports.CSValid | ports.CSRuntime}}
 	f := codetrust.New(t.Context(), "/b/berthd", codetrust.DaemonSigningID, pin, peer, clock, slog.New(slog.DiscardHandler))
@@ -91,9 +91,9 @@ func TestRunsNeedsMatchingHardenedCodeAndRepinsAtMostEveryInterval(t *testing.T)
 // A deferred file reads nothing until the first Runs, then trusts the code it pinned.
 func TestDeferredPinsOnTheFirstRuns(t *testing.T) {
 	var pins []string
-	pin := func(_ context.Context, path, identifier string) (ports.CDHash, bool, error) {
+	pin := func(_ context.Context, path, identifier string) ([]ports.CDHash, bool, error) {
 		pins = append(pins, path+" "+identifier)
-		return ports.CDHash{3}, true, nil
+		return []ports.CDHash{{3}}, true, nil
 	}
 	peer := &live{code: ports.LiveCode{CDHash: ports.CDHash{3}, Status: ports.CSValid | ports.CSRuntime}}
 	f := codetrust.Deferred("/A/Contents/MacOS/Berth", codetrust.AppSigningID, pin, peer, testutil.NewClock(), slog.New(slog.DiscardHandler))
@@ -105,5 +105,20 @@ func TestDeferredPinsOnTheFirstRuns(t *testing.T) {
 	}
 	if want := []string{"/A/Contents/MacOS/Berth com.wesleybldc.berth"}; len(pins) != 1 || pins[0] != want[0] {
 		t.Fatalf("pins %v, want %v", pins, want)
+	}
+}
+
+// A universal binary is pinned by every slice, and a process running any of them is trusted.
+func TestAnySliceOfAUniversalBinaryIsTrusted(t *testing.T) {
+	pin := func(context.Context, string, string) ([]ports.CDHash, bool, error) {
+		return []ports.CDHash{{1}, {2}}, true, nil
+	}
+	peer := &live{}
+	f := codetrust.New(t.Context(), "/A/Contents/MacOS/Berth", codetrust.AppSigningID, pin, peer, testutil.NewClock(), slog.New(slog.DiscardHandler))
+	for h, want := range map[ports.CDHash]bool{{1}: true, {2}: true, {3}: false} {
+		peer.code = ports.LiveCode{CDHash: h, Status: ports.CSValid | ports.CSRuntime}
+		if got := f.Runs(t.Context(), ports.Peer{PID: 9}); got != want {
+			t.Errorf("slice %x trusted %v, want %v", h[:1], got, want)
+		}
 	}
 }

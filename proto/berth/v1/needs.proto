@@ -79,9 +79,16 @@ message NeedChange {
   Need need = 3;
 }
 
+// NeedsCursor follows rows that opened or resolved no need, so a client resumes after them.
+message NeedsCursor {
+  int64 event_id = 1;
+}
+
 message WatchNeedsResponse {
   oneof update {
     NeedsSnapshot snapshot = 1;
     NeedChange change = 2;
+    // cursor is sent when the last rows berthd read changed no need; the client only stores it.
+    NeedsCursor cursor = 3;
   }
 }

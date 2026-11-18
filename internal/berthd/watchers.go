@@ -78,6 +78,8 @@ type feed[M any] struct {
 	rows     func(ctx context.Context, after int64, limit int) ([]ports.EventRecord, error)
 	snapshot func(ctx context.Context, reason berthv1.SnapshotReason) (M, int64, error)
 	change   func(r ports.EventRecord) (M, bool)
+	// progress, when set, is the message that moves a client's cursor past rows change skipped.
+	progress func(cursor int64) M
 }
 
 // serveStream serves one stream from the event table, which is the only queue: an actor saving a
@@ -146,13 +148,20 @@ func catchUp[M any](ctx context.Context, ws *watchSet, f feed[M], cursor int64, 
 		if len(rows) == 0 {
 			return cursor, nil
 		}
+		skipped := false
 		for _, r := range rows {
-			if m, ok := f.change(r); ok {
+			m, ok := f.change(r)
+			if ok {
 				if err := send(m); err != nil {
 					return cursor, err
 				}
 			}
-			cursor = r.ID
+			cursor, skipped = r.ID, !ok
+		}
+		if skipped && f.progress != nil {
+			if err := send(f.progress(cursor)); err != nil {
+				return cursor, err
+			}
 		}
 	}
 }

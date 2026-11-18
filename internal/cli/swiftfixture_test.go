@@ -4,10 +4,13 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
 	"testing"
+	"unicode"
+	"unicode/utf8"
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -33,6 +36,23 @@ var shownCorpus = []string{
 	"quote\"back\\slash", "tab\there", "line\nbreak", "cr\rlf", "\x1b[31mred", "bell\a", "bs\b", "ff\f", "vt\v",
 	"del\x7f", "nul\x00x", "rtl\u202eabc", "nel\u0085", "zwsp\u200b", "bom\ufeff", "ls\u2028", "ps\u2029",
 	"quote\" and \x1b", "private\ue000", "tag\U000E0001", "supp private\U000F0000",
+	"\u0301acute first", "\ufe0fselector first", "\U000E0100supplement selector first", "e\u0301 inner mark",
+}
+
+// quoted is the app's always quoting form: strconv.QuoteToGraphic, with a leading combining mark
+// or variation selector escaped too, since it would join the opening quote. It is the reference
+// the Swift quoted is checked against.
+func quoted(text string) string {
+	q := strconv.QuoteToGraphic(text)
+	r, size := utf8.DecodeRuneInString(q[1:])
+	if !unicode.Is(unicode.M, r) {
+		return q
+	}
+	esc := fmt.Sprintf(`\u%04x`, r)
+	if r > 0xffff {
+		esc = fmt.Sprintf(`\U%08x`, r)
+	}
+	return `"` + esc + q[1+size:]
 }
 
 func fixtureSessions() []*berthv1.WatchSessionsResponse {
@@ -91,7 +111,8 @@ func requireEveryField(t *testing.T, m protoreflect.Message) {
 type fixtureCase struct {
 	In  string `json:"in"`
 	Out string `json:"out"`
-	// Quoted is the text always quoted, as the app labels agent chosen text in notifications.
+	// Quoted is the text always quoted (see quoted), as the app labels agent chosen text in
+	// notifications.
 	Quoted string `json:"quoted"`
 }
 
@@ -119,6 +140,7 @@ func fixtureNeeds() []*berthv1.WatchNeedsResponse {
 			EventId: 9007199254740996, Event: berthv1.NeedEvent_NEED_EVENT_RESOLVED,
 			Need: &berthv1.Need{Id: "grant/7", Kind: berthv1.NeedKind_NEED_KIND_GRANT, SecretName: "gh-token"},
 		}}},
+		{Update: &berthv1.WatchNeedsResponse_Cursor{Cursor: &berthv1.NeedsCursor{EventId: 9007199254740999}}},
 	}
 }
 
@@ -136,9 +158,9 @@ func TestSwiftFixtures(t *testing.T) {
 
 	cases := make([]fixtureCase, 0, len(shownCorpus))
 	for _, in := range shownCorpus {
-		cases = append(cases, fixtureCase{In: in, Out: shown(in), Quoted: strconv.QuoteToGraphic(in)})
+		cases = append(cases, fixtureCase{In: in, Out: shown(in), Quoted: quoted(in)})
 	}
-	if shown("rtl\u202eabc") == "rtl\u202eabc" || shown("claude") != "claude" {
+	if shown("rtl\u202eabc") == "rtl\u202eabc" || shown("claude") != "claude" || quoted("\u0301") != `"\u0301"` {
 		t.Fatal("the corpus no longer exercises both of shown's branches")
 	}
 	shownPath := filepath.Join(swiftFixtures, "shown.json")

@@ -5,7 +5,9 @@ import (
 	"crypto/sha256"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"slices"
 	"testing"
 
 	"berth/internal/core/ports"
@@ -201,12 +203,72 @@ func TestPinSignedReadsAPrivateCopy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	sum, ok, err := id.PinSigned(t.Context(), "/bin/ls", "anchor apple")
-	if err != nil || !ok || sum != want {
-		t.Fatalf("pin %x %v %v, want %x", sum, ok, err, want)
+	sums, ok, err := id.PinSigned(t.Context(), "/bin/ls", "anchor apple")
+	// /bin/ls is universal: every slice is pinned, the native one among them.
+	if err != nil || !ok || len(sums) < 2 || !slices.Contains(sums, want) {
+		t.Fatalf("pin %x %v %v, want %x among two or more", sums, ok, err, want)
 	}
 	if _, ok, _ := id.PinSigned(t.Context(), "/bin/ls", `anchor apple generic and certificate leaf[subject.OU] = "XPJ7XA42J4"`); ok {
 		t.Fatal("pinned against another team's requirement")
+	}
+}
+
+// A bundle signed executable cannot be checked alone ("invalid Info.plist"), so its whole bundle
+// is checked and the executable's slices are pinned from the checked copy. The bundle is signed
+// ad hoc with the hardened runtime, as scripts/build-app.sh signs Berth.app.
+func TestPinSignedChecksAnAppBundle(t *testing.T) {
+	dir, err := os.MkdirTemp("", "berth-bundle-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	app := filepath.Join(dir, "Berth.app")
+	exe := filepath.Join(app, "Contents", "MacOS", "Berth")
+	note := filepath.Join(app, "Contents", "Resources", "note.txt")
+	for _, d := range []string{filepath.Dir(exe), filepath.Dir(note)} {
+		if err := os.MkdirAll(d, 0o755); err != nil { //nolint:gosec // a bundle fixture
+			t.Fatal(err)
+		}
+	}
+	plist := `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleExecutable</key><string>Berth</string>
+<key>CFBundleIdentifier</key><string>com.wesleybldc.berth</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+</dict></plist>
+`
+	bin, err := os.ReadFile("/usr/bin/true")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for path, b := range map[string][]byte{filepath.Join(app, "Contents", "Info.plist"): []byte(plist), exe: bin, note: []byte("sealed")} {
+		if err := os.WriteFile(path, b, 0o755); err != nil { //nolint:gosec // a bundle fixture
+			t.Fatal(err)
+		}
+	}
+	sign := exec.CommandContext(t.Context(), DefaultCodesign, "--force", "-s", "-", "--options", "runtime", "-i", "com.wesleybldc.berth", app)
+	if out, err := sign.CombinedOutput(); err != nil {
+		t.Fatalf("codesign: %v\n%s", err, out)
+	}
+	id := New(DefaultCodesign)
+	native, err := id.CDHash(t.Context(), exe)
+	if err != nil {
+		t.Fatal(err)
+	}
+	sums, ok, err := id.PinSigned(t.Context(), exe, `identifier "com.wesleybldc.berth"`)
+	if err != nil || !ok || len(sums) < 2 || !slices.Contains(sums, native) {
+		t.Fatalf("pin %x %v %v, want every slice with %x", sums, ok, err, native)
+	}
+	if _, ok, _ := id.PinSigned(t.Context(), exe, `identifier "com.wesleybldc.berth.cli"`); ok {
+		t.Fatal("pinned against another identifier")
+	}
+	// A resource changed after signing breaks the bundle's seal.
+	if err := os.WriteFile(note, []byte("changed"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok, _ := id.PinSigned(t.Context(), exe, `identifier "com.wesleybldc.berth"`); ok {
+		t.Fatal("pinned a bundle whose resource changed")
 	}
 }
 

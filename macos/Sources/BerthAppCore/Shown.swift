@@ -9,11 +9,14 @@ public func shown(_ text: String) -> String {
 }
 
 /// Text always quoted with Go's escapes (strconv.QuoteToGraphic), for where a person must see
-/// where agent or process chosen text starts and ends, as in a notification.
+/// where agent or process chosen text starts and ends, as in a notification. A leading
+/// combining mark or variation selector is escaped too, since it would join the opening quote.
 public func quoted(_ text: String) -> String {
     var out = "\""
-    for scalar in text.unicodeScalars {
+    for (index, scalar) in text.unicodeScalars.enumerated() {
         switch scalar {
+        case _ where index == 0 && isMark(scalar):
+            out += scalar.value < 0x10000 ? "\\u" + hex(scalar.value, width: 4) : "\\U" + hex(scalar.value, width: 8)
         case "\"": out += "\\\""
         case "\\": out += "\\\\"
         case _ where isGraphic(scalar): out.unicodeScalars.append(scalar)
@@ -30,6 +33,14 @@ public func quoted(_ text: String) -> String {
         }
     }
     return out + "\""
+}
+
+/// Go's unicode.M: nonspacing, spacing and enclosing marks, variation selectors among them.
+func isMark(_ scalar: Unicode.Scalar) -> Bool {
+    switch scalar.properties.generalCategory {
+    case .nonspacingMark, .spacingMark, .enclosingMark: true
+    default: false
+    }
 }
 
 /// Go's unicode.IsGraphic: letters, marks, numbers, punctuation, symbols and the space separators.

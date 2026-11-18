@@ -7,6 +7,7 @@ package codetrust
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -33,23 +34,24 @@ func Requirement(identifier string) string {
 	return `anchor apple generic and certificate leaf[subject.OU] = "` + TeamID + `" and identifier "` + identifier + `"`
 }
 
-// Pinner returns the cdhash of a trusted Berth file, or false when the file must not be trusted.
-type Pinner func(ctx context.Context, path, identifier string) (ports.CDHash, bool, error)
+// Pinner returns the cdhashes of a trusted Berth file, one per architecture slice, or false when
+// the file must not be trusted.
+type Pinner func(ctx context.Context, path, identifier string) ([]ports.CDHash, bool, error)
 
 // SignedFiles checks a private copy of a file against a requirement and reads its cdhash
 // (execid.Identity implements it).
 type SignedFiles interface {
-	PinSigned(ctx context.Context, path, requirement string) (ports.CDHash, bool, error)
+	PinSigned(ctx context.Context, path, requirement string) ([]ports.CDHash, bool, error)
 }
 
 // SignedPinner is the release rule: a private copy of the file must satisfy Requirement.
 func SignedPinner(x SignedFiles) Pinner {
-	return func(ctx context.Context, path, identifier string) (ports.CDHash, bool, error) {
+	return func(ctx context.Context, path, identifier string) ([]ports.CDHash, bool, error) {
 		return x.PinSigned(ctx, path, Requirement(identifier))
 	}
 }
 
-// File is one Berth binary, pinned by cdhash.
+// File is one Berth binary, pinned by the cdhash of each of its architecture slices.
 type File struct {
 	path       string
 	identifier string
@@ -59,7 +61,7 @@ type File struct {
 	log        *slog.Logger
 
 	mu       sync.Mutex
-	cdhash   ports.CDHash
+	cdhashes []ports.CDHash
 	ok       bool
 	pinnedAt time.Time
 	pinned   bool
@@ -95,13 +97,13 @@ func (f *File) repin(ctx context.Context) {
 	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.cdhash, f.ok = h, ok && err == nil
+	f.cdhashes, f.ok = h, ok && err == nil
 }
 
 func (f *File) matches(live ports.LiveCode) bool {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	return f.ok && live.Valid() && live.Hardened() && live.CDHash == f.cdhash
+	return f.ok && live.Valid() && live.Hardened() && slices.Contains(f.cdhashes, live.CDHash)
 }
 
 // Runs reports whether peer is running this file right now.

@@ -159,11 +159,11 @@ func newFixtureWith(t *testing.T, approver ports.Approver, tickets ports.TicketS
 		store: store, approver: fake, execs: execs, clock: clock, code: code, exits: &exits{byID: map[int]chan struct{}{}},
 		pins: map[string]ports.CDHash{codetrust.CLISigningID: cliHash, codetrust.HelperSigningID: helperHash, codetrust.ProxySigningID: proxyHash},
 	}
-	pin := func(_ context.Context, _, identifier string) (ports.CDHash, bool, error) {
+	pin := func(_ context.Context, _, identifier string) ([]ports.CDHash, bool, error) {
 		f.pinsMu.Lock()
 		defer f.pinsMu.Unlock()
 		h, ok := f.pins[identifier]
-		return h, ok, nil
+		return []ports.CDHash{h}, ok, nil
 	}
 	log := slog.New(slog.DiscardHandler)
 	trusted := func(identifier string) *codetrust.File {

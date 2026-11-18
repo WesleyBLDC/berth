@@ -390,12 +390,58 @@ func (x *NeedChange) GetNeed() *Need {
 	return nil
 }
 
+// NeedsCursor follows rows that opened or resolved no need, so a client resumes after them.
+type NeedsCursor struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	EventId       int64                  `protobuf:"varint,1,opt,name=event_id,json=eventId,proto3" json:"event_id,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *NeedsCursor) Reset() {
+	*x = NeedsCursor{}
+	mi := &file_berth_v1_needs_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *NeedsCursor) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*NeedsCursor) ProtoMessage() {}
+
+func (x *NeedsCursor) ProtoReflect() protoreflect.Message {
+	mi := &file_berth_v1_needs_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use NeedsCursor.ProtoReflect.Descriptor instead.
+func (*NeedsCursor) Descriptor() ([]byte, []int) {
+	return file_berth_v1_needs_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *NeedsCursor) GetEventId() int64 {
+	if x != nil {
+		return x.EventId
+	}
+	return 0
+}
+
 type WatchNeedsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Types that are valid to be assigned to Update:
 	//
 	//	*WatchNeedsResponse_Snapshot
 	//	*WatchNeedsResponse_Change
+	//	*WatchNeedsResponse_Cursor
 	Update        isWatchNeedsResponse_Update `protobuf_oneof:"update"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -403,7 +449,7 @@ type WatchNeedsResponse struct {
 
 func (x *WatchNeedsResponse) Reset() {
 	*x = WatchNeedsResponse{}
-	mi := &file_berth_v1_needs_proto_msgTypes[4]
+	mi := &file_berth_v1_needs_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -415,7 +461,7 @@ func (x *WatchNeedsResponse) String() string {
 func (*WatchNeedsResponse) ProtoMessage() {}
 
 func (x *WatchNeedsResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_berth_v1_needs_proto_msgTypes[4]
+	mi := &file_berth_v1_needs_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -428,7 +474,7 @@ func (x *WatchNeedsResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use WatchNeedsResponse.ProtoReflect.Descriptor instead.
 func (*WatchNeedsResponse) Descriptor() ([]byte, []int) {
-	return file_berth_v1_needs_proto_rawDescGZIP(), []int{4}
+	return file_berth_v1_needs_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *WatchNeedsResponse) GetUpdate() isWatchNeedsResponse_Update {
@@ -456,6 +502,15 @@ func (x *WatchNeedsResponse) GetChange() *NeedChange {
 	return nil
 }
 
+func (x *WatchNeedsResponse) GetCursor() *NeedsCursor {
+	if x != nil {
+		if x, ok := x.Update.(*WatchNeedsResponse_Cursor); ok {
+			return x.Cursor
+		}
+	}
+	return nil
+}
+
 type isWatchNeedsResponse_Update interface {
 	isWatchNeedsResponse_Update()
 }
@@ -468,9 +523,16 @@ type WatchNeedsResponse_Change struct {
 	Change *NeedChange `protobuf:"bytes,2,opt,name=change,proto3,oneof"`
 }
 
+type WatchNeedsResponse_Cursor struct {
+	// cursor is sent when the last rows berthd read changed no need; the client only stores it.
+	Cursor *NeedsCursor `protobuf:"bytes,3,opt,name=cursor,proto3,oneof"`
+}
+
 func (*WatchNeedsResponse_Snapshot) isWatchNeedsResponse_Update() {}
 
 func (*WatchNeedsResponse_Change) isWatchNeedsResponse_Update() {}
+
+func (*WatchNeedsResponse_Cursor) isWatchNeedsResponse_Update() {}
 
 var File_berth_v1_needs_proto protoreflect.FileDescriptor
 
@@ -495,10 +557,13 @@ const file_berth_v1_needs_proto_rawDesc = "" +
 	"NeedChange\x12\x19\n" +
 	"\bevent_id\x18\x01 \x01(\x03R\aeventId\x12)\n" +
 	"\x05event\x18\x02 \x01(\x0e2\x13.berth.v1.NeedEventR\x05event\x12\"\n" +
-	"\x04need\x18\x03 \x01(\v2\x0e.berth.v1.NeedR\x04need\"\x85\x01\n" +
+	"\x04need\x18\x03 \x01(\v2\x0e.berth.v1.NeedR\x04need\"(\n" +
+	"\vNeedsCursor\x12\x19\n" +
+	"\bevent_id\x18\x01 \x01(\x03R\aeventId\"\xb6\x01\n" +
 	"\x12WatchNeedsResponse\x125\n" +
 	"\bsnapshot\x18\x01 \x01(\v2\x17.berth.v1.NeedsSnapshotH\x00R\bsnapshot\x12.\n" +
-	"\x06change\x18\x02 \x01(\v2\x14.berth.v1.NeedChangeH\x00R\x06changeB\b\n" +
+	"\x06change\x18\x02 \x01(\v2\x14.berth.v1.NeedChangeH\x00R\x06change\x12/\n" +
+	"\x06cursor\x18\x03 \x01(\v2\x15.berth.v1.NeedsCursorH\x00R\x06cursorB\b\n" +
 	"\x06update*\x93\x01\n" +
 	"\bNeedKind\x12\x19\n" +
 	"\x15NEED_KIND_UNSPECIFIED\x10\x00\x12\x13\n" +
@@ -530,7 +595,7 @@ func file_berth_v1_needs_proto_rawDescGZIP() []byte {
 }
 
 var file_berth_v1_needs_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
-var file_berth_v1_needs_proto_msgTypes = make([]protoimpl.MessageInfo, 5)
+var file_berth_v1_needs_proto_msgTypes = make([]protoimpl.MessageInfo, 6)
 var file_berth_v1_needs_proto_goTypes = []any{
 	(NeedKind)(0),              // 0: berth.v1.NeedKind
 	(NeedEvent)(0),             // 1: berth.v1.NeedEvent
@@ -538,26 +603,28 @@ var file_berth_v1_needs_proto_goTypes = []any{
 	(*WatchNeedsRequest)(nil),  // 3: berth.v1.WatchNeedsRequest
 	(*NeedsSnapshot)(nil),      // 4: berth.v1.NeedsSnapshot
 	(*NeedChange)(nil),         // 5: berth.v1.NeedChange
-	(*WatchNeedsResponse)(nil), // 6: berth.v1.WatchNeedsResponse
-	(BrowserKind)(0),           // 7: berth.v1.BrowserKind
-	(SnapshotReason)(0),        // 8: berth.v1.SnapshotReason
+	(*NeedsCursor)(nil),        // 6: berth.v1.NeedsCursor
+	(*WatchNeedsResponse)(nil), // 7: berth.v1.WatchNeedsResponse
+	(BrowserKind)(0),           // 8: berth.v1.BrowserKind
+	(SnapshotReason)(0),        // 9: berth.v1.SnapshotReason
 }
 var file_berth_v1_needs_proto_depIdxs = []int32{
-	0, // 0: berth.v1.Need.kind:type_name -> berth.v1.NeedKind
-	7, // 1: berth.v1.Need.browser:type_name -> berth.v1.BrowserKind
-	2, // 2: berth.v1.NeedsSnapshot.needs:type_name -> berth.v1.Need
-	8, // 3: berth.v1.NeedsSnapshot.reason:type_name -> berth.v1.SnapshotReason
-	1, // 4: berth.v1.NeedChange.event:type_name -> berth.v1.NeedEvent
-	2, // 5: berth.v1.NeedChange.need:type_name -> berth.v1.Need
-	4, // 6: berth.v1.WatchNeedsResponse.snapshot:type_name -> berth.v1.NeedsSnapshot
-	5, // 7: berth.v1.WatchNeedsResponse.change:type_name -> berth.v1.NeedChange
-	3, // 8: berth.v1.NeedsService.WatchNeeds:input_type -> berth.v1.WatchNeedsRequest
-	6, // 9: berth.v1.NeedsService.WatchNeeds:output_type -> berth.v1.WatchNeedsResponse
-	9, // [9:10] is the sub-list for method output_type
-	8, // [8:9] is the sub-list for method input_type
-	8, // [8:8] is the sub-list for extension type_name
-	8, // [8:8] is the sub-list for extension extendee
-	0, // [0:8] is the sub-list for field type_name
+	0,  // 0: berth.v1.Need.kind:type_name -> berth.v1.NeedKind
+	8,  // 1: berth.v1.Need.browser:type_name -> berth.v1.BrowserKind
+	2,  // 2: berth.v1.NeedsSnapshot.needs:type_name -> berth.v1.Need
+	9,  // 3: berth.v1.NeedsSnapshot.reason:type_name -> berth.v1.SnapshotReason
+	1,  // 4: berth.v1.NeedChange.event:type_name -> berth.v1.NeedEvent
+	2,  // 5: berth.v1.NeedChange.need:type_name -> berth.v1.Need
+	4,  // 6: berth.v1.WatchNeedsResponse.snapshot:type_name -> berth.v1.NeedsSnapshot
+	5,  // 7: berth.v1.WatchNeedsResponse.change:type_name -> berth.v1.NeedChange
+	6,  // 8: berth.v1.WatchNeedsResponse.cursor:type_name -> berth.v1.NeedsCursor
+	3,  // 9: berth.v1.NeedsService.WatchNeeds:input_type -> berth.v1.WatchNeedsRequest
+	7,  // 10: berth.v1.NeedsService.WatchNeeds:output_type -> berth.v1.WatchNeedsResponse
+	10, // [10:11] is the sub-list for method output_type
+	9,  // [9:10] is the sub-list for method input_type
+	9,  // [9:9] is the sub-list for extension type_name
+	9,  // [9:9] is the sub-list for extension extendee
+	0,  // [0:9] is the sub-list for field type_name
 }
 
 func init() { file_berth_v1_needs_proto_init() }
@@ -566,9 +633,10 @@ func file_berth_v1_needs_proto_init() {
 		return
 	}
 	file_berth_v1_sessions_proto_init()
-	file_berth_v1_needs_proto_msgTypes[4].OneofWrappers = []any{
+	file_berth_v1_needs_proto_msgTypes[5].OneofWrappers = []any{
 		(*WatchNeedsResponse_Snapshot)(nil),
 		(*WatchNeedsResponse_Change)(nil),
+		(*WatchNeedsResponse_Cursor)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -576,7 +644,7 @@ func file_berth_v1_needs_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_berth_v1_needs_proto_rawDesc), len(file_berth_v1_needs_proto_rawDesc)),
 			NumEnums:      2,
-			NumMessages:   5,
+			NumMessages:   6,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

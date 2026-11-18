@@ -6,8 +6,8 @@ import Testing
 /// The Go test wrote this from WatchNeedsResponse messages that set every Need field.
 @Test func needsFixtureDecodesEveryField() throws {
     let messages = try JSONDecoder().decode([WatchNeedsResponse].self, from: fixture("needs.json"))
-    guard messages.count == 3, case .snapshot(let snapshot) = messages[0], case .change(let opened) = messages[1],
-        case .change(let resolved) = messages[2]
+    guard messages.count == 4, case .snapshot(let snapshot) = messages[0], case .change(let opened) = messages[1],
+        case .change(let resolved) = messages[2], case .cursor(let cursor) = messages[3]
     else {
         Issue.record("unexpected messages \(messages)")
         return
@@ -25,6 +25,25 @@ import Testing
     #expect(opened.need == need)
     #expect(resolved.event == .resolved)
     #expect(resolved.need == Need(id: "grant/7", kind: .grant, secretName: "gh-token"))
+    #expect(cursor == 9_007_199_254_740_999)
+}
+
+/// berthd sends the cursor past rows that changed no need, so a reconnect resumes after them.
+@Test func aCursorMessageOnlyMovesTheCursor() {
+    var s = NeedsStore()
+    #expect(s.apply(.change(NeedChange(eventID: 6, event: .opened, need: store)), posting: true) == [.post(store)])
+    #expect(s.apply(.cursor(40), posting: true) == [])
+    #expect(s.cursor == 40)
+    #expect(s.open.keys.sorted() == [store.id])
+}
+
+/// A need whose facts change while open is posted again under its id, replacing the old text.
+@Test func aChangedNeedIsPostedAgain() {
+    var s = NeedsStore()
+    #expect(s.apply(.change(NeedChange(eventID: 6, event: .opened, need: store)), posting: true) == [.post(store)])
+    let rotate = Need(id: store.id, kind: .rotate, secretName: "gh-token")
+    #expect(s.apply(.change(NeedChange(eventID: 7, event: .opened, need: rotate)), posting: true) == [.post(rotate)])
+    #expect(s.apply(.snapshot(NeedsSnapshot(eventID: 8, needs: [rotate], reason: .behind)), posting: true) == [])
 }
 
 @Test func unknownNeedNamesDoNotFail() throws {
