@@ -16,6 +16,8 @@ import (
 	berthv1 "berth/gen/berth/v1"
 	"berth/gen/berth/v1/berthv1connect"
 	"berth/internal/client"
+	"berth/internal/core/ports"
+	"berth/internal/spawn"
 	"berth/internal/testutil"
 )
 
@@ -170,6 +172,26 @@ func TestRunKillsAChildThatIsNotTheGrantedCode(t *testing.T) {
 				t.Fatalf("the child ran: %v", err)
 			}
 		})
+	}
+}
+
+// TestRunKillsAChildWhoseSignatureIsNotValid: the right cdhash is not enough; the kernel must
+// also call the code's signature valid, or the child is killed before it runs.
+func TestRunKillsAChildWhoseSignatureIsNotValid(t *testing.T) {
+	t.Cleanup(func() { childCode = spawn.Live })
+	childCode = func(pid int) (ports.LiveCode, error) {
+		live, err := spawn.Live(pid)
+		live.Status &^= ports.CSValid
+		return live, err
+	}
+	marker := filepath.Join(t.TempDir(), "started")
+	read := func(context.Context, []byte) ([]byte, error) { return []byte(canary), nil }
+	r := invoke(t, &fakeSecrets{use: berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED}, read, "run", "--env", "KEY=gh-token", "--", "/usr/bin/touch", marker)
+	if r.code != ExitStaleGrant {
+		t.Fatalf("code %d, stderr %q", r.code, r.stderr)
+	}
+	if _, err := os.Stat(marker); !os.IsNotExist(err) {
+		t.Fatalf("the child ran: %v", err)
 	}
 }
 

@@ -81,15 +81,24 @@ type fixture struct {
 	pinsMu   sync.Mutex
 }
 
-// exits is a fake process exit watcher: a test closes a pid's channel to make it exit.
+// exits is a fake process exit watcher: a test closes a pid's channel to make it exit, sets
+// refuse to make every watch fail, or sets watched to act just as the watch starts.
 type exits struct {
-	mu   sync.Mutex
-	byID map[int]chan struct{}
+	mu      sync.Mutex
+	byID    map[int]chan struct{}
+	refuse  error
+	watched func(pid int)
 }
 
 func (e *exits) watch(_ context.Context, pid int) (<-chan struct{}, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
+	if e.watched != nil {
+		e.watched(pid)
+	}
+	if e.refuse != nil {
+		return nil, e.refuse
+	}
 	if _, ok := e.byID[pid]; !ok {
 		e.byID[pid] = make(chan struct{})
 	}

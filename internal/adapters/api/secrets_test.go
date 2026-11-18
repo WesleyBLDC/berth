@@ -152,6 +152,20 @@ func TestRedeemChecksThePeerBeforeTheRequestLog(t *testing.T) {
 	}
 }
 
+// TestRequestIDOfAnotherMethodIsRefused: a request id names one call; reusing it for another
+// method is refused before the core runs, never answered with the first call's reply.
+func TestRequestIDOfAnotherMethodIsRefused(t *testing.T) {
+	fake := &fakeSecrets{}
+	f := setupSecrets(t, fake)
+	if _, err := f.daemon.Shutdown(t.Context(), &berthv1.ShutdownRequest{RequestId: "req-shared-0001"}); err != nil {
+		t.Fatal(err)
+	}
+	_, err := f.secrets.AuthorizeUse(t.Context(), &berthv1.AuthorizeUseRequest{RequestId: "req-shared-0001", Name: "gh-token", ExePath: "/bin/x"})
+	if connect.CodeOf(err) != connect.CodeInvalidArgument || api.ReasonOf(err) != berthv1.ErrorReason_ERROR_REASON_REQUEST_ID_REUSED || fake.authorize != 0 {
+		t.Fatalf("got %v (%v), authorize ran %d times", err, api.ReasonOf(err), fake.authorize)
+	}
+}
+
 func TestAuthorizeUseNeverRecordsTheTicket(t *testing.T) {
 	fake := &fakeSecrets{}
 	f := setupSecrets(t, fake)

@@ -202,7 +202,7 @@ func startVerified(ctx context.Context, exe string, argv, childEnv []string, bin
 		fmt.Fprintf(env.Stderr, "cannot find %s after starting it: %v\n", exe, err)
 		return ExitError
 	}
-	if live, err := spawn.Live(pid); err != nil || live.CDHash != want || !live.Valid() {
+	if live, err := childCode(pid); err != nil || live.CDHash != want || !live.Valid() {
 		_ = proc.Kill()
 		_, _ = proc.Wait()
 		std.wait()
@@ -227,6 +227,9 @@ func startVerified(ctx context.Context, exe string, argv, childEnv []string, bin
 	}
 	return exitStatus(state)
 }
+
+// childCode is spawn.Live, replaced in a test to show a child whose code signature is not valid.
+var childCode = spawn.Live
 
 // stdio gives a suspended child real descriptors: an *os.File is handed over as it is, and any
 // other reader or writer gets a pipe and a copying goroutine, as exec.Cmd does.

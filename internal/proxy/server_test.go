@@ -368,6 +368,20 @@ func TestUntrustedUpstreamGets502AndNoBytes(t *testing.T) {
 	}
 }
 
+// TestSystemRootsRefuseASelfSignedUpstream: a release berth-proxy has no Roots and verifies
+// upstreams against the system's trust store, which no test certificate is in.
+func TestSystemRootsRefuseASelfSignedUpstream(t *testing.T) {
+	a := newUpstream(t)
+	f := startProxy(t, nil, a, testGrant(t, target(a.port(), nil)))
+	_, _, err := get(t, f.client(t, testCred), "https://"+a.authority()+"/")
+	if err == nil || !strings.Contains(err.Error(), "Bad Gateway") {
+		t.Fatalf("want a 502 from the proxy, got %v", err)
+	}
+	if h, _, _, active := a.snapshot(); len(h) != 0 || active != 0 {
+		t.Fatalf("upstream saw %d requests, %d active connections", len(h), active)
+	}
+}
+
 func TestPlainHTTPGets405(t *testing.T) {
 	a := newUpstream(t)
 	f := startProxy(t, upstreamPool(a), a, testGrant(t, target(a.port(), nil)))

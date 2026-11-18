@@ -160,6 +160,28 @@ func TestGrantProxyTargets(t *testing.T) {
 	}
 }
 
+// TestProxyAuthorizeNeedsAnExitWatchAndTheSameProxyAfterIt: a proxy whose exit cannot be watched
+// gets no session, and neither does a pid that names other code once the watch is set up, since
+// the pid may have been reused between the call and the watch.
+func TestProxyAuthorizeNeedsAnExitWatchAndTheSameProxyAfterIt(t *testing.T) {
+	f := newFixture(t, &testutil.Approver{})
+	f.request(t)
+	f.grantProxy(t)
+	ctx := t.Context()
+	f.exits.refuse = errors.New("kqueue is full")
+	if _, err := f.s.AuthorizeProxy(ctx, &berthv1.AuthorizeProxyRequest{Names: []string{"gh-token"}}, peerOf(proxyPID)); !errors.Is(err, api.ErrCallerUnknown) {
+		t.Fatalf("authorize without an exit watch: %v", err)
+	}
+	f.exits.refuse = nil
+	f.exits.watched = func(pid int) { f.code.set(pid, ports.LiveCode{CDHash: ports.CDHash{0xbb}, Status: signedLive}) }
+	if _, err := f.s.AuthorizeProxy(ctx, &berthv1.AuthorizeProxyRequest{Names: []string{"gh-token"}}, peerOf(proxyPID)); !errors.Is(err, api.ErrPeerNotTrusted) {
+		t.Fatalf("authorize by a pid that changed code during the watch: %v", err)
+	}
+	if open, _ := f.store.OpenProxySessions(ctx); len(open) != 0 {
+		t.Fatalf("refused authorizes made sessions %v", open)
+	}
+}
+
 func TestProxySessionServesUntilRevoked(t *testing.T) {
 	f := newFixture(t, &testutil.Approver{})
 	f.request(t)

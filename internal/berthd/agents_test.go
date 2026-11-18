@@ -262,6 +262,26 @@ func TestAgentTokenFirstCallerMustBeTheAgentUser(t *testing.T) {
 	}
 }
 
+// goneCode is a ports.CodeInspector for which the caller exited after its lineage was read: the
+// pid may name a later process by now, which its audit token catches.
+type goneCode struct{}
+
+func (goneCode) Live(context.Context, ports.Peer) (ports.LiveCode, error) {
+	return ports.LiveCode{}, errors.New("no such process")
+}
+
+func TestAgentTokenOfACallerThatExitedIsRefused(t *testing.T) {
+	f := newAgentsFixture(t)
+	f.a.Code = goneCode{}
+	id, token := f.create(t, 0)
+	if err := f.auth(t, token, 22); !errors.Is(err, api.ErrAgentTokenInvalid) {
+		t.Fatalf("a caller that exited: %v", err)
+	}
+	if f.state(t, id) != agentsession.Issued || !strings.Contains(f.log.String(), "caller exited") {
+		t.Fatalf("session %s after the refusal; log %q", f.state(t, id), f.log.String())
+	}
+}
+
 func TestAgentTokenExpires(t *testing.T) {
 	f := newAgentsFixture(t)
 	id, token := f.create(t, 60)
