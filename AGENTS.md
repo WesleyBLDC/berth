@@ -24,8 +24,10 @@ Paste its last lines in your report; a failure is investigated to its root cause
 | `make test-native` | Swift unit tests for the helper's core |
 | `make breaking` | `buf breaking` against the local `main` branch |
 
+Planned by [the test lab](docs/plans/test-lab.md), not built yet: `scripts/gate.sh` (the fail fast gate around check, merge and push), `make lab-image` (builds the tart base image) and `make lab-test` (the unattended VM suites).
+
 Binaries: `berthd` (daemon), `berth` (CLI and the `berth top` TUI), `berth-proxy` (one per `berth run --proxy`), `berth-native` (Swift, the only reader of Keychain values), and `berth-mcp` (an MCP server over stdio for agents without a shell).
-Build tag: `berth_e2e` compiles the test only pin rule, the test root of `berth-proxy`, loopback proxy targets and the `BERTH_NATIVE`, `BERTH_PROXY` and swap hooks; `test/e2e` builds its binaries with it, release builds never, and no environment variable turns it on.
+Build tags: `berth_lab` (planned, ADR 0020) will compile a lab only certificate authority and scripted approvals for the VM tests, and nothing else. `berth_e2e` compiles the test only pin rule, the test root of `berth-proxy`, loopback proxy targets and the `BERTH_NATIVE`, `BERTH_PROXY` and swap hooks; `test/e2e` builds its binaries with it, release builds never, and no environment variable turns it on.
 
 ## Where things live
 

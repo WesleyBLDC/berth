@@ -11,7 +11,7 @@ It borrows Docker's model: a browser and whoever drives it is a session, a saved
 It runs only on your own Mac, talks only over a Unix socket, and has no telemetry.
 
 Berth is in pre release development.
-Terminal secrets (E2a) are done: the maintainer's manual check with real signing and Touch ID passed on 2026-11-17. The header proxy with the secret lifecycle (E2b) is built and wired and awaits the maintainer's manual check; isolated agents (E3) are in progress, with the agent socket, session tokens and `berthd` starting the proxy of agent sessions built; seeing every browser (M2) is built, with discovery, `berth ps`, `inspect`, `stop` and `leftovers`, and awaits the maintainer's check; the live terminal view (M3), `WatchSessions` and `berth top`, is built and awaits the maintainer's look; managed Chromium (M4) is built, with the pipe driver, the browser machine, profile locks, `berth browser`, the token gated CDP proxy, agent browsers and `berth-mcp`, and awaits the maintainer's exit gate check; the Mac app (M5) is in progress, with its `berthd` client, the session list window, the menu bar count, the signed bundle, the login item, `berthd`'s pin for the app and notifications from `WatchNeeds` built.
+Terminal secrets (E2a) are done; the header proxy (E2b), browser discovery (M2), the live terminal view (M3) and managed Chromium (M4) are built and await their last checks; isolated agents (E3) and the Mac app (M5) are in progress.
 See [Milestones](#milestones) for the exact status.
 
 ## Processes
@@ -670,6 +670,12 @@ Running agents as a separate macOS user (E3, [ADR 0018](docs/adr/0018-agents-run
 - The peer adapter reads process facts through a raw `proc_info` syscall with a hardcoded struct offset, which a macOS update could break; its test guards it.
 - Builds are signed with a free Apple Development identity; the data protection keychain, notarization and Developer ID signing wait for the paid program at M8.
 
+## Testing
+
+- **Built:** `make check` runs every linter, unit tests with the race detector, Swift tests for `berth-native` and `Berth.app`, and end to end tests that build the real binaries with the `berth_e2e` tag (test trust rules, a fake helper instead of Touch ID, loopback upstreams) and drive real headless Chromium, Playwright and Puppeteer when they are installed ([ADR 0013](docs/adr/0013-testing-minimal-unit-tests-real-end-to-end-tests.md)).
+- **Still by hand today:** real signing, Touch ID and dialogs, headful browsers, the app's GUI, permissions and login item, and a real second macOS user; each plan lists these as manual checks.
+- **Planned:** the [test lab](docs/plans/test-lab.md) runs those checks unattended in macOS VMs with a `berth_lab` build flavor (a lab only certificate authority and scripted approvals, everything else real), so only real Touch ID, the real team key and the maintainer's own Chrome profile stay on a short release checklist ([ADR 0020](docs/adr/0020-test-lab-in-macos-vms-with-a-berth-lab-flavor.md), proposed).
+
 ## Milestones
 
 The order is risk first, skeleton before features, terminal before app, and secrets after the parts they depend on.
@@ -686,6 +692,7 @@ Each milestone starts from a plan in [`docs/plans/`](docs/plans) with acceptance
 | M3 Live terminal view | `WatchSessions` stream with resume, the TUI | Built, awaiting the maintainer's look: `WatchSessions` with resume, backpressure and a clean end on stop, and `berth top`, with golden view tests and a real headless Chromium end to end test ([plan](docs/plans/m3-live-terminal-view.md)) |
 | M4 Managed Chromium | `BrowserDriver` over a private CDP pipe, the token gated CDP proxy, profile locks, session tokens, `berth-mcp` | Built: the pipe driver, the browser machine, profile locks, `berth browser launch`, `ls` and `close`, the CDP proxy with its filter, agent browsers (`OpenAgentBrowser`, `CloseAgentBrowser`, `ListAgentBrowsers`, `berth browser open`) and `berth-mcp`, with real headless Chromium, Playwright and stdio end to end tests; awaiting the maintainer's exit gate check ([plan](docs/plans/m4-managed-chromium.md)) |
 | M5 Mac app | `Berth.app`, login item registration, live view and takeover, window pictures, notifications | In progress: the `berthd` client, the session list window, the menu bar count, the signed bundle, the login item, the app pin and notifications from `WatchNeeds` are built and tested; live view, takeover, window pictures and headful agent browsers are planned, and the GUI, the login item and notifications await the maintainer's manual checks ([plan](docs/plans/m5-mac-app.md)) |
+| L Test lab | Unattended end to end tests in macOS VMs (tart): a fail fast gate script, the lint stack, `testing/synctest`, fuzzing and model based tests, a `berth_lab` build flavor, a base image and runner, the outside world on apple/container, the guided manual checks of E2b, E3, M2 to M5 as VM tests, SwiftUI snapshots and canary agent scenarios | Planned (plan written, [ADR 0020](docs/adr/0020-test-lab-in-macos-vms-with-a-berth-lab-flavor.md) proposed): it comes before M5's takeover and M6's fills, which need headful browsers and approvals ([plan](docs/plans/test-lab.md)) |
 | M6 Credentials and runbooks | Browser grants, the atomic fill, hard limits per profile, runbooks served to agents | Planned (plan written): a signed `berth-browser` per managed browser takes the pipe, the CDP proxy and the fill out of `berthd`, and the fill runs sealed in a tab Berth owns ([plan](docs/plans/m6-credentials-and-runbooks.md)) |
 | E1 Other password stores | Helper contract with 1Password and Bitwarden helpers | Optional |
 | M7 Firefox and your daily Chrome | WebDriver BiDi adapter; connecting to your own Chrome as a Touch ID power action | Planned |
@@ -719,5 +726,6 @@ Every decision that binds code has a record in [`docs/adr/`](docs/adr):
 | [0017](docs/adr/0017-public-development-repository.md) | Public repository for development |
 | [0018](docs/adr/0018-agents-run-as-a-separate-macos-user.md) | Agents run as a separate macOS user (proposed) |
 | [0019](docs/adr/0019-berth-app-speaks-connect-json-over-the-socket.md) | Berth.app speaks Connect JSON over the socket (proposed; supersedes ADR 0015's grpc-swift-2 line) |
+| [0020](docs/adr/0020-test-lab-in-macos-vms-with-a-berth-lab-flavor.md) | Test lab in macOS VMs with a `berth_lab` build flavor (proposed) |
 
 How several coding agents split a milestone is in [docs/agentic-work.md](docs/agentic-work.md), and the rules they follow are in [AGENTS.md](AGENTS.md).

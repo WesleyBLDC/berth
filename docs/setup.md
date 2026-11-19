@@ -35,3 +35,13 @@ Permissions are tied to the bundle ID plus the signing certificate, so every bui
 The app asks for nothing on its own: Login Items, Notifications and Screen Recording each start from a button in the app (see [the M5 plan](plans/m5-mac-app.md#manual-checks)).
 
 Not needed: Accessibility (input goes through CDP, not synthetic events), Automation (no Apple Events), Full Disk Access (scanning your own processes needs none), Local Network (loopback only), camera and microphone.
+
+## Planned for the test lab
+
+The [test lab](plans/test-lab.md) is planned, not built; none of these is installed or needed for `make check` today.
+
+| Tool | Needed for |
+|---|---|
+| `tart` and Packer with `packer-plugin-tart` | The macOS base image and the VMs `make lab-test` clones |
+| apple/container | Linux containers for the outside world (upstreams, DNS, hostile pages) |
+| `shfmt`, `markdownlint-cli2`, `actionlint` | The lint additions in lab item 2 |
