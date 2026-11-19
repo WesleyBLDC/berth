@@ -1,7 +1,7 @@
 # E2b: Header proxy and secret lifecycle
 
-Status: built and merged (items 1 to 7); the exit gate waits only for the maintainer's manual check with real signing, Touch ID and a real API with a test key.
-Since it merged, E3 item 6 added `StartProxy`, through which `berthd` starts the proxy for agent sessions ([the E3 plan](e3-isolated-agents.md#item-6-berthd-starts-berth-proxy-for-agent-sessions)); the agent surface is now eight methods, not the seven pinned below.
+Status: Built (items 1 to 7). The exit gate waits only for the manual check with real signing, Touch ID and a real API, which the [test lab](test-lab.md) turns into an unattended VM test (lab item 8), leaving real Touch ID to the release checklist.
+Since it merged, E3 item 6 added `StartProxy`, through which `berthd` starts the proxy for agent sessions ([the E3 plan](e3-isolated-agents.md#item-6-berthd-starts-berth-proxy-for-agent-sessions)), and M4 added the agent browser methods, so the agent surface pinned below at seven methods has grown since.
 
 Goal: API keys reach HTTP APIs without ever entering the calling process, the agent, `berth` or `berthd`, plus `revoke`, `rm` and `rotate`.
 Comes right after E2a; E3 (isolated agents) follows.
@@ -85,7 +85,7 @@ It cannot read the value, send it to another host, send it over cleartext, keep 
 | 1 | Contract | Schema, ports, names, migrations | `proto/`, `gen/`, `internal/core/ports/`, secret and proxy session name constants, `internal/adapters/api/` interfaces and error mapping, `internal/codetrust` (`ProxySigningID`), migrations 0004 and 0005 | `buf breaking` clean; no field carries a value; agent surface pinned at 7 methods; migration keeps grant ids |
 | 2 | Build | Machines and store | `internal/core/secret/`, `internal/core/proxysession/`, `internal/adapters/sqlite/`, `internal/testutil/` | Walk tests pinned; Removed accepts a new store; Removing refuses use; proxy grant round trip |
 | 3 | Build | `berth-proxy` | `cmd/berth-proxy/`, `internal/proxy/` | `httptest` TLS: header only on the granted host and port; client copies removed; untrusted upstream 502 with zero bytes; plain HTTP 405; 407 without the credential; CA name constraints and pathlen 0; CR or LF refused; path and method limits; stop or stream drop zeroes and exits; refuses `GODEBUG` or `SSL_CERT_FILE` |
-| 4 | Build | `berth-native` and its Go side | `native/`, `internal/adapters/native/` and `fakehelper/` | Receiver table (CLI with exe, proxy with proxy, crossed refused); action ticket redeemed before any prompt; remove treats not found as removed |
+| 4 | Build | `berth-native` and its Go side | `native/`, `internal/adapters/native/` and its fake helper (since moved to `internal/testutil/fakehelper`) | Receiver table (CLI with exe, proxy with proxy, crossed refused); action ticket redeemed before any prompt; remove treats not found as removed |
 | 5 | Build, when a slot frees | CLI | `internal/cli/`, `cmd/berth/` | Golden `ls` with a proxy consumer; `run --proxy` never reads a value; the caller's proxy and CA variables are overwritten or removed; exit code passes through |
 | 6 | Integrate | Wiring, e2e, docs | `internal/berthd/`, `cmd/berthd/trust_*.go`, `test/e2e/proxy_test.go`, `Makefile` (build and sign `bin/berth-proxy`), `ARCHITECTURE.md` | Canary and lifecycle e2e below; `make check` passes |
 | 7 | After 6 | Close the hash to exec race | `internal/cli/`, `internal/berthd/` | `berth run` starts the child suspended, compares its live cdhash with the grant's pinned cdhash, then resumes or kills it; a swapped binary is refused |
@@ -111,21 +111,9 @@ It cannot read the value, send it to another host, send it over cleartext, keep 
 - Stubs to replace: `internal/adapters/native/lifecycle_stub.go` (item 4), `internal/berthd/proxy_stub.go` (item 6). Item 6 sets `Consumer.kind` for exe grants too.
 - `berth-proxy` reads each value through the existing `native.Read` adapter (socketpair on fd 3); `berth-native` must accept a proxy parent for tickets whose `consumer_kind` is PROXY.
 
-## Notes for the integration item (item 6)
-
-- From item 2: secret machine has 17 legal pairs, proxy session 9; update both diagrams in `ARCHITECTURE.md`.
-- From item 2: answer BUSY or SECRET_EXISTS before sending RotateRequested, RemoveRequested or StoreRequested in a state where the table refuses them; fire RevokeAll only from RemoveSucceeded; boot recovery sends RotateFailed or RemoveFailed with note "interrupted" and revokes grants of Removed secrets in the shell.
-- From item 2: a second StopRequested on a Stopping session is illegal, so revoke and remove racing on one session must tolerate it; `EndProxySession` records once per session, and ProxyLost records zero counts.
-- From item 2: exe grants read back with Kind `exe`; set `Consumer.kind` from the record.
-- From item 4: `rotate` and `remove` read `{"name","ticket":"<64 hex>","requester":{...}}` and answer `{"outcome":"stored|denied|failed"}` or `{"outcome":"removed|denied|failed"}`; each redeems first and needs `action` TICKET_ACTION_ROTATE or TICKET_ACTION_REMOVE with a matching name; `confirm` takes `"action":"proxy"` with a `target` object.
-- From item 4: `berthd` records each ticket's consumer kind and action when it issues it and returns both on redeem; rotate and remove tickets just store `ports.TicketRotate` or `ports.TicketRemove`. `read` requires USE and a kind that matches its parent (CLI with EXECUTABLE, proxy with PROXY).
-- From item 5: `berth run --proxy` is wired through `cli.Env.StartProxy` (`ExecProxy` on the `berth-proxy` beside berth); exit codes 7 (busy) and 8 (proxy failed to start); every `ls` consumer row starts with its grant id; document these in `ARCHITECTURE.md`. `ls` keys on `Consumer.kind`, so set PROXY for proxy grants.
-- From item 3: `berth-proxy` prints its control line only after the first SERVING event; exit codes 0 end, 1 error, 2 refused, 3 stopped. It zeroes values before `EndProxySession`, calls End after stdin closes, on STOP (best effort) and on a signal, never after a dropped stream.
-- From item 3: the e2e test root is compiled in: build with `-tags berth_e2e -ldflags "-X main.testRootDER=<base64 DER>"`. Add `scripts/sign.sh bin/berth-proxy com.wesleybldc.berth.proxy` to `make build`.
-- From item 3: record in `ARCHITECTURE.md`: a response header that echoes the value exists as a Go string inside net/http (redaction limit); two grants on one host and port are refused; the CA excludes subdomains of granted hosts and all IPs.
-- From item 3: `cmd/berth-proxy` duplicates `cmd/berth`'s `connectTrusted`; extract it into a shared package in item 6.
-
 ## Exit notes (item 6)
+
+Open follow up: `cmd/berth-proxy` and `cmd/berth` each carry their own `connectTrusted`; the two could share one package.
 
 Compatibility matrix, from `TestProxyCanary` in `test/e2e/proxy_test.go` (macOS 26, Go 1.27, Node 24.22) against a granted loopback server whose certificate chains to a root compiled into the e2e proxy:
 
@@ -142,7 +130,7 @@ What the e2e proves, and what it does not:
 - The canary run: A gets exactly `Bearer <canary>` once; B, not granted, gets the client's placeholder header untouched; plain HTTP gets 405 and never reaches A; C, granted but self signed, sees a failed TLS handshake and no request while the client gets 502 on its `CONNECT`; a wrong or missing credential gets 407; the canary is in no environment dump, CLI or child output, `berthd` log, database file or proxy temp file (checked during and after the run); the session ends `Ended` with one injected request.
 - Lifecycle: a revoke during a run stops injection and the session ends `Ended`; `SIGKILL` on the proxy makes the session `Lost` through kqueue `NOTE_EXIT`; `rotate` puts the new value in the next run; `rm` revokes the grants and the next `berth run --proxy` exits 5 with no session; `berth-proxy` with `GODEBUG` exits 2 before contacting `berthd`.
 - Ticket kinds: the fake helper's `trust_parent` switch takes the parent to be the other kind without checking its signature, so the e2e proves `berthd` records and returns the consumer kind and the helper refuses a mismatch; the signature half of the receiver check rests on the receiver table tests in `native/Tests/BerthNativeCoreTests/ReceiverTests.swift` and Wesley's manual check.
-- The agent safety checklist walk is in [E2b exit gate](#e2b-exit-gate); Wesley's manual check with real signing, Touch ID and a real API with a test key remains.
+- The agent safety checklist walk is in [E2b exit gate](#e2b-exit-gate).
 
 ## Exit notes (item 7)
 
@@ -187,4 +175,4 @@ Known limits carried forward, all in the honest limits of `ARCHITECTURE.md`: the
 
 Review question on user trust settings, answered on 2026-11-17 during the E2a manual check: `security add-trusted-cert` into the user domain asks for authorization on macOS 26 (the maintainer cancelled it), so no process can add a CA to the user trust settings without a person, and the per run CA through environment variables stays the design.
 
-Remaining for the exit gate: Wesley's manual check with real signing, Touch ID and a real API with a test key.
+Remaining for the exit gate: the manual check with real signing, Touch ID and a real API with a test key ([test lab](test-lab.md) item 8).

@@ -41,19 +41,6 @@ Only the item that owns them may edit these; everything else names them as a fol
 - The lead pushes `main` to the public repository only after `make check` printed `check: PASS` on the exact commit and the review is done; there are no releases or tags before M8 (ADR 0017).
 - Subagents default to Opus 5.5 at medium effort.
 
-## Example: M2, see every browser
-
-The plan as it was cut; what was built differs in places (`internal/adapters/procscan` instead of `gopsutil`, a pure `internal/core/browsersig` table instead of a TOML registry, `WatchSessions` in M3), and [the M2 plan](plans/m2-see-every-browser.md) has the final items.
-
-| Item | Wave | Owns | Acceptance tests it carries |
-|---|---|---|---|
-| Contract | 1 | `SessionsService` (`ListSessions`, `InspectSession`, `StopSession`, `WatchSessions` stub), `ProcessSource` port, session `State` and `EventKind` enums, migration 0002 | `buf breaking` clean; `TestAgentSurface` unchanged |
-| Session machine | 2 | `internal/core/session/` transition table and walk test | Leftover when owner gone; stop only on command |
-| Process scanner | 2 | `internal/adapters/process/` (`gopsutil`, owner chain, stable session IDs) | Owner chain finds Claude Code, Cursor, a terminal |
-| Signatures | 2 | `internal/adapters/signatures/` TOML registry and fixtures | Playwright MCP, Chrome DevTools MCP and a Playwright script are classified |
-| CLI | 2 | `cmd/berth` `ps`, `inspect`, `stop`, `leftovers` with golden files | Output at 80 columns; short ID prefixes |
-| Integration | 3 | Reconcile loop in `internal/berthd`, handlers, e2e with real browsers | Killing the owner makes a `Leftover`; `berth stop` ends every child |
-
 ## Example: E2, terminal secrets
 
 | Item | Wave | Owns |

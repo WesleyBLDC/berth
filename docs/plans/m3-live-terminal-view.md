@@ -1,5 +1,7 @@
 # M3: Live terminal view
 
+Status: Built. The exit gate's look at `berth top` with a Playwright browser becomes an unattended VM test in the [test lab](test-lab.md) (item 7).
+
 Goal: `berth top` opens a full screen terminal view of every browser session that updates as browsers appear, change state and stop, without polling; it can inspect a session and stop one, with the same rules as `berth stop`.
 Under it is `WatchSessions`, a server stream of session changes that a client resumes from the last event id it applied, so a dropped connection or a restarted `berthd` loses nothing, and a client that fell too far behind gets a fresh snapshot instead of an unbounded replay.
 The maintainer was away when this plan was written and asked not to be blocked; every choice that is his to make is listed under [Decisions for the maintainer](#decisions-for-the-maintainer), with the default taken.
@@ -195,7 +197,7 @@ Built on branch `m3`, rebased onto `main` at 3bf6db5: the plan, `WatchSessions` 
 - **`berth top`** lives in `internal/cli/top.go`; the stream loop is `watchLoop`, and `NewTop` is exported for the end to end test, which drives the model the way Bubble Tea does, without a terminal.
 - **Verified by hand** in a pseudo terminal against a temporary `berthd`: `berth top` opens on the alternate screen, shows the empty list, and `q` exits 0. A populated list in a real terminal is covered only by the end to end test, which reads the model's view.
 
-What remains for the exit gate: the maintainer runs `berth top` on his Mac with a Playwright browser open, watches it appear and stops it from the TUI; `ARCHITECTURE.md` marks M3 done after that.
+What remains for the exit gate: `berth top` with a Playwright browser open, watching it appear and stopping it from the TUI ([test lab](test-lab.md) item 7); `ARCHITECTURE.md` then marks M3 done.
 
 ### Agent safety checklist (M3)
 

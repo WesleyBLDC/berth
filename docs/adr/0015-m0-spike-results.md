@@ -1,6 +1,6 @@
 # 0015: M0 spike results
 
-Status: accepted, 2026-11-16
+Status: accepted, 2026-11-16; the grpc-swift-2 line under API is superseded by [ADR 0019](0019-berth-app-speaks-connect-json-over-the-socket.md)
 
 ## Context
 

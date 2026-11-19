@@ -1,17 +1,18 @@
 # M6: Credentials and runbooks
 
+Status: Planned; this plan is written and no code exists. Fills need headful browsers, real approvals and real login pages, so the [test lab](test-lab.md) should exist first, and its outside world (lab item 6) serves the login pages.
+
 Goal: an agent logs in to a site in a managed browser without ever holding, seeing or being able to read back the password.
 The person grants one Keychain item to one browser profile and one origin with Touch ID once ([ADR 0007](../adr/0007-grants-per-browser-profile-free-after-one-approval.md)); the fill runs as one atomic step with the agent's CDP traffic paused ([ADR 0008](../adr/0008-atomic-fill-with-the-agent-paused.md)); every profile carries hard limits the agent cannot change; and the person writes runbooks that agents fetch through their session.
 Because a fill types a value over the CDP pipe, and `berthd` must never hold a value (invariants 7 and 11), the pipe, the CDP proxy and the fill move out of `berthd` into a new signed process, `berth-browser`, one per managed browser, which reads values through `berth-native` the way `berth-proxy` does.
 The maintainer was away when this plan was written and asked not to be blocked; every choice that is his to make is listed under [Decisions for the maintainer](#decisions-for-the-maintainer), with the default taken, and everything that needs his hands is under [Manual checks](#manual-checks).
-No code is written with this plan, because other branches are changing `berthd` now; item 1 is this file.
 
 ## What earlier milestones left to build on
 
 - **E2b** ([plan](e2b-header-proxy.md)): `berth-proxy` is a signed Go process that `berthd` pins by team, identifier and live cdhash (`codetrust`, `TrustProxy`), watches with kqueue `NOTE_EXIT`, and gives tickets bound to the proxy's pid, consumer kind `PROXY` and action `USE`; the proxy starts `berth-native read` with a socketpair end on fd 3, `berth-native` checks that the fd 3 peer is its parent and satisfies the proxy requirement, redeems the ticket and writes the value; the proxy keeps it in an anonymous `mmap` outside the Go heap, `mlock`ed, never a Go string (`internal/proxy/value.go`), and zeroes it on every exit path.
 - **E3 item 6** ([plan](e3-isolated-agents.md#item-6-berthd-starts-berth-proxy-for-agent-sessions)): `berthd` starts a signed helper as the owner with a scrubbed environment through a reusable starter (`internal/proxyproc`), records its pid against the agent session before it acts, and stops it when the session ends; the starter is the model for starting `berth-browser`.
-- **M4** ([plan](m4-managed-chromium.md)): the `BrowserDriver` port and its `cdppipe` adapter (Chromium over `--remote-debugging-pipe` on fds 3 and 4, Berth's own calls on ids from 1,000,000,000, Berth's own sessions invisible to the agent), the browser machine with profile locks, profiles under `$BERTH_HOME/profiles/<name>`, the token gated CDP proxy (`internal/adapters/cdpproxy`) with its strict parser and method filter (`internal/core/cdppolicy`). Decision 3 there left the proxy inside `berthd` and said M6 must move it before any fill. On branch `m4b`, not yet on `main`: `OpenAgentBrowser` and `CloseAgentBrowser` give an agent session headless browsers on ephemeral profiles deleted at close, and `berth-mcp` exposes the agent surface.
-- **M5** ([plan](m5-mac-app.md), first items on `main`): `Berth.app` and its Connect JSON client; planned there and not built yet: the `Control` machine (`Agent`, `Person`, `Ended`), the hold and replay of the agent's messages in the CDP proxy, bounded at 1,000 messages or 16 MiB, `WatchNeeds` notifications, and the error reasons `NOT_BERTH_APP` and `CONTROL_HELD`.
+- **M4** ([plan](m4-managed-chromium.md)): the `BrowserDriver` port and its `cdppipe` adapter (Chromium over `--remote-debugging-pipe` on fds 3 and 4, Berth's own calls on ids from 1,000,000,000, Berth's own sessions invisible to the agent), the browser machine with profile locks, profiles under `$BERTH_HOME/profiles/<name>`, the token gated CDP proxy (`internal/adapters/cdpproxy`) with its strict parser and method filter (`internal/core/cdppolicy`). Decision 3 there left the proxy inside `berthd` and said M6 must move it before any fill. M4 item 7 added `OpenAgentBrowser`, `CloseAgentBrowser` and `ListAgentBrowsers`, which give an agent session headless browsers on ephemeral profiles deleted at close, and `berth-mcp` exposes the agent surface.
+- **M5** ([plan](m5-mac-app.md), items 1 to 8 on `main`): `Berth.app` and its Connect JSON client, `WatchNeeds` notifications and the app pin with `NOT_BERTH_APP`; planned there and not built yet: the `Control` machine (`Agent`, `Person`, `Ended`), the hold and replay of the agent's messages in the CDP proxy, bounded at 1,000 messages or 16 MiB, and the error reason `CONTROL_HELD`.
 - **E3** ([ADR 0018](../adr/0018-agents-run-as-a-separate-macos-user.md), proposed): agents may run as a separate macOS user that reaches only the agent socket with a session token; `berthd` cannot read another user's process arguments, so agents get browsers only through Berth.
 
 ## Design
@@ -212,7 +213,7 @@ message FillWindow { uint32 days_mask; uint32 start_minute; uint32 end_minute; }
 message CreateAgentSessionRequest { ...; repeated string profiles = <next>; } // Touch ID if one holds a browser grant
 
 // browsers.proto
-message OpenAgentBrowserRequest { ...; string profile = <next>; }   // with m4b
+message OpenAgentBrowserRequest { ...; string profile = <next>; }
 rpc FillLogin(FillLoginRequest) returns (FillLoginResponse) { option (berth.v1.agent) = true; }
 rpc ListLogins(ListLoginsRequest) returns (ListLoginsResponse) { option (berth.v1.agent) = true; }
 message FillLoginRequest { string request_id; string browser_id; string grant_id; string url; }
@@ -254,7 +255,7 @@ Each item ends with `make check` passing and its own commit; "needs the maintain
 | 4 | Shared locked value | 1 | `internal/lockedvalue`, `internal/proxy` | The proxy's existing value tests move and pass; the proxy e2e passes unchanged |
 | 5 | `berth-browser` | 3, 4 | `cmd/berth-browser`, `internal/browserhelper` (launch, control loop, proxy wiring), `internal/adapters/cdpproxy` (hold, scan, Berth target rules), `Makefile` and `scripts/sign.sh` lines | A fake Chrome and a fake `berthd` on the socketpair: refuses an extra environment variable and a control peer that is not its parent; launch, ready with Chrome's pid; a relayed `call` and its reply; hold queues both ways and release replays in order; overflow closes the agent; EOF on control kills Chrome's group and exits; the real headless shell drives a page through the moved proxy |
 | 6 | `berthd` on the helper | 5 | `internal/adapters/browserproc`, `internal/berthd/managed.go`, `cmd/berthd` trust files | Pin refusal kills and fails the launch; helper exit closes the browser and kills Chrome's group; `go list -deps ./cmd/berthd` has no `cdpproxy` or `coder/websocket`; every M4 browser and Playwright e2e passes through the helper |
-| 7 | `berth-native` receiver | 3 | `native/` (`berthBrowserRequirement`, the receiver table, the four confirm actions), `internal/adapters/native/` and `fakehelper` | Receiver table: browser parent with `BROWSER`, crossed kinds refused; prompt text builders for each new action |
+| 7 | `berth-native` receiver | 3 | `native/` (`berthBrowserRequirement`, the receiver table, the four confirm actions), `internal/adapters/native/` and `internal/testutil/fakehelper` | Receiver table: browser parent with `BROWSER`, crossed kinds refused; prompt text builders for each new action |
 | 8 | Profiles and limits | 3, 6 | `internal/berthd/profiles.go`, `internal/adapters/api/profiles.go`, `internal/cli/profile.go`, `cdppipe` launch flags and preferences, agent session profiles | Defaults; loosen asks Touch ID, tighten does not; allowed hosts become exactly the flags; an unassigned profile is `PROFILE_NOT_FOUND` to an agent; assignment with grants asks Touch ID; lifetime closes the browser on a fake clock |
 | 9 | Browser grants and strict mode | 3, 7, 8 | `internal/berthd/lifecycle.go` grant paths, `internal/adapters/sqlite` grant columns, `internal/cli/secret_browser.go`, `ls` | Grant round trip keeps every field; origin outside allowed hosts refused; ephemeral profile refused; revoke and remove reach browser grants; strict mode off asks Touch ID; golden `ls` |
 | 10 | Fill machine | 3 | `internal/core/fill/`, the `Control` change if M5's is on `main` | Walk pinned at 11; names pinned |
@@ -265,7 +266,7 @@ Each item ends with `make check` passing and its own commit; "needs the maintain
 | 15 | Close | all | this file | Agent safety checklist walked |
 
 Items 4, 7, 10 and 13 can run in parallel after the contract; 5 follows 4; 6 follows 5; 8 and 9 follow 6; 11 needs 5 and 7; 12 joins them.
-Items 5 and 6 rewrite the managed browser wiring, so they start only once the branches now changing `berthd` (M4 item 7 on `m4b`, M5's takeover) have landed, and rebase onto them.
+Items 5 and 6 rewrite the managed browser wiring, so they start only once M5's takeover has landed, and rebase onto it.
 
 **End to end** (`test/e2e/fill_test.go`), real `berthd`, `berth-browser`, fake helper with a canary, real headless Chromium with M2's skip rules:
 
@@ -328,7 +329,3 @@ Defaults taken while he was away; each is cheap to reverse before M6 closes.
 14. **The person can fill owner browsers from the CLI** (`berth browser fill`), which the manual checks use.
 15. **`berth-browser` and Chrome run as the owner in M6;** the runner user waits for E3's launch helper.
 16. **The navigation budget, tab limit and anomaly rules** from the agent safety page move to a later milestone.
-
-## Exit notes
-
-None yet; item 1 (this plan) is written, and no code exists.

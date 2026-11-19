@@ -1,8 +1,10 @@
 # M5: Mac app
 
+Status: In progress. Items 1 to 8 are built; items 9 to 15 (screencast, takeover, live view, window pictures, headful agent browsers) are planned and are best built once the [test lab](test-lab.md) can run headful browsers and the app unattended (lab items 7 and 9).
+
 Goal: `Berth.app`, a SwiftUI menu bar item and one window, shows every browser session live from `WatchSessions`, registers `berthd` as a login item, tells the person when Berth needs them, shows a live view of a managed browser and lets the person take it over while the agent waits, and shows a picture of the window of a browser Berth does not manage.
 Agent browsers may then run headful, since the person can now see and take over what the agent drives.
-The maintainer was away when this plan was written and asked not to be blocked; every choice that is his to make is listed under [Decisions for the maintainer](#decisions-for-the-maintainer), with the default taken, and everything that needs his hands is under [Manual checks](#manual-checks).
+The maintainer was away when this plan was written and asked not to be blocked; every choice that is his to make is listed under [Decisions for the maintainer](#decisions-for-the-maintainer), with the default taken, and everything that needs a GUI, a permission or a signed build is under [Manual checks](#manual-checks), which the test lab turns into VM tests.
 
 ## What earlier milestones left to build on
 
@@ -183,7 +185,7 @@ Items 2 to 5 were built in the first pass and items 6 to 8 in the second (see th
 
 ## Manual checks
 
-These need the maintainer's hands: a signed build, a permission grant or a GUI.
+These need a signed build, a permission grant or a GUI. The [test lab](test-lab.md) runs checks 2 to 8 unattended in a VM with a lab certificate, pre granted permissions and Accessibility (lab item 9); check 1, with the real team key, stays on the release checklist.
 
 1. `make app` builds and signs `bin/Berth.app`; `codesign --verify --deep --strict bin/Berth.app` passes and `codesign -dv` shows team `XPJ7XA42J4` and `com.wesleybldc.berth`.
 2. With `berthd` running (`bin/berthd` or the bundle's), open `bin/Berth.app`: the menu bar shows the template icon and the number of live sessions; "Open Berth" shows the window with the same sessions as `berth ps`.
@@ -223,7 +225,7 @@ Defaults taken while he was away; each is cheap to reverse before M5 closes.
 4. **All four binaries inside the bundle, beside each other in `Contents/Helpers`**, so `paths.Beside` and every pin stay as they are and `berth` never collides with `Berth` on a case insensitive volume; the person's `berth` becomes a symlink into the bundle.
 5. **An accessory app** (`LSUIElement`), no Dock icon.
 6. **No App Sandbox, no entitlements**, hardened runtime.
-7. **The `berthd` pin for the app lands with the first method that checks it** (item 7), the screen and control methods; listing and watching stay open to the owner socket.
+7. **The `berthd` pin for the app lands with the first method that checks it** (item 7), the screen and control methods; listing and watching stay open to the owner socket. Superseded by decision 13: the pin shipped before any method uses it.
 8. **Input as unary batches** (`SendInput`), since Connect has no client streaming over HTTP/1.1; it takes no `request_id`, so a retry never types twice.
 9. **No screen stream machine**; a `Control` machine with `Agent`, `Person` and `Ended`, 6 legal pairs, and the held queue bounded at 1,000 messages or 16 MiB, overflow closing the agent's connection.
 10. **The app never registers the login item or asks for notifications or Screen Recording on its own**; each starts from a button.
@@ -239,7 +241,6 @@ Defaults taken while he was away; each is cheap to reverse before M5 closes.
 ## Exit notes (2026-11-17, items 1 to 5)
 
 Built on branch `m5`, rebased onto `main` at 4884507 (M4 merged): the plan with ADR 0019, the app core, the app shell and bundle, the make targets, then `ARCHITECTURE.md`, each with its own commit, with `make check` passing.
-Items 6 to 15 remain.
 
 - **No proto change** in this pass; `buf breaking` is clean against `main`, and no `ErrorReason` was added.
 - **`BerthSocket`** took `Socket.swift` (less the value channel check, now `ValueChannel.swift` in `BerthNativeCore`) and `Paths.swift` from `native/`; `UnixSocket` gained `readSome` and `shutdownBoth` for streams.
@@ -252,7 +253,6 @@ Items 6 to 15 remain.
 
 - **Quadratic `removeFirst`.** `HTTPReader` and `EnvelopeReader` drop consumed bytes with `Array.removeFirst`, which copies the rest each time; a large message arriving in small reads costs time quadratic in its size. A read index that compacts now and then fixes it.
 - **The head cap is approximate.** `HTTPReader.head` counts line lengths without their line endings, and a single line may hold up to 64 KiB of buffered bytes before the cap trips, so a head can pass somewhat over 64 KiB.
-- **Unicode versions can drift.** The Swift `shown` asks ICU which characters are graphic and Go uses its own Unicode tables; a character assigned in one version and not the other can be escaped on one side only. The fixture uses only long assigned code points, so it cannot catch this.
 - **No total deadline on unary reads.** A unary call bounds each read at 10 seconds, but a server that sends one byte every few seconds can hold a call open for as long as it likes; a deadline over the whole call fixes it.
 - Added after the review: a fixture test that the Swift `berthDaemonRequirement` equals Go's release requirement for berthd byte for byte, and bundle checks that no binary carries entitlements and that `berth-app-probe` is not in the bundle.
 
@@ -270,7 +270,6 @@ Items 6 to 15 remain.
 ## Exit notes (2026-11-17, items 6 to 8)
 
 Built on branch `m5b` from local `main` at 8bebbe1: the login item, the app pin, then `WatchNeeds` with the app's notifications, each with its own commit and `make check` passing, then this file and `ARCHITECTURE.md`.
-Items 9 to 15 remain; they need the control machine, the screencast and the hold and replay in the CDP proxy, so they were not started.
 
 - **Proto changes, additive only, `buf breaking` clean against `main`:** `StatusResponse.executable` (7); the method option `app` (50002) beside `agent`; `ERROR_REASON_NOT_BERTH_APP` (25, after `ENTITY_NOT_FOUND`); `proto/berth/v1/needs.proto` with `NeedsService.WatchNeeds`, `Need` (id, kind, secret name, owner name, browser kind), `NeedKind`, `NeedEvent`, `NeedsSnapshot`, `NeedChange`. `ERROR_REASON_CONTROL_HELD` waits for item 11.
 - **Login item:** `LoginItemModel` in `BerthAppCore` (status, which `berthd` answers, the last error, all escaped) over a `LoginItemService` protocol; `LaunchAgentLoginItem` in the app wraps `SMAppService.agent(plistName:)`. Swift tests check that refreshing never registers, that the buttons register and unregister, and that failures and a foreign `berthd`'s facts are escaped; the Go e2e checks that `Status` names the running `berthd`; the plist keys were already in the bundle check.

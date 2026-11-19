@@ -18,7 +18,7 @@ Hiding calls is not security; scope plus Touch ID for power actions is.
 
 E3 item 4 built this for the agent socket: the owner issues a session, `berthd` keeps only the token's hash, and every agent method there needs the token in a header.
 "Their own process tree" became, provisionally, the tree under the first caller's highest ancestor that runs as the agent user, bound on first use; the picks and limits are in [the E3 plan](../plans/e3-isolated-agents.md#item-4-session-tokens-bound-to-the-agent-uid-and-its-process-tree).
-Agent sessions do not yet scope browser sessions or CDP; that comes with M4.
+M4 item 7 extended the scope to browsers: an agent session sees and closes only the managed browsers it opened, each behind its own CDP token.
 
 The token is held as a Go string in `berthd` and `berth` (HTTP headers and proto fields require strings).
 It is a revocable, scoped bearer credential that never grants reading a value, so it is not a secret value under invariant 7; it is still kept out of logs, event notes, errors and the request log, and only its SHA-256 is stored.

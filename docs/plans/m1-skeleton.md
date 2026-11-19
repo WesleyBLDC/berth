@@ -1,5 +1,7 @@
 # M1: Skeleton
 
+Status: Done; every build below is on `main`, and later milestones extended each one.
+
 Goal: the empty frame every later feature drops into: repository rules, schema, state machine kit, store, daemon and recovery.
 
 ## Builds

@@ -1,5 +1,7 @@
 # E2: Terminal secrets
 
+Status: E2a is Done; the maintainer's manual check with real signing and Touch ID passed on 2026-11-17 (below). E2b has [its own plan](e2b-header-proxy.md).
+
 Goal: agents store and use Keychain secrets from the terminal without ever reading them, and Berth shows who holds what.
 Design: [ARCHITECTURE.md](../../ARCHITECTURE.md#secrets-store-and-use-never-read) and ADR 0012.
 
@@ -56,13 +58,11 @@ Neither `RedeemUseTicket` nor `GrantSecret` is on the agent surface. Agents get 
 | 6 | Integrate | Wiring and e2e | `internal/berthd` handlers and actors, `test/e2e/secrets_test.go`, `.claude/hooks/guard-bash.sh` update, a `berth-secrets` skill | Canary e2e: request, store, grant, `berth run` sees it, a different executable is refused, the canary appears in no log, response or database row |
 
 Items 2 to 5 run in parallel after item 1 lands; item 6 runs after them.
-Touch ID and the dialog need a person, so e2e uses a test approver selected only by `BERTH_TEST_APPROVER=1` in a test `BERTH_HOME`, and one manual check proves the real dialog.
+Touch ID and the dialog need a person, so the end to end tests use a fake helper written in Go (`internal/testutil/fakehelper`, chosen through `BERTH_NATIVE` only in `berth_e2e` builds), and one manual check proved the real dialog.
 
 ## Exit gate
 
-`make check` passes with the canary e2e, the manual Touch ID check is recorded here, the agent safety checklist is walked for E2a, and the wiki plan is updated.
-
-E2a is done: the manual check below passed.
+`make check` passes with the canary e2e, the manual Touch ID check is recorded here, and the agent safety checklist is walked for E2a. All three hold.
 
 ### Manual check (2026-11-17)
 
@@ -111,18 +111,3 @@ stderr carries short diagnostics and never a value.
 - An event `Note` never holds the requester's reason, because an agent controls that text.
 - `UseRefused` goes on the grant entity when a grant exists, else on the secret entity.
 - The grant machine has no Failed state; item 3 decides where `GrantFailed` goes.
-
-## Notes for the integration item (item 6)
-
-- From item 3: two `RequestSecret` calls with different request IDs for the same Pending secret would open two dialogs; the shell must hold one prompt per secret at a time (single flight keyed by name) and answer the second caller with the first outcome.
-- From item 3: send secret `UseRefused` only to a Stored secret with no grant; a name that is not Stored is `SECRET_NOT_FOUND`, never an event.
-- From item 3: `GrantSecret` always creates a new grant row and entity; `GrantFailed` ends in Denied.
-- Add the secret and grant state diagrams to the wiki architecture page.
-- From item 4: `native.DefaultHelper` guesses `/Applications/Berth.app/Contents/MacOS/berth-native`; until the app exists (M5), `berthd` and `berth run` should find `berth-native` beside their own executable, with a `BERTH_NATIVE` override for tests.
-- From item 4: grants must store the path `ExecIdentity` resolved (symlinks followed), because `berth run` sends `LookPath` plus `Abs` without resolving; `berthd` always identifies the executable itself.
-- From item 4: `peer` uses a raw `proc_info` syscall with a hardcoded offset; keep its test, and revisit with a libproc wrapper if a macOS update breaks it.
-- From item 5: wire `cli.Env.Read` in `cmd/berth/main.go` to `native.Read`.
-- From item 5: a terminal Ctrl-C reaches a child twice (process group plus forwarding); forward SIGINT only when the child is in its own process group.
-- Safety checklist, known limit: the executable can change between `AuthorizeUse` hashing it and `berth run` starting it. Record it; closing it needs exec by file descriptor or a signed binary requirement, which is E2b.
-- Done in item 6: the `berth-native` store dialog uses the brand palette from `brand/colors/tokens.json` (navy gradient background, Mist text, secondary text, brass only on the Save button) and the 256 px app icon from `brand/app-icon/`, embedded in the binary.
-  Confirm shows only the system Touch ID sheet, which has no styling to change.

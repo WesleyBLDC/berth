@@ -1,5 +1,7 @@
 # M0: Spike
 
+Status: Done on 2026-11-16; all five proofs passed and the results are [ADR 0015](../adr/0015-m0-spike-results.md), with the code under the tag `m0-spike`.
+
 Goal: prove the five parts that could force a redesign, before any real code exists.
 Everything lives in `spike/` and is deleted when M0 closes; only the findings survive, as decision records.
 

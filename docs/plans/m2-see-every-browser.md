@@ -1,5 +1,7 @@
 # M2: See every browser
 
+Status: Built (items 1 to 10). The exit gate's check, `berth ps` against real Chrome profiles and a Playwright MCP browser, becomes an unattended VM test in the [test lab](test-lab.md) (item 7).
+
 Goal: `berth ps` lists every Chromium family browser running on this Mac, says what it is (Chrome, Chrome for Testing, Chromium, Edge, Brave, a headless shell), whether Playwright or Puppeteer drives it, whether it is headless and how its DevTools protocol is exposed, and who started it (an agent, a terminal, an app or the person); `berth inspect` shows one in detail, `berth stop` ends one, and `berth leftovers` lists and stops the browsers whose owner has gone.
 M2 only observes: Berth launches nothing and speaks no CDP until M4.
 The maintainer was away when this plan was written and asked not to be blocked; every choice that is his to make is listed under [Decisions for the maintainer](#decisions-for-the-maintainer), with the default taken.
@@ -280,12 +282,11 @@ Built on branch `m2a` from `main` at 6de1d7b: items 1 to 10, each with its own c
 - M3 added the `Seen` event, so the session machine has 18 legal pairs, not the 17 in the design above, and every session has a row from first sight (the scan loop note above, that a steady session has no row, no longer holds).
 - M4 did not add `Launching`, `Ready` and `Failed` to this machine: it built a separate browser machine linked to the observed session ([the M4 plan](m4-managed-chromium.md#the-managed-browser-machine)).
 - `WatchSessions` (M3) joined the three methods here; none is on the agent surface.
-- Found by the audit of 2026-11-17, not fixed yet: `--json` output is not escaped beyond what JSON needs, so C1 controls, DEL and bidi overrides print raw there (checklist item 5 above overstates it); kept text is not made valid UTF-8, so one invalid byte in a profile folder fails `ListSessions` for every session; a live browser whose executable file was replaced or deleted is recorded `Stopped`; and a session left in `Stopping` by a restart stays there.
+- The audit of 2026-11-17 found four gaps, all fixed since: `--json` escapes every rune that is not graphic, kept text is made valid UTF-8, a live browser whose executable was replaced keeps its last path marked `executable_changed`, and a session left in `Stopping` by a restart gets its signal and grace timer again at boot.
 
 ### What remains for the exit gate
 
-- The maintainer runs `berth ps` on his Mac with his own Chrome and a Playwright MCP browser open, and confirms the owners read as planned.
-- `ARCHITECTURE.md` marks M2 done after that check.
+`berth ps` with real Chrome profiles and a Playwright MCP browser open, confirming the owners read as planned ([test lab](test-lab.md) item 7); `ARCHITECTURE.md` then marks M2 done.
 
 ### Review fixes (2026-11-17)
 

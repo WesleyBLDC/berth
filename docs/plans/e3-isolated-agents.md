@@ -1,5 +1,7 @@
 # E3: Isolated agents
 
+Status: In progress. Items 3, 4 and 6 are built and tested as one user; the spike and every cross user check move into the [test lab](test-lab.md) (item 11), where a real second user is created inside a VM, so they no longer wait on the maintainer's admin password.
+
 Goal: protect secrets and your files from a hostile agent that can run arbitrary code, which E2a explicitly does not (see the threat model in `ARCHITECTURE.md`).
 Added 2026-11-16 at Wesley's request, after the E2a reviews showed that a broker cannot fully defend against code running as the same user.
 Rewritten as work items on 2026-11-17, after the scout compared the options; the decision is [ADR 0018](../adr/0018-agents-run-as-a-separate-macos-user.md).
@@ -68,13 +70,13 @@ Configuration inside the repository (`.git/config`, git hooks, a project `.npmrc
 | 7 | `berth agent start`, with the optional Seatbelt profile | Launch as another user needs D3; the Seatbelt profile does not | `internal/cli/agent_start.go`, a Seatbelt profile | Seatbelt on: a write outside the workspace fails (one user, no admin); by hand: the harness runs as the agent user in the workspace |
 | 8 | Browser brokering | Launch as another user needs D3; the rest is M4 item 7 | M4's `BrowserDriver`, the `OpenAgentBrowser` and `CloseAgentBrowser` agent methods of M4 item 7 | The agent gets only a CDP proxy endpoint and token; a Chrome the agent starts itself is listed as not brokered |
 | 9 | Honest limits | No | `ARCHITECTURE.md` honest limits | Every limit below is written down with the item or milestone that narrows it |
-| 10 | Acceptance tests | Yes for the cross user ones | `test/e2e/agent_*_test.go`, a by hand script | The [acceptance tests](#acceptance-tests) |
+| 10 | Acceptance tests | No once the [test lab](test-lab.md) exists: the cross user ones run in a VM (lab item 11) | `test/e2e/agent_*_test.go`, the lab's E3 suite | The [acceptance tests](#acceptance-tests) |
 | 11 | Later: the Linux VM backend and an Endpoint Security watch item | Yes | New ADRs | Not part of the E3 exit gate |
 
 ### Item 1: the spike
 
 Needs the maintainer's admin password and creates a throwaway second user; it decides D3 and moves ADR 0018 from Proposed to accepted or revised.
-A guided spike script in the maintainer's scratch folder (not in this repository) creates and removes that user, runs a probe as it through each launch path, and measures the audit session and launchd domain, pasteboard and GUI access, reads of the owner's home, signals, `kern.procargs2`, `proc_pidinfo` and kqueue across users in both directions, a Playwright browser and `claude --version`, ending in a summary table.
+The guided spike script in the maintainer's scratch folder (not in this repository) is superseded by the test lab, which runs the same probes unattended in a VM with passwordless sudo (lab item 11): it creates and removes that user, runs a probe as it through each launch path, and measures the audit session and launchd domain, pasteboard and GUI access, reads of the owner's home, signals, `kern.procargs2`, `proc_pidinfo` and kqueue across users in both directions, a Playwright browser and `claude --version`, ending in a summary table.
 Questions, each answered with the command run and its output:
 
 1. For each launch path (`sudo -u`, `ssh berthagent@localhost`, a root LaunchDaemon that starts a process as the user, `launchctl asuser`): which audit session id (`asid` in the audit token) and launchd domain does the agent process land in, and can it read the owner's pasteboard (`pbpaste`), take a screenshot, or post events to the owner's windows?
@@ -225,9 +227,7 @@ These go into `ARCHITECTURE.md` when the items that create them land.
 
 - Refresh the stat after a root owned symlink jumps to `/` as the last component, so the final check reads the right folder (only root can set this up).
 - Rate limit the warning logged for each refused connection, so an agent cannot flood the log.
-
 - The folder check reads only the owner and mode bits and ignores ACLs, so an ACL that grants another user write on a folder in the agent socket's path passes the check. Setup creates the folders without ACLs; the check should also refuse an ACL entry that grants write or delete to anyone but the owner.
-- Done in item 4: `RequestSecret` is limited per agent session to 3 open store dialogs and 10 an hour.
 - A process that execs another image in place keeps its pid and start time, so a signature or arguments cached for it describe the old image until the session ends.
 - A failed argument read is cached as nil, so a process whose arguments could not be read once is never read again.
 - `AuthorizeUse` prompts have no per session limit yet, unlike store dialogs.
@@ -235,10 +235,6 @@ These go into `ARCHITECTURE.md` when the items that create them land.
 - Close `AuthorizeProxy`, `WatchProxySession` and `EndProxySession` on the agent socket now that agent sessions get their proxy through `StartProxy` (item 6).
 - Run the `berth-proxy` of an agent session as the runner user once D3's launch helper exists, so a flaw in it no longer runs with the owner's rights (item 6).
 - `AdmitStore` reads the session's state from the database while holding the agents mutex, which serializes store admissions behind a database read.
-- Done after the audit of 2026-11-17: `ListSecrets` on the agent socket returned every grant's consumer facts (the owner's executable paths and hashes, proxy hosts, headers, path globs, passed variable names and use counts); it now answers the agent socket with names and states only.
-- Done after the audit: `StartProxy` checked the grants before its per session limit, and each `NO_GRANT` answer writes a `UseRefused` row, so an agent session could add rows without limit; it now counts the call first.
-- Done after the audit: proxy session, grant and secret actors had no `final` states, so every proxy run left one actor goroutine until `berthd` stopped; proxy session `Ended` and `Lost`, grant `Denied`, `Stale` and `Revoked`, and secret `Denied`, `Failed` and `Removed` are now final.
-- Done after the audit: the proxy `berthd` starts for an agent session tunnelled a `CONNECT` to any target that is not granted, so the agent reached loopback services and the local network through a process of the owner; `berthd` now starts it in agent mode, which refuses every target that is not granted.
 - From the audit: `secrets.startTimes` and the use tickets of calls that are never redeemed are freed only by a later call, so they outlive an ended agent session.
 
 ## Acceptance tests
@@ -250,18 +246,18 @@ These go into `ARCHITECTURE.md` when the items that create them land.
 | The owner socket refuses the agent uid | Unit, one user | Built (M1) |
 | Without a valid session token every agent method is refused; a valid token works; expired and revoked tokens are refused | e2e, one user | Built (item 4) |
 | The same token from a process outside the session's tree (one launchd adopted) is refused | e2e, one user | Built (item 4) |
-| A token from another uid is refused | Unit, one user; by hand, real second user | Built as a unit test (item 4); by hand planned |
+| A token from another uid is refused | Unit, one user; lab VM, real second user | Built as a unit test (item 4); the VM run planned (lab item 11) |
 | One session can hold at most 3 store dialogs and start 10 an hour | e2e, one user | Built (item 4) |
 | An agent's `berth run --proxy` gets injection through a `berth-proxy` whose parent is `berthd`; the canary reaches no agent output, log or database file | e2e, one user | Built (item 6) |
 | Killing the agent's `berth`, or ending its agent session, stops the proxy `berthd` started | e2e, one user | Built (item 6) |
 | `StartProxy` without a valid token is refused and starts nothing; a fifth concurrent proxy, or a 31st start in an hour, for one session is refused | e2e and unit, one user | Built (item 6) |
-| The agent user cannot signal, trace or read the `berth-proxy` of its session | By hand, real second user | Planned (item 6) |
+| The agent user cannot signal, trace or read the `berth-proxy` of its session | Lab VM, real second user (lab item 11) | Planned (item 6) |
 | Revoking or expiring an agent session stops the proxy sessions authorized through it | Unit, one user | Built (item 4) |
 | The token never reaches a log, a database file or an output other than the one that issued it | e2e, one user | Built (item 4) |
-| From the agent identity: reading your home, Keychain items, `berth.db` and dotfiles fails | By hand, real second user | Planned (items 1, 2) |
-| The agent cannot signal or trace the runner consumer or `berthd` | By hand, real second user | Planned (item 5) |
-| A consumer started on behalf of an agent sees the runner's `HOME` and `PATH`, not the agent's | One user e2e for the protocol; by hand for the uid | Planned (item 5) |
-| A hostile agent script that tries every E2a review attack (driving signed binaries, fake daemon, wrapper helpers, tool configuration) gets no secret value | By hand, real second user | Planned (item 10) |
+| From the agent identity: reading your home, Keychain items, `berth.db` and dotfiles fails | Lab VM, real second user (lab item 11) | Planned (items 1, 2) |
+| The agent cannot signal or trace the runner consumer or `berthd` | Lab VM, real second user (lab item 11) | Planned (item 5) |
+| A consumer started on behalf of an agent sees the runner's `HOME` and `PATH`, not the agent's | One user e2e for the protocol; lab VM for the uid | Planned (item 5) |
+| A hostile agent script that tries every E2a review attack (driving signed binaries, fake daemon, wrapper helpers, tool configuration) gets no secret value | Lab VM, real second user (lab item 11) | Planned (item 10) |
 | A Chrome the agent starts itself is not brokered; one launched through Berth gives the agent only the CDP proxy | e2e with M4 | The Berth launched half built (M4 item 7, `TestAgentBrowserThroughTheAgentSocket`); the agent's own Chrome planned (item 8) |
 
 ## Order

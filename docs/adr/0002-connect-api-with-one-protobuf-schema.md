@@ -1,6 +1,6 @@
 # 0002: Connect API with one Protobuf schema
 
-Status: accepted, 2026-11-16
+Status: accepted, 2026-11-16; the Swift client line is superseded by [ADR 0019](0019-berth-app-speaks-connect-json-over-the-socket.md) (the app speaks Connect JSON over HTTP/1.1, not grpc-swift)
 
 ## Context
 

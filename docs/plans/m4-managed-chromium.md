@@ -1,5 +1,7 @@
 # M4: Managed Chromium
 
+Status: Built (items 1 to 9). The exit gate's check (Playwright MCP through `--cdp-header`) and the [headful checks](#checks-that-need-a-headful-browser) become unattended VM tests in the [test lab](test-lab.md) (item 7).
+
 Goal: `berthd` launches Chromium itself, over a private CDP pipe and on a profile folder Berth owns, so no debugging port ever exists; one live browser per profile; and an agent reaches that browser only through a loopback CDP proxy that needs a per browser token and refuses the methods that reach beyond the agent's own session ([ADR 0009](../adr/0009-cdp-proxy-refuses-cross-session-methods-from-day-one.md)).
 This is the base that E3 item 8 (browser brokering), M5 (live view and takeover) and M6 (the atomic fill) build on.
 The maintainer was away when this plan was written and asked not to be blocked; every choice that is his to make is listed under [Decisions for the maintainer](#decisions-for-the-maintainer), with the default taken.
@@ -8,7 +10,7 @@ The maintainer was away when this plan was written and asked not to be blocked; 
 
 - **M0 proof 2** ([ADR 0015](../adr/0015-m0-spike-results.md), code under the tag `m0-spike`): Chrome over `--remote-debugging-pipe` in its own process group; a Go proxy on loopback gated by an `X-Berth-Token` header; Playwright MCP 0.0.85 drove it with `--cdp-endpoint` and `--cdp-header`; Berth's own calls used ids from 1,000,000,000 on the same pipe; tokens must never travel as command line flags.
 - **M2** sees every browser on the Mac as an observed session (`session/<pid>-<start µs>`), parses `--user-data-dir` and `--remote-debugging-pipe` from its arguments, and stops one by its process instance. A browser Berth launches shows up there too, with its owner chain running through `berthd`.
-- **E3 item 4** (branch `e3b`, about to merge): agent sessions with a token in the `berth-agent-token` header, bound to the agent uid and the process tree of the first caller; `api.AgentSession(ctx)` names the caller's session on the agent socket. M4's agent methods are scoped by it.
+- **E3 item 4**: agent sessions with a token in the `berth-agent-token` header, bound to the agent uid and the process tree of the first caller; `api.AgentSession(ctx)` names the caller's session on the agent socket. M4's agent methods are scoped by it.
 - `go.mod` has no WebSocket and no CDP library. The spike used `github.com/coder/websocket` v1.8.15.
 
 ### Checked on this Mac (2026-11-17)
@@ -193,10 +195,10 @@ A thin Go MCP server over stdio for agents without a shell, reaching the agent s
 - A message without an id is a notification and runs nothing, so a tool with side effects is always a request the client sees answered; a line over 1 MiB gets an error reply and the session goes on; after a signal no token file is written.
 - JSON-RPC 2.0 over stdio is hand rolled (decision 14), and `berth-mcp` links no UI module (`testutil.RequireNoUIModules`, shared with `berth-proxy`'s test).
 
-### Live view and takeover hooks for M5 (planned)
+### Live view and takeover hooks for M5
 
 - The pipe's own sessions (`Call` with a `sessionID`) are what M5's screencast uses: `Target.attachToTarget` with `flatten`, then `Page.startScreencast` on Berth's id range, invisible to the agent through the session filter above.
-- Takeover pauses the agent: the proxy holds the agent's messages in a bounded queue (the same hold M6's atomic fill needs, [ADR 0008](../adr/0008-atomic-fill-with-the-agent-paused.md)), while the person's input goes through `Input.dispatch*` on Berth's session; release replays the queue in order. M5 adds a `Control` machine (`Agent`, `Person`, `Paused`) for that, not a flag.
+- Takeover pauses the agent: the proxy holds the agent's messages in a bounded queue (the same hold M6's atomic fill needs, [ADR 0008](../adr/0008-atomic-fill-with-the-agent-paused.md)), while the person's input goes through `Input.dispatch*` on Berth's session; release replays the queue in order. M5 adds a `Control` machine (`Agent`, `Person`, `Ended`, [M5 plan](m5-mac-app.md#live-view-and-takeover-for-managed-browsers-items-9-to-12)) for that, not a flag.
 - The browser machine gains no states for M5: control is a separate machine per browser.
 
 ## Contract (proto additions)
@@ -260,7 +262,7 @@ Items 3 and 4 can run in parallel after the contract; 5 joins them; 6 needs 5's 
 
 ## Exit gate
 
-`make check` passes with the new tests (the e2e browser tests run, or skip with the reason when no Chromium is found); the maintainer launches a browser with `berth browser launch`, connects Playwright MCP to the endpoint with `--cdp-header`, drives a page, and sees a denied method refused; items 7 and 8 are built once E3 item 4 is on `main`; the agent safety checklist is walked for M4; `ARCHITECTURE.md` marks M4 done.
+`make check` passes with the new tests (the e2e browser tests run, or skip with the reason when no Chromium is found); a browser launched with `berth browser launch` is driven by Playwright MCP through `--cdp-header`, with a denied method refused ([test lab](test-lab.md) item 7); the agent safety checklist is walked for M4; `ARCHITECTURE.md` marks M4 done.
 
 ## Honest limits
 
@@ -286,6 +288,8 @@ Items 3 and 4 can run in parallel after the contract; 5 joins them; 6 needs 5's 
 - **A target's move to Chrome's own pages is seen only with discovery on.** Without `Target.setDiscoverTargets`, Chrome sends no `Target.targetInfoChanged` (checked headless on 2026-11-17), so a session to a page the person navigates to `chrome://` in a headful browser stays attached.
 
 ## Checks that need a headful browser
+
+These move into the [test lab](test-lab.md) (item 7), which runs a headful browser against the VM's real pasteboard; until then they are checked only headless.
 
 Checked headless on 2026-11-17 against chrome-headless-shell 156.0.8078.4, through the pipe:
 
@@ -315,8 +319,7 @@ Defaults taken while he was away; each is cheap to reverse before M4 closes.
 
 ## Exit notes (2026-11-17)
 
-Built on branch `m4`, rebased onto `main` at a5e8259 (E3 item 4 merged): items 1 to 6 and the end to end half of item 9, each with its own commit, then `ARCHITECTURE.md`, with `make check` passing.
-Items 7 (agent methods) and 8 (`berth-mcp`) remain; E3 item 4 is now on `main`, so item 7 can start.
+Built on branch `m4`, rebased onto `main` at a5e8259: items 1 to 6 and the end to end half of item 9, each with its own commit, then `ARCHITECTURE.md`, with `make check` passing; items 7 and 8 followed (below).
 
 - **Contract.** As planned; reasons 19 to 21 after E3's 16 to 18, `buf breaking` clean against `main`. `LaunchBrowserResponse.cdp_token` joins `CreateAgentSessionResponse.token` in `TestNoFieldCarriesAValue`'s list of deliberate one time tokens.
 - **Driver** (`internal/adapters/cdppipe`): a fake Chrome (the test binary re-run with the pipe flags) covers framing, id routing and Berth's own sessions; the real test drives Playwright's headless shell 1248: `Browser.getVersion`, `Target.createTarget`, `Target.attachToTarget`, `Page.navigate` to a `data:` URL, the title read back, and `Kill` empties the process group. `procscan.Ref` gives the launched process's start time.
@@ -366,6 +369,5 @@ Built on branch `m4b` from `main` at e729c37: item 7, then item 8, then the revi
 ### Follow ups
 
 - The audit's medium finding stays open: a close during a launch still waits for the launch (the entity's turn is held while `Spawn` runs), and a browser whose `Launch` has not returned is not killed at shutdown until `Spawn` gives up after its 30 second timeout. The shared launch path changed who waits, not the actor's turn, so making `Spawn` return at once remains the fix (see the note under the browser machine).
-
 - Chrome's crashpad handler can still write into an agent profile while it is deleted, leaving a few files behind until the next boot's sweep.
 - A launch that fails after the profile folder was made (an actor that could not take the event, only when `berthd` stops) leaves an empty folder; the next boot's sweep removes an agent one, an owner one stays empty.
