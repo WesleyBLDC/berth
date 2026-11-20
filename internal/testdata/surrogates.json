@@ -1,0 +1,61 @@
+{
+  "comment": "JSON string bodies with surrogate escapes, and whether one is lone; strictjson and cdppolicy must refuse exactly the lone ones",
+  "cases": [
+    {
+      "escape": "\\ud800",
+      "lone": true
+    },
+    {
+      "escape": "\\udc00",
+      "lone": true
+    },
+    {
+      "escape": "\\uD800",
+      "lone": true
+    },
+    {
+      "escape": "\\udc00\\ud800",
+      "lone": true
+    },
+    {
+      "escape": "\\ud800\\u0041",
+      "lone": true
+    },
+    {
+      "escape": "x\\ud83d",
+      "lone": true
+    },
+    {
+      "escape": "\\ud800\\ud800",
+      "lone": true
+    },
+    {
+      "escape": "\\ud83dx\\ude00",
+      "lone": true
+    },
+    {
+      "escape": "\\ud83d\\ude00\\udfff",
+      "lone": true
+    },
+    {
+      "escape": "\\ud83d\\ude00",
+      "lone": false
+    },
+    {
+      "escape": "\\uD83D\\uDE00",
+      "lone": false
+    },
+    {
+      "escape": "\\\\ud800",
+      "lone": false
+    },
+    {
+      "escape": "\\u0041\\u00e9",
+      "lone": false
+    },
+    {
+      "escape": "\\udbff\\udfff",
+      "lone": false
+    }
+  ]
+}

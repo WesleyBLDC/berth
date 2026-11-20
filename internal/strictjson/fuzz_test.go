@@ -3,6 +3,7 @@ package strictjson_test
 import (
 	"bytes"
 	"encoding/json"
+	"os"
 	"reflect"
 	"testing"
 	"unicode/utf8"
@@ -143,6 +144,9 @@ func FuzzDecode(f *testing.F) {
 	} {
 		f.Add([]byte(s))
 	}
+	for _, c := range surrogateCases(f) {
+		f.Add([]byte(`{"mode":"` + c.Escape + `"}`))
+	}
 	f.Fuzz(func(t *testing.T, b []byte) {
 		var got fuzzLine
 		err := strictjson.Decode(b, &got)
@@ -180,4 +184,35 @@ func normal(l fuzzLine) fuzzLine {
 		}
 	}
 	return l
+}
+
+// surrogateCase is one entry of internal/testdata/surrogates.json, the lone surrogate seeds
+// strictjson and cdppolicy share.
+type surrogateCase struct {
+	Escape string `json:"escape"`
+	Lone   bool   `json:"lone"`
+}
+
+func surrogateCases(tb testing.TB) []surrogateCase {
+	tb.Helper()
+	raw, err := os.ReadFile("../testdata/surrogates.json")
+	if err != nil {
+		tb.Fatal(err)
+	}
+	var file struct {
+		Cases []surrogateCase `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &file); err != nil {
+		tb.Fatal(err)
+	}
+	return file.Cases
+}
+
+func TestDecodeRefusesExactlyTheLoneSurrogates(t *testing.T) {
+	for _, c := range surrogateCases(t) {
+		var got fuzzLine
+		if err := strictjson.Decode([]byte(`{"mode":"`+c.Escape+`"}`), &got); (err != nil) != c.Lone {
+			t.Errorf("%s: %v, want refused %v", c.Escape, err, c.Lone)
+		}
+	}
 }

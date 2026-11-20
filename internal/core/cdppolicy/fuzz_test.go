@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"net/url"
+	"os"
 	"regexp"
 	"slices"
 	"strconv"
@@ -69,6 +70,9 @@ var parseSeeds = []string{
 func FuzzParse(f *testing.F) {
 	for _, s := range parseSeeds {
 		f.Add([]byte(s))
+	}
+	for _, c := range surrogateCases(f) {
+		f.Add([]byte(`{"id":1,"method":"Page.enable","x":"` + c.Escape + `"}`))
 	}
 	f.Fuzz(func(t *testing.T, raw []byte) {
 		m, err := cdppolicy.Parse(raw)
@@ -355,4 +359,35 @@ func FuzzLoadable(f *testing.F) {
 			t.Fatalf("Loadable(%q): net/url reads scheme %q, the policy %q", u, parsed.Scheme, scheme)
 		}
 	})
+}
+
+// surrogateCase is one entry of internal/testdata/surrogates.json, the lone surrogate seeds
+// strictjson and cdppolicy share.
+type surrogateCase struct {
+	Escape string `json:"escape"`
+	Lone   bool   `json:"lone"`
+}
+
+func surrogateCases(tb testing.TB) []surrogateCase {
+	tb.Helper()
+	raw, err := os.ReadFile("../../testdata/surrogates.json")
+	if err != nil {
+		tb.Fatal(err)
+	}
+	var file struct {
+		Cases []surrogateCase `json:"cases"`
+	}
+	if err := json.Unmarshal(raw, &file); err != nil {
+		tb.Fatal(err)
+	}
+	return file.Cases
+}
+
+func TestParseRefusesExactlyTheLoneSurrogates(t *testing.T) {
+	for _, c := range surrogateCases(t) {
+		_, err := cdppolicy.Parse([]byte(`{"id":1,"method":"Page.enable","x":"` + c.Escape + `"}`))
+		if (err != nil) != c.Lone {
+			t.Errorf("%s: %v, want refused %v", c.Escape, err, c.Lone)
+		}
+	}
 }
