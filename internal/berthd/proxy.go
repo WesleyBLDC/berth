@@ -17,6 +17,7 @@ import (
 	"berth/internal/core/ports"
 	"berth/internal/core/proxysession"
 	"berth/internal/core/secret"
+	"berth/internal/proxyctl"
 	"berth/internal/token"
 )
 
@@ -203,9 +204,9 @@ func (s *secrets) openSession(ctx context.Context, peer ports.Peer, grants []por
 }
 
 // monitor makes the session Lost when the proxy exits (kqueue NOTE_EXIT) or opens no watch
-// stream within readyTimeout.
+// stream within proxyctl.ReadyTimeout.
 func (s *secrets) monitor(ps *proxySession, exited <-chan struct{}) {
-	timer := time.NewTimer(s.readyTimeout)
+	timer := time.NewTimer(proxyctl.ReadyTimeout)
 	defer timer.Stop()
 	for {
 		select {

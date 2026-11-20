@@ -46,7 +46,7 @@ func (s *secrets) StartProxy(ctx context.Context, req *berthv1.StartProxyRequest
 			return send(&berthv1.StartProxyResponse{Outcome: berthv1.UseOutcome_USE_OUTCOME_NO_GRANT})
 		}
 	}
-	// The proxy outlives this call by up to stopWait, so it hangs off berthd's context.
+	// The proxy outlives this call by up to proxyctl.StopTimeout, so it hangs off berthd's context.
 	p, err := s.StartProxyProcess(s.ctx) //nolint:contextcheck // see above
 	if err != nil {
 		s.Log.Error("cannot start berth-proxy", "agent_session", agent, "err", err)
@@ -61,7 +61,7 @@ func (s *secrets) StartProxy(ctx context.Context, req *berthv1.StartProxyRequest
 	s.mu.Unlock()
 	// The exit comes from kqueue NOTE_EXIT, which fires before the child is reaped; a child already
 	// gone fails the watch and counts as exited.
-	watchCtx, stopWatch := context.WithCancel(s.ctx) //nolint:contextcheck // the watch outlives the call by up to stopWait
+	watchCtx, stopWatch := context.WithCancel(s.ctx) //nolint:contextcheck // the watch outlives the call by up to proxyctl.StopTimeout
 	defer stopWatch()
 	exited, err := s.Exits(watchCtx, p.PID) //nolint:contextcheck // see above
 	if err != nil {
@@ -76,7 +76,7 @@ func (s *secrets) StartProxy(ctx context.Context, req *berthv1.StartProxyRequest
 		_ = p.Stdin.Close()
 		select {
 		case <-exited:
-		case <-time.After(s.stopWait):
+		case <-time.After(proxyctl.StopTimeout):
 			s.Log.Warn("berth-proxy did not exit in time; killed it", "pid", p.PID)
 			_ = p.Kill()
 			<-exited
@@ -85,7 +85,7 @@ func (s *secrets) StartProxy(ctx context.Context, req *berthv1.StartProxyRequest
 		_ = p.Wait()
 	}()
 
-	ctl, err := proxyproc.Handshake(p, req.GetNames(), proxyctl.ModeAgent, s.readyTimeout)
+	ctl, err := proxyproc.Handshake(p, req.GetNames(), proxyctl.ModeAgent, proxyctl.ReadyTimeout)
 	if err != nil {
 		s.Log.Warn("berth-proxy did not start for a caller", "agent_session", agent, "pid", p.PID, "err", err)
 		_ = p.Kill()

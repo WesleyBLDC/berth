@@ -63,8 +63,6 @@ type browsers struct {
 	// ListSessions include_stopped; endedOrder is their ids, oldest first.
 	ended      map[string]*tracked
 	endedOrder []string
-	// grace is stopGrace, shorter in tests.
-	grace time.Duration
 	// scanning admits one scan at a time.
 	scanning sync.Mutex
 
@@ -87,7 +85,7 @@ type tracked struct {
 
 func newBrowsers(ctx context.Context, d browsersDeps) *browsers {
 	b := &browsers{
-		browsersDeps: d, ctx: ctx, kick: make(chan struct{}, 1), grace: stopGrace,
+		browsersDeps: d, ctx: ctx, kick: make(chan struct{}, 1),
 		live: map[string]*tracked{}, ended: map[string]*tracked{}, scanner: discovery.NewScanner(d.Source, d.UID),
 		streams: newWatchSet(), backlog: watchBacklog,
 	}
@@ -344,7 +342,7 @@ func (b *browsers) runSession(entity string) machine.Runner[session.Event, sessi
 // terminate sends SIGTERM and, after the grace, StopTimedOut if the browser is still Stopping.
 func (b *browsers) terminate(ctx context.Context, id string, root ports.ProcessRef) {
 	b.signal(ctx, root, ports.SignalTerm)
-	time.AfterFunc(b.grace, func() {
+	time.AfterFunc(stopGrace, func() {
 		if st, err := b.state(b.ctx, session.Entity(id)); err == nil && st == session.Stopping {
 			b.send(b.ctx, id, session.Event{Kind: session.StopTimedOut})
 		}

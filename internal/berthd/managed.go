@@ -71,8 +71,6 @@ type managed struct {
 	managedDeps
 	ctx    context.Context
 	actors *actors[browser.State, browser.Event, browser.Effect]
-	grace  time.Duration
-	launch time.Duration
 
 	mu sync.Mutex
 	// live holds every browser not yet Closed; closed the newest closed ones, closedOrder oldest
@@ -110,7 +108,7 @@ type managedBrowser struct {
 
 func newManaged(ctx context.Context, d managedDeps) *managed {
 	m := &managed{
-		managedDeps: d, ctx: ctx, grace: closeGrace, launch: launchTimeout,
+		managedDeps: d, ctx: ctx,
 		live: map[string]*managedBrowser{}, closed: map[string]*managedBrowser{}, profiles: map[string]string{},
 		opened: map[string][]time.Time{}, seq: map[string]int{},
 	}
@@ -226,7 +224,7 @@ func (m *managed) runBrowser(entity string) machine.Runner[browser.Event, browse
 			m.mu.Unlock()
 			// The grace starts before the close is written, and the write runs beside the actor, so a
 			// browser that stopped reading its pipe is still killed on time.
-			time.AfterFunc(m.grace, func() {
+			time.AfterFunc(closeGrace, func() {
 				if st, err := loadState(m.ctx, m.Store, entity, browser.Initial); err == nil && st == browser.Closing {
 					m.send(m.ctx, id, browser.Event{Kind: browser.CloseTimedOut})
 				}
@@ -265,7 +263,7 @@ func (m *managed) spawn(ctx context.Context, b *managedBrowser) []browser.Event 
 	if stopping {
 		return failed("berthd is stopping")
 	}
-	launchCtx, cancel := context.WithTimeout(ctx, m.launch)
+	launchCtx, cancel := context.WithTimeout(ctx, launchTimeout)
 	defer cancel()
 	conn, err := m.Driver.Launch(launchCtx, ports.BrowserLaunch{
 		Executable: b.executable, ProfileDir: filepath.Join(m.profilesRoot(), b.profile), Headless: b.headless,
