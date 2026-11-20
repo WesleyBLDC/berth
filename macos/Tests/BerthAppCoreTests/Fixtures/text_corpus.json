@@ -1,0 +1,3066 @@
+[
+  {
+    "in": "00011b1f7f",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\x00\\x01\\x1b\\x1f\\x7f\"",
+    "quoted": "\"\\x00\\x01\\x1b\\x1f\\x7f\""
+  },
+  {
+    "in": "c280c285c29bc29f",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u0080\\u0085\\u009b\\u009f\"",
+    "quoted": "\"\\u0080\\u0085\\u009b\\u009f\""
+  },
+  {
+    "in": "e280aae280abe280ace280ade280ae",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u202a\\u202b\\u202c\\u202d\\u202e\"",
+    "quoted": "\"\\u202a\\u202b\\u202c\\u202d\\u202e\""
+  },
+  {
+    "in": "e281a6e281a7e281a8e281a9e2808ee2808fd89c",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u2066\\u2067\\u2068\\u2069\\u200e\\u200f\\u061c\"",
+    "quoted": "\"\\u2066\\u2067\\u2068\\u2069\\u200e\\u200f\\u061c\""
+  },
+  {
+    "in": "cc81",
+    "repeat": 1,
+    "valid": true,
+    "out": "́",
+    "quoted": "\"\\u0301\""
+  },
+  {
+    "in": "cc81cc82e2839d",
+    "repeat": 1,
+    "valid": true,
+    "out": "́̂⃝",
+    "quoted": "\"\\u0301̂⃝\""
+  },
+  {
+    "in": "61cc81",
+    "repeat": 1,
+    "valid": true,
+    "out": "á",
+    "quoted": "\"á\""
+  },
+  {
+    "in": "efb88f",
+    "repeat": 1,
+    "valid": true,
+    "out": "️",
+    "quoted": "\"\\ufe0f\""
+  },
+  {
+    "in": "f3a0848078",
+    "repeat": 1,
+    "valid": true,
+    "out": "󠄀x",
+    "quoted": "\"\\U000e0100x\""
+  },
+  {
+    "in": "e2839d",
+    "repeat": 1,
+    "valid": true,
+    "out": "⃝",
+    "quoted": "\"\\u20dd\""
+  },
+  {
+    "in": "e0a483",
+    "repeat": 1,
+    "valid": true,
+    "out": "ः",
+    "quoted": "\"\\u0903\""
+  },
+  {
+    "in": "eda080",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xed\\xa0\\x80\"",
+    "quoted": "\"\\xed\\xa0\\x80\""
+  },
+  {
+    "in": "edbfbf",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xed\\xbf\\xbf\"",
+    "quoted": "\"\\xed\\xbf\\xbf\""
+  },
+  {
+    "in": "eda0bdedb880",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xed\\xa0\\xbd\\xed\\xb8\\x80\"",
+    "quoted": "\"\\xed\\xa0\\xbd\\xed\\xb8\\x80\""
+  },
+  {
+    "in": "ff",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xff\"",
+    "quoted": "\"\\xff\""
+  },
+  {
+    "in": "c0af",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xc0\\xaf\"",
+    "quoted": "\"\\xc0\\xaf\""
+  },
+  {
+    "in": "e080af",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xe0\\x80\\xaf\"",
+    "quoted": "\"\\xe0\\x80\\xaf\""
+  },
+  {
+    "in": "f4908080",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xf4\\x90\\x80\\x80\"",
+    "quoted": "\"\\xf4\\x90\\x80\\x80\""
+  },
+  {
+    "in": "61c3",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"a\\xc3\"",
+    "quoted": "\"a\\xc3\""
+  },
+  {
+    "in": "c328",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xc3(\"",
+    "quoted": "\"\\xc3(\""
+  },
+  {
+    "in": "f48fbfbf",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\U0010ffff\"",
+    "quoted": "\"\\U0010ffff\""
+  },
+  {
+    "in": "efbfbfefbfbeefb790",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\uffff\\ufffe\\ufdd0\"",
+    "quoted": "\"\\uffff\\ufffe\\ufdd0\""
+  },
+  {
+    "in": "efbfbd",
+    "repeat": 1,
+    "valid": true,
+    "out": "�",
+    "quoted": "\"�\""
+  },
+  {
+    "in": "c2ade2808befbbbf",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u00ad\\u200b\\ufeff\"",
+    "quoted": "\"\\u00ad\\u200b\\ufeff\""
+  },
+  {
+    "in": "e280a8e280a9",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u2028\\u2029\"",
+    "quoted": "\"\\u2028\\u2029\""
+  },
+  {
+    "in": "ee8080f3b08080f4808080",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\ue000\\U000f0000\\U00100000\"",
+    "quoted": "\"\\ue000\\U000f0000\\U00100000\""
+  },
+  {
+    "in": "22785c6e22",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\\"x\\\\n\\\"\"",
+    "quoted": "\"\\\"x\\\\n\\\"\""
+  },
+  {
+    "in": "22",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\\"\"",
+    "quoted": "\"\\\"\""
+  },
+  {
+    "in": "5c",
+    "repeat": 1,
+    "valid": true,
+    "out": "\\",
+    "quoted": "\"\\\\\""
+  },
+  {
+    "in": "f09f9880e2808df09f9880",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"😀\\u200d😀\"",
+    "quoted": "\"😀\\u200d😀\""
+  },
+  {
+    "in": "61",
+    "repeat": 1048576,
+    "valid": true,
+    "out": "",
+    "quoted": "",
+    "outSHA256": "9bc1b2a288b26af7257a36277ae3816a7d4f16e89c1e7e77d0a5c48bad62b360",
+    "quotedSHA256": "249654dc6c054203321aa70e6a1bdfad6b108058db82600d14300c2e0800f907"
+  },
+  {
+    "in": "1b",
+    "repeat": 65536,
+    "valid": true,
+    "out": "",
+    "quoted": "",
+    "outSHA256": "cc725bf0140259363357d64a65f1c01a88e168d8b440f7e6da1572527ca469e3",
+    "quotedSHA256": "cc725bf0140259363357d64a65f1c01a88e168d8b440f7e6da1572527ca469e3"
+  },
+  {
+    "in": "cc81",
+    "repeat": 65536,
+    "valid": true,
+    "out": "",
+    "quoted": "",
+    "outSHA256": "3536f54df0a7760b2834ee38a335d18ae54dacc82ce876f5f8c29493935422a5",
+    "quotedSHA256": "db1b2a345ad3ccfb6b7ea6aeac146a8f7a17788d5ac75d4952c1c162ea7058ce"
+  },
+  {
+    "in": "ff",
+    "repeat": 65536,
+    "valid": false,
+    "out": "",
+    "quoted": "",
+    "outSHA256": "a63b2e962aa57f291e684bfdbbe47c81c0d93ec73111b81d9cc629bc4ab7542d",
+    "quotedSHA256": "a63b2e962aa57f291e684bfdbbe47c81c0d93ec73111b81d9cc629bc4ab7542d"
+  },
+  {
+    "in": "e280ae",
+    "repeat": 65536,
+    "valid": true,
+    "out": "",
+    "quoted": "",
+    "outSHA256": "80957873e295e39660e020dd42f6eee57080b36aa03618d30f40f4bf60a628ae",
+    "quotedSHA256": "80957873e295e39660e020dd42f6eee57080b36aa03618d30f40f4bf60a628ae"
+  },
+  {
+    "in": "6162cc81",
+    "repeat": 32768,
+    "valid": true,
+    "out": "",
+    "quoted": "",
+    "outSHA256": "d681cab2f5fd422e52cb1841b57371945d08bdaccd0caaeb26ab818cbeb348d6",
+    "quotedSHA256": "94064bd5d6bab7fbc2627da22f431504c8150ffa7db29670a21256b59f25a768"
+  },
+  {
+    "in": "0de280a822ff",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\r\\u2028\\\"\\xff\"",
+    "quoted": "\"\\r\\u2028\\\"\\xff\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "f3a08480e0a4bfe2808cc29b",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\U000e0100ि\\u200c\\u009b\"",
+    "quoted": "\"\\U000e0100ि\\u200c\\u009b\""
+  },
+  {
+    "in": "c29b7bf3a08081c29c200bc2a0",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u009b{\\U000e0001\\u009c \\v \"",
+    "quoted": "\"\\u009b{\\U000e0001\\u009c \\v \""
+  },
+  {
+    "in": "efb790c280e280abf3a084800be2808cefa3bf2e",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\ufdd0\\u0080\\u202b󠄀\\v\\u200c\\uf8ff.\"",
+    "quoted": "\"\\ufdd0\\u0080\\u202b󠄀\\v\\u200c\\uf8ff.\""
+  },
+  {
+    "in": "c29f61f09f98800ac285efbfbe",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u009fa😀\\n\\u0085\\ufffe\"",
+    "quoted": "\"\\u009fa😀\\n\\u0085\\ufffe\""
+  },
+  {
+    "in": "0dd790efbfbee2808b",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\rא\\ufffe\\u200b\"",
+    "quoted": "\"\\rא\\ufffe\\u200b\""
+  },
+  {
+    "in": "e281a8c29cc2ade697a5e281a8efb7900c7b7f",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u2068\\u009c\\u00ad日\\u2068\\ufdd0\\f{\\x7f\"",
+    "quoted": "\"\\u2068\\u009c\\u00ad日\\u2068\\ufdd0\\f{\\x7f\""
+  },
+  {
+    "in": "c3a97e59e280a8efbfbf",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"é~Y\\u2028\\uffff\"",
+    "quoted": "\"é~Y\\u2028\\uffff\""
+  },
+  {
+    "in": "efa3bfe283a3f3a087aff48fbfbde280ab",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\uf8ff⃣󠇯\\U0010fffd\\u202b\"",
+    "quoted": "\"\\uf8ff⃣󠇯\\U0010fffd\\u202b\""
+  },
+  {
+    "in": "f09f98802d",
+    "repeat": 1,
+    "valid": true,
+    "out": "😀-",
+    "quoted": "\"😀-\""
+  },
+  {
+    "in": "ffefb880e2808de2808dc2a0c280e697a5bf",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xff︀\\u200d\\u200d \\u0080日\\xbf\"",
+    "quoted": "\"\\xff︀\\u200d\\u200d \\u0080日\\xbf\""
+  },
+  {
+    "in": "1b61cdaff3a081bf6330e280a9efb790bf",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\x1baͯ\\U000e007fc0\\u2029\\ufdd0\\xbf\"",
+    "quoted": "\"\\x1baͯ\\U000e007fc0\\u2029\\ufdd0\\xbf\""
+  },
+  {
+    "in": "e0a483ede2808b5a",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u0903\\xed\\u200bZ\"",
+    "quoted": "\"\\u0903\\xed\\u200bZ\""
+  },
+  {
+    "in": "f3a087af0ac2",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\U000e01ef\\n\\xc2\"",
+    "quoted": "\"\\U000e01ef\\n\\xc2\""
+  },
+  {
+    "in": "c3a95ae2808ee280a830c280d790",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"éZ\\u200e\\u20280\\u0080א\"",
+    "quoted": "\"éZ\\u200e\\u20280\\u0080א\""
+  },
+  {
+    "in": "c280",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u0080\"",
+    "quoted": "\"\\u0080\""
+  },
+  {
+    "in": "efbbbfe280ade38080f3b08080bf",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\ufeff\\u202d　\\U000f0000\\xbf\"",
+    "quoted": "\"\\ufeff\\u202d　\\U000f0000\\xbf\""
+  },
+  {
+    "in": "e2808be280a8c280f3a08081e697a5",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u200b\\u2028\\u0080\\U000e0001日\"",
+    "quoted": "\"\\u200b\\u2028\\u0080\\U000e0001日\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "805aefbfbfe281a080c29cf3a08480e2808fe280ab58ff",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\x80Z\\uffff\\u2060\\x80\\u009c󠄀\\u200f\\u202bX\\xff\"",
+    "quoted": "\"\\x80Z\\uffff\\u2060\\x80\\u009c󠄀\\u200f\\u202bX\\xff\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "f09f87bac29b6227efbfbde280a9",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"🇺\\u009bb'�\\u2029\"",
+    "quoted": "\"🇺\\u009bb'�\\u2029\""
+  },
+  {
+    "in": "2f1f0000f3a081bfe2808cee8080c3a9",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"/\\x1f\\x00\\x00\\U000e007f\\u200c\\ue000é\"",
+    "quoted": "\"/\\x1f\\x00\\x00\\U000e007f\\u200c\\ue000é\""
+  },
+  {
+    "in": "5ce280ad1b1befb8800ae2808cbfefb880efbfbf",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\\\\\u202d\\x1b\\x1b︀\\n\\u200c\\xbf︀\\uffff\"",
+    "quoted": "\"\\\\\\u202d\\x1b\\x1b︀\\n\\u200c\\xbf︀\\uffff\""
+  },
+  {
+    "in": "5cc2ade0a483d8a7",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\\\\\u00adःا\"",
+    "quoted": "\"\\\\\\u00adःا\""
+  },
+  {
+    "in": "efb88fefb880",
+    "repeat": 1,
+    "valid": true,
+    "out": "️︀",
+    "quoted": "\"\\ufe0f︀\""
+  },
+  {
+    "in": "08",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\b\"",
+    "quoted": "\"\\b\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "1bcdafefbfbfe380805aefbfbd",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\x1bͯ\\uffff　Z�\"",
+    "quoted": "\"\\x1bͯ\\uffff　Z�\""
+  },
+  {
+    "in": "c2efbbbfe69cacfff09f87baefbfbfe697a5efa3bf07e38080",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xc2\\ufeff本\\xff🇺\\uffff日\\uf8ff\\a　\"",
+    "quoted": "\"\\xc2\\ufeff本\\xff🇺\\uffff日\\uf8ff\\a　\""
+  },
+  {
+    "in": "c285f3b08080e281a6e2808cf3a08081e2808c30",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u0085\\U000f0000\\u2066\\u200c\\U000e0001\\u200c0\"",
+    "quoted": "\"\\u0085\\U000f0000\\u2066\\u200c\\U000e0001\\u200c0\""
+  },
+  {
+    "in": "e280a8c3a9070ce2839df3a081bfc28dc285e2808ccc8127",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u2028é\\a\\f⃝\\U000e007f\\u008d\\u0085\\u200ć'\"",
+    "quoted": "\"\\u2028é\\a\\f⃝\\U000e007f\\u008d\\u0085\\u200ć'\""
+  },
+  {
+    "in": "c29fefb880d8a7bf62c2ad",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u009f︀ا\\xbfb\\u00ad\"",
+    "quoted": "\"\\u009f︀ا\\xbfb\\u00ad\""
+  },
+  {
+    "in": "f3b080800befb790ffc280efbfbd",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\U000f0000\\v\\ufdd0\\xff\\u0080�\"",
+    "quoted": "\"\\U000f0000\\v\\ufdd0\\xff\\u0080�\""
+  },
+  {
+    "in": "c2f3b08080e281a80d",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xc2\\U000f0000\\u2068\\r\"",
+    "quoted": "\"\\xc2\\U000f0000\\u2068\\r\""
+  },
+  {
+    "in": "e2808e7ff3a080817ef09f87bae2808bd89c",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u200e\\x7f\\U000e0001~🇺\\u200b\\u061c\"",
+    "quoted": "\"\\u200e\\x7f\\U000e0001~🇺\\u200b\\u061c\""
+  },
+  {
+    "in": "e280abefbbbf",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u202b\\ufeff\"",
+    "quoted": "\"\\u202b\\ufeff\""
+  },
+  {
+    "in": "efbfbff3b08080e281a9d89ccc80e280aad89cc280c280cdaf",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\uffff\\U000f0000\\u2069\\u061c̀\\u202a\\u061c\\u0080\\u0080ͯ\"",
+    "quoted": "\"\\uffff\\U000f0000\\u2069\\u061c̀\\u202a\\u061c\\u0080\\u0080ͯ\""
+  },
+  {
+    "in": "c29fffefbfbe80e2808f",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u009f\\xff\\ufffe\\x80\\u200f\"",
+    "quoted": "\"\\u009f\\xff\\ufffe\\x80\\u200f\""
+  },
+  {
+    "in": "e280abbfee8080cc81e0a4bfc2802fefbbbfe281a8f48fbfbd",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u202b\\xbf\\ue000́ि\\u0080/\\ufeff\\u2068\\U0010fffd\"",
+    "quoted": "\"\\u202b\\xbf\\ue000́ि\\u0080/\\ufeff\\u2068\\U0010fffd\""
+  },
+  {
+    "in": "c29ce280aac28dc29ce280a8",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u009c\\u202a\\u008d\\u009c\\u2028\"",
+    "quoted": "\"\\u009c\\u202a\\u008d\\u009c\\u2028\""
+  },
+  {
+    "in": "bfefbfbdffa0e2808be281a0f3b08080c29fc2c28d",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xbf�\\xff\\xa0\\u200b\\u2060\\U000f0000\\u009f\\xc2\\u008d\"",
+    "quoted": "\"\\xbf�\\xff\\xa0\\u200b\\u2060\\U000f0000\\u009f\\xc2\\u008d\""
+  },
+  {
+    "in": "cca7e220e2f3b08080f48fbfbde280a81f",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u0327\\xe2 \\xe2\\U000f0000\\U0010fffd\\u2028\\x1f\"",
+    "quoted": "\"\\u0327\\xe2 \\xe2\\U000f0000\\U0010fffd\\u2028\\x1f\""
+  },
+  {
+    "in": "e2808cefb88fd790d8a7ee8080d8a7c2ade2839d0be281a0c280",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u200c️אا\\ue000ا\\u00ad⃝\\v\\u2060\\u0080\"",
+    "quoted": "\"\\u200c️אا\\ue000ا\\u00ad⃝\\v\\u2060\\u0080\""
+  },
+  {
+    "in": "0bc28df3a08480",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\v\\u008d󠄀\"",
+    "quoted": "\"\\v\\u008d󠄀\""
+  },
+  {
+    "in": "e280a9c3a9f0",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u2029é\\xf0\"",
+    "quoted": "\"\\u2029é\\xf0\""
+  },
+  {
+    "in": "efbbbfefb88f22ee8080efbfbef3a08480e283a3f09f87ba221b7b",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\ufeff️\\\"\\ue000\\ufffe󠄀⃣🇺\\\"\\x1b{\"",
+    "quoted": "\"\\ufeff️\\\"\\ue000\\ufffe󠄀⃣🇺\\\"\\x1b{\""
+  },
+  {
+    "in": "c280f3b0808063f09f9880",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u0080\\U000f0000c😀\"",
+    "quoted": "\"\\u0080\\U000f0000c😀\""
+  },
+  {
+    "in": "e2808dc3a9efb79000c285d89c7befb880",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u200dé\\ufdd0\\x00\\u0085\\u061c{︀\"",
+    "quoted": "\"\\u200dé\\ufdd0\\x00\\u0085\\u061c{︀\""
+  },
+  {
+    "in": "efa3bf0dcc81f09f98807df48fbfbde280ab63f48fbfbd",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\uf8ff\\ŕ😀}\\U0010fffd\\u202bc\\U0010fffd\"",
+    "quoted": "\"\\uf8ff\\ŕ😀}\\U0010fffd\\u202bc\\U0010fffd\""
+  },
+  {
+    "in": "0ae2808cee8080c3a9ff0cf3a087af5f",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\n\\u200c\\ue000é\\xff\\f󠇯_\"",
+    "quoted": "\"\\n\\u200c\\ue000é\\xff\\f󠇯_\""
+  },
+  {
+    "in": "e69cacc2857be2808ce69cace281a6e281a6",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"本\\u0085{\\u200c本\\u2066\\u2066\"",
+    "quoted": "\"本\\u0085{\\u200c本\\u2066\\u2066\""
+  },
+  {
+    "in": "efbfbee280ae",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\ufffe\\u202e\"",
+    "quoted": "\"\\ufffe\\u202e\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "efbbbfefb790e38080ede280a92f",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\ufeff\\ufdd0　\\xed\\u2029/\"",
+    "quoted": "\"\\ufeff\\ufdd0　\\xed\\u2029/\""
+  },
+  {
+    "in": "efbfbec29c",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\ufffe\\u009c\"",
+    "quoted": "\"\\ufffe\\u009c\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "efbfbe60c28de281a7f0c29f",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\ufffe`\\u008d\\u2067\\xf0\\u009f\"",
+    "quoted": "\"\\ufffe`\\u008d\\u2067\\xf0\\u009f\""
+  },
+  {
+    "in": "f3a0848009e280a9efa3bf5a",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\U000e0100\\t\\u2029\\uf8ffZ\"",
+    "quoted": "\"\\U000e0100\\t\\u2029\\uf8ffZ\""
+  },
+  {
+    "in": "2dcdaf61cca7efbbbfc28d",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"-ͯa̧\\ufeff\\u008d\"",
+    "quoted": "\"-ͯa̧\\ufeff\\u008d\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "ee8080f3a087afe2808d",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\ue000󠇯\\u200d\"",
+    "quoted": "\"\\ue000󠇯\\u200d\""
+  },
+  {
+    "in": "e281a0221f62",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u2060\\\"\\x1fb\"",
+    "quoted": "\"\\u2060\\\"\\x1fb\""
+  },
+  {
+    "in": "e281a0c29ccc80c29fc29be280a9",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u2060\\u009c̀\\u009f\\u009b\\u2029\"",
+    "quoted": "\"\\u2060\\u009c̀\\u009f\\u009b\\u2029\""
+  },
+  {
+    "in": "f09f98800a00f00b",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"😀\\n\\x00\\xf0\\v\"",
+    "quoted": "\"😀\\n\\x00\\xf0\\v\""
+  },
+  {
+    "in": "09e2808d2dc280c29b",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\t\\u200d-\\u0080\\u009b\"",
+    "quoted": "\"\\t\\u200d-\\u0080\\u009b\""
+  },
+  {
+    "in": "a0e280aef3a087afe280a8e280a9e2e281a9e0a48380",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xa0\\u202e󠇯\\u2028\\u2029\\xe2\\u2069ः\\x80\"",
+    "quoted": "\"\\xa0\\u202e󠇯\\u2028\\u2029\\xe2\\u2069ः\\x80\""
+  },
+  {
+    "in": "e0a483efb790ffe0a483f48fbfbde281a6f3a080810a1be281a061",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u0903\\ufdd0\\xffः\\U0010fffd\\u2066\\U000e0001\\n\\x1b\\u2060a\"",
+    "quoted": "\"\\u0903\\ufdd0\\xffः\\U0010fffd\\u2066\\U000e0001\\n\\x1b\\u2060a\""
+  },
+  {
+    "in": "efbbbfc29bd8a71b",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\ufeff\\u009bا\\x1b\"",
+    "quoted": "\"\\ufeff\\u009bا\\x1b\""
+  },
+  {
+    "in": "e280abf3a0848080e281a9e2808d",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u202b󠄀\\x80\\u2069\\u200d\"",
+    "quoted": "\"\\u202b󠄀\\x80\\u2069\\u200d\""
+  },
+  {
+    "in": "e281a8e69cacee8080c29fe280aef3a081bf",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u2068本\\ue000\\u009f\\u202e\\U000e007f\"",
+    "quoted": "\"\\u2068本\\ue000\\u009f\\u202e\\U000e007f\""
+  },
+  {
+    "in": "5a0d5fc2adefbfbecc802d",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"Z\\r_\\u00ad\\ufffè-\"",
+    "quoted": "\"Z\\r_\\u00ad\\ufffè-\""
+  },
+  {
+    "in": "2f2e59",
+    "repeat": 1,
+    "valid": true,
+    "out": "/.Y",
+    "quoted": "\"/.Y\""
+  },
+  {
+    "in": "e280ade2808b60c29fe2839d58c2a0c29c0a",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u202d\\u200b`\\u009f⃝X \\u009c\\n\"",
+    "quoted": "\"\\u202d\\u200b`\\u009f⃝X \\u009c\\n\""
+  },
+  {
+    "in": "e280a9f09f87bae2808fc29be280a9f09f87bae2808cf3a080810befbfbf",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u2029🇺\\u200f\\u009b\\u2029🇺\\u200c\\U000e0001\\v\\uffff\"",
+    "quoted": "\"\\u2029🇺\\u200f\\u009b\\u2029🇺\\u200c\\U000e0001\\v\\uffff\""
+  },
+  {
+    "in": "c285",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u0085\"",
+    "quoted": "\"\\u0085\""
+  },
+  {
+    "in": "f3a08081",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\U000e0001\"",
+    "quoted": "\"\\U000e0001\""
+  },
+  {
+    "in": "efbbbfc280627d",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\ufeff\\u0080b}\"",
+    "quoted": "\"\\ufeff\\u0080b}\""
+  },
+  {
+    "in": "efbfbee2808defbfbde69cacfff3a0808108e281a9efb88fe2808dcc81",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\ufffe\\u200d�本\\xff\\U000e0001\\b\\u2069️\\u200d́\"",
+    "quoted": "\"\\ufffe\\u200d�本\\xff\\U000e0001\\b\\u2069️\\u200d́\""
+  },
+  {
+    "in": "e2808bc285",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u200b\\u0085\"",
+    "quoted": "\"\\u200b\\u0085\""
+  },
+  {
+    "in": "07d8a7e0a483c280efb790cca7e2808bc2ad",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\aاः\\u0080\\ufdd0̧\\u200b\\u00ad\"",
+    "quoted": "\"\\aاः\\u0080\\ufdd0̧\\u200b\\u00ad\""
+  },
+  {
+    "in": "e280acd89ce280a92d",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u202c\\u061c\\u2029-\"",
+    "quoted": "\"\\u202c\\u061c\\u2029-\""
+  },
+  {
+    "in": "c2adede280aef3b08080f0cca7e2808b",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u00ad\\xed\\u202e\\U000f0000\\xf0̧\\u200b\"",
+    "quoted": "\"\\u00ad\\xed\\u202e\\U000f0000\\xf0̧\\u200b\""
+  },
+  {
+    "in": "1fe280aaefa3bfe280ab1bc29b00d8a7",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\x1f\\u202a\\uf8ff\\u202b\\x1b\\u009b\\x00ا\"",
+    "quoted": "\"\\x1f\\u202a\\uf8ff\\u202b\\x1b\\u009b\\x00ا\""
+  },
+  {
+    "in": "08c28500f3a081bff48fbfbd",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\b\\u0085\\x00\\U000e007f\\U0010fffd\"",
+    "quoted": "\"\\b\\u0085\\x00\\U000e007f\\U0010fffd\""
+  },
+  {
+    "in": "e2808c",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u200c\"",
+    "quoted": "\"\\u200c\""
+  },
+  {
+    "in": "58c2a039",
+    "repeat": 1,
+    "valid": true,
+    "out": "X 9",
+    "quoted": "\"X 9\""
+  },
+  {
+    "in": "c29f09e280ab",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u009f\\t\\u202b\"",
+    "quoted": "\"\\u009f\\t\\u202b\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "c28d0c7ee281a8e2808c",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u008d\\f~\\u2068\\u200c\"",
+    "quoted": "\"\\u008d\\f~\\u2068\\u200c\""
+  },
+  {
+    "in": "e281a8f48fbfbd62c29bf3b08080",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u2068\\U0010fffdb\\u009b\\U000f0000\"",
+    "quoted": "\"\\u2068\\U0010fffdb\\u009b\\U000f0000\""
+  },
+  {
+    "in": "efbfbdcca7c28df3a08081e280ad",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"�̧\\u008d\\U000e0001\\u202d\"",
+    "quoted": "\"�̧\\u008d\\U000e0001\\u202d\""
+  },
+  {
+    "in": "60e280ac2ee281a8cc80e281a6e697a5",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"`\\u202c.\\u2068̀\\u2066日\"",
+    "quoted": "\"`\\u202c.\\u2068̀\\u2066日\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "e281a8605ae38080f09f9880e280a9e2808de281a6c29c",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u2068`Z　😀\\u2029\\u200d\\u2066\\u009c\"",
+    "quoted": "\"\\u2068`Z　😀\\u2029\\u200d\\u2066\\u009c\""
+  },
+  {
+    "in": "1be38080e2808be281a6",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\x1b　\\u200b\\u2066\"",
+    "quoted": "\"\\x1b　\\u200b\\u2066\""
+  },
+  {
+    "in": "c29f07d790e280aaf09f87bae2f48fbfbdf0e2808be2808b",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u009f\\aא\\u202a🇺\\xe2\\U0010fffd\\xf0\\u200b\\u200b\"",
+    "quoted": "\"\\u009f\\aא\\u202a🇺\\xe2\\U0010fffd\\xf0\\u200b\\u200b\""
+  },
+  {
+    "in": "f3b08080efbfbfe280ad0062f3a087af2258",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\U000f0000\\uffff\\u202d\\x00b󠇯\\\"X\"",
+    "quoted": "\"\\U000f0000\\uffff\\u202d\\x00b󠇯\\\"X\""
+  },
+  {
+    "in": "ede280adcdafe280ad09c2a0",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xed\\u202dͯ\\u202d\\t \"",
+    "quoted": "\"\\xed\\u202dͯ\\u202d\\t \""
+  },
+  {
+    "in": "c280e281a6c2e2808ee280aee281a7",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u0080\\u2066\\xc2\\u200e\\u202e\\u2067\"",
+    "quoted": "\"\\u0080\\u2066\\xc2\\u200e\\u202e\\u2067\""
+  },
+  {
+    "in": "c29fd8a7efbfbfe283a3bf39e2e280a8",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u009fا\\uffff⃣\\xbf9\\xe2\\u2028\"",
+    "quoted": "\"\\u009fا\\uffff⃣\\xbf9\\xe2\\u2028\""
+  },
+  {
+    "in": "f09f87ba60efb88fe2808be2808ce280a81ff09f9880efbfbdd8a7",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"🇺`️\\u200b\\u200c\\u2028\\x1f😀�ا\"",
+    "quoted": "\"🇺`️\\u200b\\u200c\\u2028\\x1f😀�ا\""
+  },
+  {
+    "in": "e69cac",
+    "repeat": 1,
+    "valid": true,
+    "out": "本",
+    "quoted": "\"本\""
+  },
+  {
+    "in": "a0",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xa0\"",
+    "quoted": "\"\\xa0\""
+  },
+  {
+    "in": "e281a0bfc3a9e38080f09f9880efbfbfe2808bc29c",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u2060\\xbfé　😀\\uffff\\u200b\\u009c\"",
+    "quoted": "\"\\u2060\\xbfé　😀\\uffff\\u200b\\u009c\""
+  },
+  {
+    "in": "e280aaefb790e2808e",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u202a\\ufdd0\\u200e\"",
+    "quoted": "\"\\u202a\\ufdd0\\u200e\""
+  },
+  {
+    "in": "c29bf48fbfbdc2a0",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u009b\\U0010fffd \"",
+    "quoted": "\"\\u009b\\U0010fffd \""
+  },
+  {
+    "in": "e697a50709f3a08480e280acefb880c2857be697a5",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"日\\a\\t󠄀\\u202c︀\\u0085{日\"",
+    "quoted": "\"日\\a\\t󠄀\\u202c︀\\u0085{日\""
+  },
+  {
+    "in": "f0efb880f09f9880e38080c27eefbfbec28d",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xf0︀😀　\\xc2~\\ufffe\\u008d\"",
+    "quoted": "\"\\xf0︀😀　\\xc2~\\ufffe\\u008d\""
+  },
+  {
+    "in": "e281a0c2a05f",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u2060 _\"",
+    "quoted": "\"\\u2060 _\""
+  },
+  {
+    "in": "e280a92ec280c28d7be280aecc81",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u2029.\\u0080\\u008d{\\u202é\"",
+    "quoted": "\"\\u2029.\\u0080\\u008d{\\u202é\""
+  },
+  {
+    "in": "e69cace697a507e2808cc2a0c28de280a8e69cac",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"本日\\a\\u200c \\u008d\\u2028本\"",
+    "quoted": "\"本日\\a\\u200c \\u008d\\u2028本\""
+  },
+  {
+    "in": "f09f87bac29fe38080",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"🇺\\u009f　\"",
+    "quoted": "\"🇺\\u009f　\""
+  },
+  {
+    "in": "efa3bfc280f3a087af30",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\uf8ff\\u0080󠇯0\"",
+    "quoted": "\"\\uf8ff\\u0080󠇯0\""
+  },
+  {
+    "in": "7bee8080c2adbff0efb88fee8080310808",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"{\\ue000\\u00ad\\xbf\\xf0️\\ue0001\\b\\b\"",
+    "quoted": "\"{\\ue000\\u00ad\\xbf\\xf0️\\ue0001\\b\\b\""
+  },
+  {
+    "in": "e2839defbfbe",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u20dd\\ufffe\"",
+    "quoted": "\"\\u20dd\\ufffe\""
+  },
+  {
+    "in": "f3a081bfe281a708f0e2808bc29fe2808eefb790efbfbf",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\U000e007f\\u2067\\b\\xf0\\u200b\\u009f\\u200e\\ufdd0\\uffff\"",
+    "quoted": "\"\\U000e007f\\u2067\\b\\xf0\\u200b\\u009f\\u200e\\ufdd0\\uffff\""
+  },
+  {
+    "in": "efbfbf30c2adefb790",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\uffff0\\u00ad\\ufdd0\"",
+    "quoted": "\"\\uffff0\\u00ad\\ufdd0\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "e280a8efbbbfc285c29b",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u2028\\ufeff\\u0085\\u009b\"",
+    "quoted": "\"\\u2028\\ufeff\\u0085\\u009b\""
+  },
+  {
+    "in": "efbfbdc29cc29c",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"�\\u009c\\u009c\"",
+    "quoted": "\"�\\u009c\\u009c\""
+  },
+  {
+    "in": "0b58e2d89c0d7f2de281a8e280a9",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\vX\\xe2\\u061c\\r\\x7f-\\u2068\\u2029\"",
+    "quoted": "\"\\vX\\xe2\\u061c\\r\\x7f-\\u2068\\u2029\""
+  },
+  {
+    "in": "d89c0ce3808039c2a0cc807fc2c29bc29f",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u061c\\f　9 ̀\\x7f\\xc2\\u009b\\u009f\"",
+    "quoted": "\"\\u061c\\f　9 ̀\\x7f\\xc2\\u009b\\u009f\""
+  },
+  {
+    "in": "f09f87ba62c2800c27e0a483d8a7c29b",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"🇺b\\u0080\\f'ःا\\u009b\"",
+    "quoted": "\"🇺b\\u0080\\f'ःا\\u009b\""
+  },
+  {
+    "in": "610c0d20e2808ce2808d",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"a\\f\\r \\u200c\\u200d\"",
+    "quoted": "\"a\\f\\r \\u200c\\u200d\""
+  },
+  {
+    "in": "d8a7f3a08081e2808b09f3a08480e281a0e280ade2808c27",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"ا\\U000e0001\\u200b\\t󠄀\\u2060\\u202d\\u200c'\"",
+    "quoted": "\"ا\\U000e0001\\u200b\\t󠄀\\u2060\\u202d\\u200c'\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "e0a4bfe2808ce69cace280aae2808ecca7",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u093f\\u200c本\\u202a\\u200ȩ\"",
+    "quoted": "\"\\u093f\\u200c本\\u202a\\u200ȩ\""
+  },
+  {
+    "in": "efb88fe281a0d7905c",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\ufe0f\\u2060א\\\\\"",
+    "quoted": "\"\\ufe0f\\u2060א\\\\\""
+  },
+  {
+    "in": "efb88ff0e0a4bfe280ade2808e",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\ufe0f\\xf0ि\\u202d\\u200e\"",
+    "quoted": "\"\\ufe0f\\xf0ि\\u202d\\u200e\""
+  },
+  {
+    "in": "c2",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xc2\"",
+    "quoted": "\"\\xc2\""
+  },
+  {
+    "in": "c29c",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u009c\"",
+    "quoted": "\"\\u009c\""
+  },
+  {
+    "in": "2f1be280aed89cf09f87bac28027e38080e697a5",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"/\\x1b\\u202e\\u061c🇺\\u0080'　日\"",
+    "quoted": "\"/\\x1b\\u202e\\u061c🇺\\u0080'　日\""
+  },
+  {
+    "in": "e2839defbbbfe2808d7e0b",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u20dd\\ufeff\\u200d~\\v\"",
+    "quoted": "\"\\u20dd\\ufeff\\u200d~\\v\""
+  },
+  {
+    "in": "efa3bfe0a483",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\uf8ffः\"",
+    "quoted": "\"\\uf8ffः\""
+  },
+  {
+    "in": "e280ade2808dbf5cf3a087aff3a0808109efbfbfe0a4bff3a08480e38080",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u202d\\u200d\\xbf\\\\󠇯\\U000e0001\\t\\uffffि󠄀　\"",
+    "quoted": "\"\\u202d\\u200d\\xbf\\\\󠇯\\U000e0001\\t\\uffffि󠄀　\""
+  },
+  {
+    "in": "08cc807dc29cc28de280abd8a71bc280e69cac",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\b̀}\\u009c\\u008d\\u202bا\\x1b\\u0080本\"",
+    "quoted": "\"\\b̀}\\u009c\\u008d\\u202bا\\x1b\\u0080本\""
+  },
+  {
+    "in": "e280a9e280ae",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u2029\\u202e\"",
+    "quoted": "\"\\u2029\\u202e\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "80f09f9880ee8080c29b20",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\x80😀\\ue000\\u009b \"",
+    "quoted": "\"\\x80😀\\ue000\\u009b \""
+  },
+  {
+    "in": "e280ac58",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u202cX\"",
+    "quoted": "\"\\u202cX\""
+  },
+  {
+    "in": "e2839defbfbdcc80e280adc28d5acdaf",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u20dd�̀\\u202d\\u008dZͯ\"",
+    "quoted": "\"\\u20dd�̀\\u202d\\u008dZͯ\""
+  },
+  {
+    "in": "f48fbfbde280aae281a7e2808d63e281a9",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\U0010fffd\\u202a\\u2067\\u200dc\\u2069\"",
+    "quoted": "\"\\U0010fffd\\u202a\\u2067\\u200dc\\u2069\""
+  },
+  {
+    "in": "bf39e2808bc2e2808cc29fa0270d",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xbf9\\u200b\\xc2\\u200c\\u009f\\xa0'\\r\"",
+    "quoted": "\"\\xbf9\\u200b\\xc2\\u200c\\u009f\\xa0'\\r\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "f3a08480f48fbfbdc280cc81c2850d61e2808d5abf",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\U000e0100\\U0010fffd\\u0080́\\u0085\\ra\\u200dZ\\xbf\"",
+    "quoted": "\"\\U000e0100\\U0010fffd\\u0080́\\u0085\\ra\\u200dZ\\xbf\""
+  },
+  {
+    "in": "c3a9e0a483f3a084800007f0",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"éः󠄀\\x00\\a\\xf0\"",
+    "quoted": "\"éः󠄀\\x00\\a\\xf0\""
+  },
+  {
+    "in": "c3a9e280a9e281a9cdafe281a600",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"é\\u2029\\u2069ͯ\\u2066\\x00\"",
+    "quoted": "\"é\\u2029\\u2069ͯ\\u2066\\x00\""
+  },
+  {
+    "in": "f3b08080f3a081bff3a080810cd89ce280aac29ce69cace2",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\U000f0000\\U000e007f\\U000e0001\\f\\u061c\\u202a\\u009c本\\xe2\"",
+    "quoted": "\"\\U000f0000\\U000e007f\\U000e0001\\f\\u061c\\u202a\\u009c本\\xe2\""
+  },
+  {
+    "in": "f09f98800dc2",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"😀\\r\\xc2\"",
+    "quoted": "\"😀\\r\\xc2\""
+  },
+  {
+    "in": "62f3a08480e2efa3bfc280efbfbd5ae281a7efbfbe0c7f",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"b󠄀\\xe2\\uf8ff\\u0080�Z\\u2067\\ufffe\\f\\x7f\"",
+    "quoted": "\"b󠄀\\xe2\\uf8ff\\u0080�Z\\u2067\\ufffe\\f\\x7f\""
+  },
+  {
+    "in": "e2808df3b0808061ff0befbfbe",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u200d\\U000f0000a\\xff\\v\\ufffe\"",
+    "quoted": "\"\\u200d\\U000f0000a\\xff\\v\\ufffe\""
+  },
+  {
+    "in": "efbfbfd7900cc28d",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\uffffא\\f\\u008d\"",
+    "quoted": "\"\\uffffא\\f\\u008d\""
+  },
+  {
+    "in": "27cca7a0c2ade2808d00e281a6e280a839cc81e0a483",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"'̧\\xa0\\u00ad\\u200d\\x00\\u2066\\u20289́ः\"",
+    "quoted": "\"'̧\\xa0\\u00ad\\u200d\\x00\\u2066\\u20289́ः\""
+  },
+  {
+    "in": "e280a9efbfbde281a7e280aef3a0808139e280a9efbfbe",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u2029�\\u2067\\u202e\\U000e00019\\u2029\\ufffe\"",
+    "quoted": "\"\\u2029�\\u2067\\u202e\\U000e00019\\u2029\\ufffe\""
+  },
+  {
+    "in": "07d89cee8080071b39",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\a\\u061c\\ue000\\a\\x1b9\"",
+    "quoted": "\"\\a\\u061c\\ue000\\a\\x1b9\""
+  },
+  {
+    "in": "d89c80",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u061c\\x80\"",
+    "quoted": "\"\\u061c\\x80\""
+  },
+  {
+    "in": "0a",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\n\"",
+    "quoted": "\"\\n\""
+  },
+  {
+    "in": "5820e2efb790e2808d",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"X \\xe2\\ufdd0\\u200d\"",
+    "quoted": "\"X \\xe2\\ufdd0\\u200d\""
+  },
+  {
+    "in": "7f610a",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\x7fa\\n\"",
+    "quoted": "\"\\x7fa\\n\""
+  },
+  {
+    "in": "c3a9",
+    "repeat": 1,
+    "valid": true,
+    "out": "é",
+    "quoted": "\"é\""
+  },
+  {
+    "in": "097ea0f09f87ba0a",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\t~\\xa0🇺\\n\"",
+    "quoted": "\"\\t~\\xa0🇺\\n\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "f48fbfbde2808fc2ade280abcc81d89cc29ce2808de2839de2e2808d",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\U0010fffd\\u200f\\u00ad\\u202b́\\u061c\\u009c\\u200d⃝\\xe2\\u200d\"",
+    "quoted": "\"\\U0010fffd\\u200f\\u00ad\\u202b́\\u061c\\u009c\\u200d⃝\\xe2\\u200d\""
+  },
+  {
+    "in": "c280e281a0e38080d8a7ffefb790",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u0080\\u2060　ا\\xff\\ufdd0\"",
+    "quoted": "\"\\u0080\\u2060　ا\\xff\\ufdd0\""
+  },
+  {
+    "in": "ffe281a9e2808cc28de281a7e280ade2839de280a8f09f9880a0",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xff\\u2069\\u200c\\u008d\\u2067\\u202d⃝\\u2028😀\\xa0\"",
+    "quoted": "\"\\xff\\u2069\\u200c\\u008d\\u2067\\u202d⃝\\u2028😀\\xa0\""
+  },
+  {
+    "in": "f3a087afe281a9efbbbfe281a7",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\U000e01ef\\u2069\\ufeff\\u2067\"",
+    "quoted": "\"\\U000e01ef\\u2069\\ufeff\\u2067\""
+  },
+  {
+    "in": "e2808befbfbfe38080cc80ed",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u200b\\uffff　̀\\xed\"",
+    "quoted": "\"\\u200b\\uffff　̀\\xed\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "08f09f9880cc81e2808c007d2d",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\b😀́\\u200c\\x00}-\"",
+    "quoted": "\"\\b😀́\\u200c\\x00}-\""
+  },
+  {
+    "in": "7fe280ace2808cc28062f3a08081ee8080f3a08480",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\x7f\\u202c\\u200c\\u0080b\\U000e0001\\ue000󠄀\"",
+    "quoted": "\"\\x7f\\u202c\\u200c\\u0080b\\U000e0001\\ue000󠄀\""
+  },
+  {
+    "in": "63c2ad3080f3a08081c28defbfbe09f3a08480ed",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"c\\u00ad0\\x80\\U000e0001\\u008d\\ufffe\\t󠄀\\xed\"",
+    "quoted": "\"c\\u00ad0\\x80\\U000e0001\\u008d\\ufffe\\t󠄀\\xed\""
+  },
+  {
+    "in": "e2808cefb790",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u200c\\ufdd0\"",
+    "quoted": "\"\\u200c\\ufdd0\""
+  },
+  {
+    "in": "e2808c",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u200c\"",
+    "quoted": "\"\\u200c\""
+  },
+  {
+    "in": "f3a08081e281a6e280ada0e280a90b",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\U000e0001\\u2066\\u202d\\xa0\\u2029\\v\"",
+    "quoted": "\"\\U000e0001\\u2066\\u202d\\xa0\\u2029\\v\""
+  },
+  {
+    "in": "efb790c2adbf",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\ufdd0\\u00ad\\xbf\"",
+    "quoted": "\"\\ufdd0\\u00ad\\xbf\""
+  },
+  {
+    "in": "bf0df3a081bf22efb880e0a4bfefbfbde0a483",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xbf\\r\\U000e007f\\\"︀ि�ः\"",
+    "quoted": "\"\\xbf\\r\\U000e007f\\\"︀ि�ः\""
+  },
+  {
+    "in": "ff80efb790e281a6f3a08081bf2d",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xff\\x80\\ufdd0\\u2066\\U000e0001\\xbf-\"",
+    "quoted": "\"\\xff\\x80\\ufdd0\\u2066\\U000e0001\\xbf-\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "e2808e",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u200e\"",
+    "quoted": "\"\\u200e\""
+  },
+  {
+    "in": "ed08c2e0a4bff3a0848080c29fefb7901b",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xed\\b\\xc2ि󠄀\\x80\\u009f\\ufdd0\\x1b\"",
+    "quoted": "\"\\xed\\b\\xc2ि󠄀\\x80\\u009f\\ufdd0\\x1b\""
+  },
+  {
+    "in": "e281a6e280adf09f9880efbfbe27c3a9e697a5",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u2066\\u202d😀\\ufffe'é日\"",
+    "quoted": "\"\\u2066\\u202d😀\\ufffe'é日\""
+  },
+  {
+    "in": "5aff",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"Z\\xff\"",
+    "quoted": "\"Z\\xff\""
+  },
+  {
+    "in": "f3a08480efb880f3b0808058e38080e281a7e280ae09e280a8",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\U000e0100︀\\U000f0000X　\\u2067\\u202e\\t\\u2028\"",
+    "quoted": "\"\\U000e0100︀\\U000f0000X　\\u2067\\u202e\\t\\u2028\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "e2808ef09f87bae281a8efa3bf",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u200e🇺\\u2068\\uf8ff\"",
+    "quoted": "\"\\u200e🇺\\u2068\\uf8ff\""
+  },
+  {
+    "in": "e280aae280a9efa3bfc2adfff3a087afc280f48fbfbd22f48fbfbd",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u202a\\u2029\\uf8ff\\u00ad\\xff󠇯\\u0080\\U0010fffd\\\"\\U0010fffd\"",
+    "quoted": "\"\\u202a\\u2029\\uf8ff\\u00ad\\xff󠇯\\u0080\\U0010fffd\\\"\\U0010fffd\""
+  },
+  {
+    "in": "2fefb790f3a087aff3a08081cca7e2",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"/\\ufdd0󠇯\\U000e0001̧\\xe2\"",
+    "quoted": "\"/\\ufdd0󠇯\\U000e0001̧\\xe2\""
+  },
+  {
+    "in": "e280aaedf3a08480cdaf",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u202a\\xed󠄀ͯ\"",
+    "quoted": "\"\\u202a\\xed󠄀ͯ\""
+  },
+  {
+    "in": "efa3bf39",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\uf8ff9\"",
+    "quoted": "\"\\uf8ff9\""
+  },
+  {
+    "in": "f3a087af800a08e2",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\U000e01ef\\x80\\n\\b\\xe2\"",
+    "quoted": "\"\\U000e01ef\\x80\\n\\b\\xe2\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "e280a8e281a0ffc29f59efbbbf",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u2028\\u2060\\xff\\u009fY\\ufeff\"",
+    "quoted": "\"\\u2028\\u2060\\xff\\u009fY\\ufeff\""
+  },
+  {
+    "in": "ee8080d790c285bf",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\ue000א\\u0085\\xbf\"",
+    "quoted": "\"\\ue000א\\u0085\\xbf\""
+  },
+  {
+    "in": "e2808ecca7d790f09f9880e697a5",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u200ȩא😀日\"",
+    "quoted": "\"\\u200ȩא😀日\""
+  },
+  {
+    "in": "31d8a7efb88fefb790e697a5",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"1ا️\\ufdd0日\"",
+    "quoted": "\"1ا️\\ufdd0日\""
+  },
+  {
+    "in": "efa3bf1b",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\uf8ff\\x1b\"",
+    "quoted": "\"\\uf8ff\\x1b\""
+  },
+  {
+    "in": "3100",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"1\\x00\"",
+    "quoted": "\"1\\x00\""
+  },
+  {
+    "in": "c2ade38080e280ae09f3b08080f48fbfbdd89c",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u00ad　\\u202e\\t\\U000f0000\\U0010fffd\\u061c\"",
+    "quoted": "\"\\u00ad　\\u202e\\t\\U000f0000\\U0010fffd\\u061c\""
+  },
+  {
+    "in": "e281a0c28d7d39",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u2060\\u008d}9\"",
+    "quoted": "\"\\u2060\\u008d}9\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "ffefbfbd",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xff�\"",
+    "quoted": "\"\\xff�\""
+  },
+  {
+    "in": "cdafbfc29bfff3a08480c29fefa3bfc29bc29fe697a5e280ad",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u036f\\xbf\\u009b\\xff󠄀\\u009f\\uf8ff\\u009b\\u009f日\\u202d\"",
+    "quoted": "\"\\u036f\\xbf\\u009b\\xff󠄀\\u009f\\uf8ff\\u009b\\u009f日\\u202d\""
+  },
+  {
+    "in": "d8a7c28d1bc29fe281a0c29fee808031",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"ا\\u008d\\x1b\\u009f\\u2060\\u009f\\ue0001\"",
+    "quoted": "\"ا\\u008d\\x1b\\u009f\\u2060\\u009f\\ue0001\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "e2808cf080e2839df3a081bf",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u200c\\xf0\\x80⃝\\U000e007f\"",
+    "quoted": "\"\\u200c\\xf0\\x80⃝\\U000e007f\""
+  },
+  {
+    "in": "e281a9c29cefbfbf07e280ae09e281a0c2ad",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u2069\\u009c\\uffff\\a\\u202e\\t\\u2060\\u00ad\"",
+    "quoted": "\"\\u2069\\u009c\\uffff\\a\\u202e\\t\\u2060\\u00ad\""
+  },
+  {
+    "in": "cca7c2ade2808ce2808cf3a087afa008c29fe2808de2808fcc81",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u0327\\u00ad\\u200c\\u200c󠇯\\xa0\\b\\u009f\\u200d\\u200f́\"",
+    "quoted": "\"\\u0327\\u00ad\\u200c\\u200c󠇯\\xa0\\b\\u009f\\u200d\\u200f́\""
+  },
+  {
+    "in": "ffe2808be280a91be280aa",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xff\\u200b\\u2029\\x1b\\u202a\"",
+    "quoted": "\"\\xff\\u200b\\u2029\\x1b\\u202a\""
+  },
+  {
+    "in": "5af3a08081cc81",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"Z\\U000e0001́\"",
+    "quoted": "\"Z\\U000e0001́\""
+  },
+  {
+    "in": "f0f3a080812df3b08080e2808dc29cee8080efb790e0a4bf0ce0a483",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xf0\\U000e0001-\\U000f0000\\u200d\\u009c\\ue000\\ufdd0ि\\fः\"",
+    "quoted": "\"\\xf0\\U000e0001-\\U000f0000\\u200d\\u009c\\ue000\\ufdd0ि\\fः\""
+  },
+  {
+    "in": "f3a0848080c29cc25cefb880",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\U000e0100\\x80\\u009c\\xc2\\\\︀\"",
+    "quoted": "\"\\U000e0100\\x80\\u009c\\xc2\\\\︀\""
+  },
+  {
+    "in": "e281a9e280a809c2a0",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u2069\\u2028\\t \"",
+    "quoted": "\"\\u2069\\u2028\\t \""
+  },
+  {
+    "in": "c261c28d1fefa3bf",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xc2a\\u008d\\x1f\\uf8ff\"",
+    "quoted": "\"\\xc2a\\u008d\\x1f\\uf8ff\""
+  },
+  {
+    "in": "5fc2a0e2808d00",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"_ \\u200d\\x00\"",
+    "quoted": "\"_ \\u200d\\x00\""
+  },
+  {
+    "in": "07e280accdafcc80",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\a\\u202cͯ̀\"",
+    "quoted": "\"\\a\\u202cͯ̀\""
+  },
+  {
+    "in": "e280a90bf3a08480",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u2029\\v󠄀\"",
+    "quoted": "\"\\u2029\\v󠄀\""
+  },
+  {
+    "in": "c29c7ee2808dc2a0",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u009c~\\u200d \"",
+    "quoted": "\"\\u009c~\\u200d \""
+  },
+  {
+    "in": "3063e280ad",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"0c\\u202d\"",
+    "quoted": "\"0c\\u202d\""
+  },
+  {
+    "in": "d8a7f0cc800be281a7bf0b",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"ا\\xf0̀\\v\\u2067\\xbf\\v\"",
+    "quoted": "\"ا\\xf0̀\\v\\u2067\\xbf\\v\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "e281a009efb88fd89cbf1fed",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u2060\\t️\\u061c\\xbf\\x1f\\xed\"",
+    "quoted": "\"\\u2060\\t️\\u061c\\xbf\\x1f\\xed\""
+  },
+  {
+    "in": "e2839de38080e69cacc29cd8a7f3b08080c2f0",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u20dd　本\\u009cا\\U000f0000\\xc2\\xf0\"",
+    "quoted": "\"\\u20dd　本\\u009cا\\U000f0000\\xc2\\xf0\""
+  },
+  {
+    "in": "e281a0e280abd79030",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u2060\\u202bא0\"",
+    "quoted": "\"\\u2060\\u202bא0\""
+  },
+  {
+    "in": "08f48fbfbdc29b",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\b\\U0010fffd\\u009b\"",
+    "quoted": "\"\\b\\U0010fffd\\u009b\""
+  },
+  {
+    "in": "e281a9e2808cefbfbe1b7d3063e2839d5f08",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u2069\\u200c\\ufffe\\x1b}0c⃝_\\b\"",
+    "quoted": "\"\\u2069\\u200c\\ufffe\\x1b}0c⃝_\\b\""
+  },
+  {
+    "in": "ee80800ae280ace281a6efb880c28de281a0",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\ue000\\n\\u202c\\u2066︀\\u008d\\u2060\"",
+    "quoted": "\"\\ue000\\n\\u202c\\u2066︀\\u008d\\u2060\""
+  },
+  {
+    "in": "c28de280a9efbfbe0b80e281a9e281a9e69cac",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u008d\\u2029\\ufffe\\v\\x80\\u2069\\u2069本\"",
+    "quoted": "\"\\u008d\\u2029\\ufffe\\v\\x80\\u2069\\u2069本\""
+  },
+  {
+    "in": "ede281a0c29b",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xed\\u2060\\u009b\"",
+    "quoted": "\"\\xed\\u2060\\u009b\""
+  },
+  {
+    "in": "e281a8efbfbdc29f60",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u2068�\\u009f`\"",
+    "quoted": "\"\\u2068�\\u009f`\""
+  },
+  {
+    "in": "f3a08480",
+    "repeat": 1,
+    "valid": true,
+    "out": "󠄀",
+    "quoted": "\"\\U000e0100\""
+  },
+  {
+    "in": "e280aaf0e281a0efa3bfcc80e280aee2808be280abf3a087af0d",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u202a\\xf0\\u2060\\uf8ff̀\\u202e\\u200b\\u202b󠇯\\r\"",
+    "quoted": "\"\\u202a\\xf0\\u2060\\uf8ff̀\\u202e\\u200b\\u202b󠇯\\r\""
+  },
+  {
+    "in": "27efb880e2808bd89c7effe280a963e2808b",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"'︀\\u200b\\u061c~\\xff\\u2029c\\u200b\"",
+    "quoted": "\"'︀\\u200b\\u061c~\\xff\\u2029c\\u200b\""
+  },
+  {
+    "in": "0bc28531e2839dd89ce281a9",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\v\\u00851⃝\\u061c\\u2069\"",
+    "quoted": "\"\\v\\u00851⃝\\u061c\\u2069\""
+  },
+  {
+    "in": "e0a4bf",
+    "repeat": 1,
+    "valid": true,
+    "out": "ि",
+    "quoted": "\"\\u093f\""
+  },
+  {
+    "in": "ee8080e280abe280a9efbfbd0dc29ce2808c00c2adc280",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\ue000\\u202b\\u2029�\\r\\u009c\\u200c\\x00\\u00ad\\u0080\"",
+    "quoted": "\"\\ue000\\u202b\\u2029�\\r\\u009c\\u200c\\x00\\u00ad\\u0080\""
+  },
+  {
+    "in": "e280aa",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u202a\"",
+    "quoted": "\"\\u202a\""
+  },
+  {
+    "in": "80",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\x80\"",
+    "quoted": "\"\\x80\""
+  },
+  {
+    "in": "0d5fc29ce281a9f0e280ad300b80f3a087af",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\r_\\u009c\\u2069\\xf0\\u202d0\\v\\x80󠇯\"",
+    "quoted": "\"\\r_\\u009c\\u2069\\xf0\\u202d0\\v\\x80󠇯\""
+  },
+  {
+    "in": "e280aaf3a081bf7f",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u202a\\U000e007f\\x7f\"",
+    "quoted": "\"\\u202a\\U000e007f\\x7f\""
+  },
+  {
+    "in": "00e280abe280ae317f",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\x00\\u202b\\u202e1\\x7f\"",
+    "quoted": "\"\\x00\\u202b\\u202e1\\x7f\""
+  },
+  {
+    "in": "f3b08080",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\U000f0000\"",
+    "quoted": "\"\\U000f0000\""
+  },
+  {
+    "in": "efa3bf62efb790efbfbef3a087afefbfbeefb790",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\uf8ffb\\ufdd0\\ufffe󠇯\\ufffe\\ufdd0\"",
+    "quoted": "\"\\uf8ffb\\ufdd0\\ufffe󠇯\\ufffe\\ufdd0\""
+  },
+  {
+    "in": "a0e2e280a8c2805fe281a8c29fe280acc2",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xa0\\xe2\\u2028\\u0080_\\u2068\\u009f\\u202c\\xc2\"",
+    "quoted": "\"\\xa0\\xe2\\u2028\\u0080_\\u2068\\u009f\\u202c\\xc2\""
+  },
+  {
+    "in": "0709d8a730e2808fcc80e280aad790c28d",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\a\\tا0\\u200f̀\\u202aא\\u008d\"",
+    "quoted": "\"\\a\\tا0\\u200f̀\\u202aא\\u008d\""
+  },
+  {
+    "in": "d89c0dc29bc29b00e280ad09efbfbf",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u061c\\r\\u009b\\u009b\\x00\\u202d\\t\\uffff\"",
+    "quoted": "\"\\u061c\\r\\u009b\\u009b\\x00\\u202d\\t\\uffff\""
+  },
+  {
+    "in": "e2808bed080cefb8801bedefbbbf0dc3a9e280aa",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u200b\\xed\\b\\f︀\\x1b\\xed\\ufeff\\ré\\u202a\"",
+    "quoted": "\"\\u200b\\xed\\b\\f︀\\x1b\\xed\\ufeff\\ré\\u202a\""
+  },
+  {
+    "in": "cdaf61e280aee281a0e283a30c",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u036fa\\u202e\\u2060⃣\\f\"",
+    "quoted": "\"\\u036fa\\u202e\\u2060⃣\\f\""
+  },
+  {
+    "in": "c29ff48fbfbdf3a08081",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u009f\\U0010fffd\\U000e0001\"",
+    "quoted": "\"\\u009f\\U0010fffd\\U000e0001\""
+  },
+  {
+    "in": "d8a7c2e280a8e281a7",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"ا\\xc2\\u2028\\u2067\"",
+    "quoted": "\"ا\\xc2\\u2028\\u2067\""
+  },
+  {
+    "in": "f09f9880f09f87baefb88fcdaf",
+    "repeat": 1,
+    "valid": true,
+    "out": "😀🇺️ͯ",
+    "quoted": "\"😀🇺️ͯ\""
+  },
+  {
+    "in": "e2808dffefa3bf",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u200d\\xff\\uf8ff\"",
+    "quoted": "\"\\u200d\\xff\\uf8ff\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "c29fbfc280f3a08081",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u009f\\xbf\\u0080\\U000e0001\"",
+    "quoted": "\"\\u009f\\xbf\\u0080\\U000e0001\""
+  },
+  {
+    "in": "1f60edc28dcc801f",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\x1f`\\xed\\u008d̀\\x1f\"",
+    "quoted": "\"\\x1f`\\xed\\u008d̀\\x1f\""
+  },
+  {
+    "in": "e2808cf3a08480a0e2808c61c285efbfbfff",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u200c󠄀\\xa0\\u200ca\\u0085\\uffff\\xff\"",
+    "quoted": "\"\\u200c󠄀\\xa0\\u200ca\\u0085\\uffff\\xff\""
+  },
+  {
+    "in": "e2808ea0e2808e0befbbbfe281a9c29bcdafefb88027",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u200e\\xa0\\u200e\\v\\ufeff\\u2069\\u009bͯ︀'\"",
+    "quoted": "\"\\u200e\\xa0\\u200e\\v\\ufeff\\u2069\\u009bͯ︀'\""
+  },
+  {
+    "in": "cc8109e69cacefb7907fe2808d7bd790d790",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u0301\\t本\\ufdd0\\x7f\\u200d{אא\"",
+    "quoted": "\"\\u0301\\t本\\ufdd0\\x7f\\u200d{אא\""
+  },
+  {
+    "in": "c29c",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u009c\"",
+    "quoted": "\"\\u009c\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "ffe281a80dc29fe280a91fe280acc2",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xff\\u2068\\r\\u009f\\u2029\\x1f\\u202c\\xc2\"",
+    "quoted": "\"\\xff\\u2068\\r\\u009f\\u2029\\x1f\\u202c\\xc2\""
+  },
+  {
+    "in": "f3a081bfe280aaedc3a9e280ab0c7e0ac280e283a31b",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\U000e007f\\u202a\\xedé\\u202b\\f~\\n\\u0080⃣\\x1b\"",
+    "quoted": "\"\\U000e007f\\u202a\\xedé\\u202b\\f~\\n\\u0080⃣\\x1b\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "e280a8c29bf48fbfbdefb790d89cf3a08081e0a4bf1fc29bc29c",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u2028\\u009b\\U0010fffd\\ufdd0\\u061c\\U000e0001ि\\x1f\\u009b\\u009c\"",
+    "quoted": "\"\\u2028\\u009b\\U0010fffd\\ufdd0\\u061c\\U000e0001ि\\x1f\\u009b\\u009c\""
+  },
+  {
+    "in": "cca7e281a8c29c58c280",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u0327\\u2068\\u009cX\\u0080\"",
+    "quoted": "\"\\u0327\\u2068\\u009cX\\u0080\""
+  },
+  {
+    "in": "e2c29befbbbfed7bc285efb88fc2",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xe2\\u009b\\ufeff\\xed{\\u0085️\\xc2\"",
+    "quoted": "\"\\xe2\\u009b\\ufeff\\xed{\\u0085️\\xc2\""
+  },
+  {
+    "in": "e2808d80e280a963cc81",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u200d\\x80\\u2029ć\"",
+    "quoted": "\"\\u200d\\x80\\u2029ć\""
+  },
+  {
+    "in": "7da0c28d",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"}\\xa0\\u008d\"",
+    "quoted": "\"}\\xa0\\u008d\""
+  },
+  {
+    "in": "63e21f7bc28df0",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"c\\xe2\\x1f{\\u008d\\xf0\"",
+    "quoted": "\"c\\xe2\\x1f{\\u008d\\xf0\""
+  },
+  {
+    "in": "f3a087afc28dc2ad600b7b1be0a483",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\U000e01ef\\u008d\\u00ad`\\v{\\x1bः\"",
+    "quoted": "\"\\U000e01ef\\u008d\\u00ad`\\v{\\x1bः\""
+  },
+  {
+    "in": "cc80efbfbfe280aac21fc285",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u0300\\uffff\\u202a\\xc2\\x1f\\u0085\"",
+    "quoted": "\"\\u0300\\uffff\\u202a\\xc2\\x1f\\u0085\""
+  },
+  {
+    "in": "e283a3f3b08080e697a509e0a483",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u20e3\\U000f0000日\\tः\"",
+    "quoted": "\"\\u20e3\\U000f0000日\\tः\""
+  },
+  {
+    "in": "07cdafe69cace0a483f3b0808030e280adc2800c",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\aͯ本ः\\U000f00000\\u202d\\u0080\\f\"",
+    "quoted": "\"\\aͯ本ः\\U000f00000\\u202d\\u0080\\f\""
+  },
+  {
+    "in": "f48fbfbdf0c285f3a08081cc807ff09f9880e281a0e38080",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\U0010fffd\\xf0\\u0085\\U000e0001̀\\x7f😀\\u2060　\"",
+    "quoted": "\"\\U0010fffd\\xf0\\u0085\\U000e0001̀\\x7f😀\\u2060　\""
+  },
+  {
+    "in": "f3a087aff48fbfbda01b1be0a4bf07",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\U000e01ef\\U0010fffd\\xa0\\x1b\\x1bि\\a\"",
+    "quoted": "\"\\U000e01ef\\U0010fffd\\xa0\\x1b\\x1bि\\a\""
+  },
+  {
+    "in": "f3a081bfefb790f007c29f",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\U000e007f\\ufdd0\\xf0\\a\\u009f\"",
+    "quoted": "\"\\U000e007f\\ufdd0\\xf0\\a\\u009f\""
+  },
+  {
+    "in": "60",
+    "repeat": 1,
+    "valid": true,
+    "out": "`",
+    "quoted": "\"`\""
+  },
+  {
+    "in": "d79030c285efbfbe59e2",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"א0\\u0085\\ufffeY\\xe2\"",
+    "quoted": "\"א0\\u0085\\ufffeY\\xe2\""
+  },
+  {
+    "in": "0ac280c29fc285f3a081bfc28d7fc29f",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\n\\u0080\\u009f\\u0085\\U000e007f\\u008d\\x7f\\u009f\"",
+    "quoted": "\"\\n\\u0080\\u009f\\u0085\\U000e007f\\u008d\\x7f\\u009f\""
+  },
+  {
+    "in": "80e2839de281a8e281a9e2808c007eefbfbd08e280adefb88f",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\x80⃝\\u2068\\u2069\\u200c\\x00~�\\b\\u202d️\"",
+    "quoted": "\"\\x80⃝\\u2068\\u2069\\u200c\\x00~�\\b\\u202d️\""
+  },
+  {
+    "in": "2fc29fc29cefbfbef3a08081c2a0d790efbfbf0cefb88f2d",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"/\\u009f\\u009c\\ufffe\\U000e0001 א\\uffff\\f️-\"",
+    "quoted": "\"/\\u009f\\u009c\\ufffe\\U000e0001 א\\uffff\\f️-\""
+  },
+  {
+    "in": "d89cc29c00efbbbf597fffe281a0e69cac",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u061c\\u009c\\x00\\ufeffY\\x7f\\xff\\u2060本\"",
+    "quoted": "\"\\u061c\\u009c\\x00\\ufeffY\\x7f\\xff\\u2060本\""
+  },
+  {
+    "in": "efbbbfe2f3a081bfc29ce2808ce2808ba0f07befa3bf",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\ufeff\\xe2\\U000e007f\\u009c\\u200c\\u200b\\xa0\\xf0{\\uf8ff\"",
+    "quoted": "\"\\ufeff\\xe2\\U000e007f\\u009c\\u200c\\u200b\\xa0\\xf0{\\uf8ff\""
+  },
+  {
+    "in": "7de2808b",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"}\\u200b\"",
+    "quoted": "\"}\\u200b\""
+  },
+  {
+    "in": "e2808ee283a32d",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u200e⃣-\"",
+    "quoted": "\"\\u200e⃣-\""
+  },
+  {
+    "in": "f09f9880bfed1be697a5",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"😀\\xbf\\xed\\x1b日\"",
+    "quoted": "\"😀\\xbf\\xed\\x1b日\""
+  },
+  {
+    "in": "e697a51b",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"日\\x1b\"",
+    "quoted": "\"日\\x1b\""
+  },
+  {
+    "in": "5fc2e2808c7f",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"_\\xc2\\u200c\\x7f\"",
+    "quoted": "\"_\\xc2\\u200c\\x7f\""
+  },
+  {
+    "in": "efbfbee281a7e281a7092207e280a9efb88f39c3a9e280ae",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\ufffe\\u2067\\u2067\\t\\\"\\a\\u2029️9é\\u202e\"",
+    "quoted": "\"\\ufffe\\u2067\\u2067\\t\\\"\\a\\u2029️9é\\u202e\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "e2808e",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u200e\"",
+    "quoted": "\"\\u200e\""
+  },
+  {
+    "in": "1be280acff",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\x1b\\u202c\\xff\"",
+    "quoted": "\"\\x1b\\u202c\\xff\""
+  },
+  {
+    "in": "efa3bfe697a57d27f09f87ba00cc81",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\uf8ff日}'🇺\\x00́\"",
+    "quoted": "\"\\uf8ff日}'🇺\\x00́\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "ff0bc28dc280c29f",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xff\\v\\u008d\\u0080\\u009f\"",
+    "quoted": "\"\\xff\\v\\u008d\\u0080\\u009f\""
+  },
+  {
+    "in": "c29befbfbe0ce280aee280a800e283a380e281a6f09f87baefb790",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u009b\\ufffe\\f\\u202e\\u2028\\x00⃣\\x80\\u2066🇺\\ufdd0\"",
+    "quoted": "\"\\u009b\\ufffe\\f\\u202e\\u2028\\x00⃣\\x80\\u2066🇺\\ufdd0\""
+  },
+  {
+    "in": "e281a6edf09f9880e281a6efbfbf59e2808ee280ad",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u2066\\xed😀\\u2066\\uffffY\\u200e\\u202d\"",
+    "quoted": "\"\\u2066\\xed😀\\u2066\\uffffY\\u200e\\u202d\""
+  },
+  {
+    "in": "f3a08480e280a9f48fbfbdefbfbd5ae281a07e",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\U000e0100\\u2029\\U0010fffd�Z\\u2060~\"",
+    "quoted": "\"\\U000e0100\\u2029\\U0010fffd�Z\\u2060~\""
+  },
+  {
+    "in": "c3a9c29fefbfbd0de38080c285e2808b",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"é\\u009f�\\r　\\u0085\\u200b\"",
+    "quoted": "\"é\\u009f�\\r　\\u0085\\u200b\""
+  },
+  {
+    "in": "ee8080",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\ue000\"",
+    "quoted": "\"\\ue000\""
+  },
+  {
+    "in": "f3a08480f09f9880e2808cd8a7e69cacc29ff3a08081",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\U000e0100😀\\u200cا本\\u009f\\U000e0001\"",
+    "quoted": "\"\\U000e0100😀\\u200cا本\\u009f\\U000e0001\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "f3b08080c29fbfe281a8e2808be281a8c28531ed2e",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\U000f0000\\u009f\\xbf\\u2068\\u200b\\u2068\\u00851\\xed.\"",
+    "quoted": "\"\\U000f0000\\u009f\\xbf\\u2068\\u200b\\u2068\\u00851\\xed.\""
+  },
+  {
+    "in": "a0c28de38080c28d",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xa0\\u008d　\\u008d\"",
+    "quoted": "\"\\xa0\\u008d　\\u008d\""
+  },
+  {
+    "in": "c2857be2808be280aae697a5f3a08480",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u0085{\\u200b\\u202a日󠄀\"",
+    "quoted": "\"\\u0085{\\u200b\\u202a日󠄀\""
+  },
+  {
+    "in": "c28d",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u008d\"",
+    "quoted": "\"\\u008d\""
+  },
+  {
+    "in": "ffa0efb8807ff3a08480e280a8",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xff\\xa0︀\\x7f󠄀\\u2028\"",
+    "quoted": "\"\\xff\\xa0︀\\x7f󠄀\\u2028\""
+  },
+  {
+    "in": "5858e281a9c2e2808be280ab",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"XX\\u2069\\xc2\\u200b\\u202b\"",
+    "quoted": "\"XX\\u2069\\xc2\\u200b\\u202b\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "20efbfbfd8a7300cd790bf",
+    "repeat": 1,
+    "valid": false,
+    "out": "\" \\uffffا0\\fא\\xbf\"",
+    "quoted": "\" \\uffffا0\\fא\\xbf\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "ffefb880f09f87baf3a081bfcc80f3a087af0dc280",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xff︀🇺\\U000e007f̀󠇯\\r\\u0080\"",
+    "quoted": "\"\\xff︀🇺\\U000e007f̀󠇯\\r\\u0080\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "e0a483",
+    "repeat": 1,
+    "valid": true,
+    "out": "ः",
+    "quoted": "\"\\u0903\""
+  },
+  {
+    "in": "a0c29fefb790efa3bf5f39efbfbfe280a9ffe281a6efbfbe",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xa0\\u009f\\ufdd0\\uf8ff_9\\uffff\\u2029\\xff\\u2066\\ufffe\"",
+    "quoted": "\"\\xa0\\u009f\\ufdd0\\uf8ff_9\\uffff\\u2029\\xff\\u2066\\ufffe\""
+  },
+  {
+    "in": "efb790efa3bfe2808be0a4bfe280a92e",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\ufdd0\\uf8ff\\u200bि\\u2029.\"",
+    "quoted": "\"\\ufdd0\\uf8ff\\u200bि\\u2029.\""
+  },
+  {
+    "in": "58c29be2808b61e2808be38080d8a7cc80e2808defbfbf0c",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"X\\u009b\\u200ba\\u200b　ا̀\\u200d\\uffff\\f\"",
+    "quoted": "\"X\\u009b\\u200ba\\u200b　ا̀\\u200d\\uffff\\f\""
+  },
+  {
+    "in": "d89ce38080c29cf3a081bf58f0e697a5f09f9880",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u061c　\\u009c\\U000e007fX\\xf0日😀\"",
+    "quoted": "\"\\u061c　\\u009c\\U000e007fX\\xf0日😀\""
+  },
+  {
+    "in": "e2c28df48fbfbd20c29cc2adc280",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xe2\\u008d\\U0010fffd \\u009c\\u00ad\\u0080\"",
+    "quoted": "\"\\xe2\\u008d\\U0010fffd \\u009c\\u00ad\\u0080\""
+  },
+  {
+    "in": "f09f87bae0a483efa3bfe283a3c28d1fc285c29cc280092d",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"🇺ः\\uf8ff⃣\\u008d\\x1f\\u0085\\u009c\\u0080\\t-\"",
+    "quoted": "\"🇺ः\\uf8ff⃣\\u008d\\x1f\\u0085\\u009c\\u0080\\t-\""
+  },
+  {
+    "in": "efa3bf311fefbfbef3a08081e0a4bfc29b",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\uf8ff1\\x1f\\ufffe\\U000e0001ि\\u009b\"",
+    "quoted": "\"\\uf8ff1\\x1f\\ufffe\\U000e0001ि\\u009b\""
+  },
+  {
+    "in": "f3a087afe280ad80",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\U000e01ef\\u202d\\x80\"",
+    "quoted": "\"\\U000e01ef\\u202d\\x80\""
+  },
+  {
+    "in": "0ce281a8",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\f\\u2068\"",
+    "quoted": "\"\\f\\u2068\""
+  },
+  {
+    "in": "f3a08480c28580e0a4bfefb790c3a9e281a0f09f87bac28d",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\U000e0100\\u0085\\x80ि\\ufdd0é\\u2060🇺\\u008d\"",
+    "quoted": "\"\\U000e0100\\u0085\\x80ि\\ufdd0é\\u2060🇺\\u008d\""
+  },
+  {
+    "in": "08f09f9880d7900c22c285e0a4bfd790",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\b😀א\\f\\\"\\u0085िא\"",
+    "quoted": "\"\\b😀א\\f\\\"\\u0085िא\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "30efbbbfee8080087f80c2a0cca7c29f",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"0\\ufeff\\ue000\\b\\x7f\\x80 ̧\\u009f\"",
+    "quoted": "\"0\\ufeff\\ue000\\b\\x7f\\x80 ̧\\u009f\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "ffc2edff62e0a4bfd8a7cc80",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xff\\xc2\\xed\\xffbिا̀\"",
+    "quoted": "\"\\xff\\xc2\\xed\\xffbिا̀\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "f3a081bf5fe2808e0bc2cc80e380801b",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\U000e007f_\\u200e\\v\\xc2̀　\\x1b\"",
+    "quoted": "\"\\U000e007f_\\u200e\\v\\xc2̀　\\x1b\""
+  },
+  {
+    "in": "e280a8efb8805ac20befbfbe80",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u2028︀Z\\xc2\\v\\ufffe\\x80\"",
+    "quoted": "\"\\u2028︀Z\\xc2\\v\\ufffe\\x80\""
+  },
+  {
+    "in": "58edf09f9880f09f87ba0be281a8c29b7eefbfbde280a9",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"X\\xed😀🇺\\v\\u2068\\u009b~�\\u2029\"",
+    "quoted": "\"X\\xed😀🇺\\v\\u2068\\u009b~�\\u2029\""
+  },
+  {
+    "in": "39c29befb790e38080efa3bfc28defbfbfc29c",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"9\\u009b\\ufdd0　\\uf8ff\\u008d\\uffff\\u009c\"",
+    "quoted": "\"9\\u009b\\ufdd0　\\uf8ff\\u008d\\uffff\\u009c\""
+  },
+  {
+    "in": "efb8800ce20dd89c",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\ufe00\\f\\xe2\\r\\u061c\"",
+    "quoted": "\"\\ufe00\\f\\xe2\\r\\u061c\""
+  },
+  {
+    "in": "7bcca7e281a0e0a4bf0c",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"{̧\\u2060ि\\f\"",
+    "quoted": "\"{̧\\u2060ि\\f\""
+  },
+  {
+    "in": "f0c2802eefb79080e281a6",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xf0\\u0080.\\ufdd0\\x80\\u2066\"",
+    "quoted": "\"\\xf0\\u0080.\\ufdd0\\x80\\u2066\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "d89cc29ff3a08480ed5cf09f87ba7ec29ccc80",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u061c\\u009f󠄀\\xed\\\\🇺~\\u009c̀\"",
+    "quoted": "\"\\u061c\\u009f󠄀\\xed\\\\🇺~\\u009c̀\""
+  },
+  {
+    "in": "efb7902fc2ade2839dc2ad",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\ufdd0/\\u00ad⃝\\u00ad\"",
+    "quoted": "\"\\ufdd0/\\u00ad⃝\\u00ad\""
+  },
+  {
+    "in": "cc81c29be2808f7be2808df09f9880f09f9880d89ce2808b",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u0301\\u009b\\u200f{\\u200d😀😀\\u061c\\u200b\"",
+    "quoted": "\"\\u0301\\u009b\\u200f{\\u200d😀😀\\u061c\\u200b\""
+  },
+  {
+    "in": "c28dd8a700efb880e2808c0980e697a5",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u008dا\\x00︀\\u200c\\t\\x80日\"",
+    "quoted": "\"\\u008dا\\x00︀\\u200c\\t\\x80日\""
+  },
+  {
+    "in": "c29f",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u009f\"",
+    "quoted": "\"\\u009f\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "f3a08480",
+    "repeat": 1,
+    "valid": true,
+    "out": "󠄀",
+    "quoted": "\"\\U000e0100\""
+  },
+  {
+    "in": "d790f09f87baf48fbfbdf3a081bf0700",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"א🇺\\U0010fffd\\U000e007f\\a\\x00\"",
+    "quoted": "\"א🇺\\U0010fffd\\U000e007f\\a\\x00\""
+  },
+  {
+    "in": "e2808ec2",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u200e\\xc2\"",
+    "quoted": "\"\\u200e\\xc2\""
+  },
+  {
+    "in": "2fee80801f80c285",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"/\\ue000\\x1f\\x80\\u0085\"",
+    "quoted": "\"/\\ue000\\x1f\\x80\\u0085\""
+  },
+  {
+    "in": "efbfbe7ee38080f09f9880c29f27c29ba0ee8080e280ac",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\ufffe~　😀\\u009f'\\u009b\\xa0\\ue000\\u202c\"",
+    "quoted": "\"\\ufffe~　😀\\u009f'\\u009b\\xa0\\ue000\\u202c\""
+  },
+  {
+    "in": "e2808fe2808d0d0c",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u200f\\u200d\\r\\f\"",
+    "quoted": "\"\\u200f\\u200d\\r\\f\""
+  },
+  {
+    "in": "63c285efbbbf59e280aac28dc2c2a0",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"c\\u0085\\ufeffY\\u202a\\u008d\\xc2 \"",
+    "quoted": "\"c\\u0085\\ufeffY\\u202a\\u008d\\xc2 \""
+  },
+  {
+    "in": "2fe280a8f3b08080cc800c39f3a08480c29c",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"/\\u2028\\U000f0000̀\\f9󠄀\\u009c\"",
+    "quoted": "\"/\\u2028\\U000f0000̀\\f9󠄀\\u009c\""
+  },
+  {
+    "in": "63cdafe280aa",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"cͯ\\u202a\"",
+    "quoted": "\"cͯ\\u202a\""
+  },
+  {
+    "in": "e2839d",
+    "repeat": 1,
+    "valid": true,
+    "out": "⃝",
+    "quoted": "\"\\u20dd\""
+  },
+  {
+    "in": "f3a087af1f6000e0a4bfa0ed",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\U000e01ef\\x1f`\\x00ि\\xa0\\xed\"",
+    "quoted": "\"\\U000e01ef\\x1f`\\x00ि\\xa0\\xed\""
+  },
+  {
+    "in": "efbfbe",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\ufffe\"",
+    "quoted": "\"\\ufffe\""
+  },
+  {
+    "in": "58f3a08081e2808d",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"X\\U000e0001\\u200d\"",
+    "quoted": "\"X\\U000e0001\\u200d\""
+  },
+  {
+    "in": "0980c3a9c285e2808f",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\t\\x80é\\u0085\\u200f\"",
+    "quoted": "\"\\t\\x80é\\u0085\\u200f\""
+  },
+  {
+    "in": "5cefa3bf2ee281a7efbbbfc280",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\\\\\uf8ff.\\u2067\\ufeff\\u0080\"",
+    "quoted": "\"\\\\\\uf8ff.\\u2067\\ufeff\\u0080\""
+  },
+  {
+    "in": "e2808ce69cacf48fbfbdc3a9c28de2808de69cacefb880c29f",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u200c本\\U0010fffdé\\u008d\\u200d本︀\\u009f\"",
+    "quoted": "\"\\u200c本\\U0010fffdé\\u008d\\u200d本︀\\u009f\""
+  },
+  {
+    "in": "c2efbfbde281a8f3a084807eefbfbee281a0f3a081bfc2a0",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xc2�\\u2068󠄀~\\ufffe\\u2060\\U000e007f \"",
+    "quoted": "\"\\xc2�\\u2068󠄀~\\ufffe\\u2060\\U000e007f \""
+  },
+  {
+    "in": "0ae281a8d790e38080c2ad08e281a6",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\n\\u2068א　\\u00ad\\b\\u2066\"",
+    "quoted": "\"\\n\\u2068א　\\u00ad\\b\\u2066\""
+  },
+  {
+    "in": "e38080",
+    "repeat": 1,
+    "valid": true,
+    "out": "　",
+    "quoted": "\"　\""
+  },
+  {
+    "in": "c29bffefbfbf7e",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u009b\\xff\\uffff~\"",
+    "quoted": "\"\\u009b\\xff\\uffff~\""
+  },
+  {
+    "in": "5cc28de280aeedf3a087afcca7",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\\\\\u008d\\u202e\\xed󠇯̧\"",
+    "quoted": "\"\\\\\\u008d\\u202e\\xed󠇯̧\""
+  },
+  {
+    "in": "c2805c1fefbbbfc29bbff3b08080",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u0080\\\\\\x1f\\ufeff\\u009b\\xbf\\U000f0000\"",
+    "quoted": "\"\\u0080\\\\\\x1f\\ufeff\\u009b\\xbf\\U000f0000\""
+  },
+  {
+    "in": "c28de281a8c29bc3a9bfd8a7",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u008d\\u2068\\u009bé\\xbfا\"",
+    "quoted": "\"\\u008d\\u2068\\u009bé\\xbfا\""
+  },
+  {
+    "in": "c29fefb790c28dc29be2e69cace280abe2808bf3a081bf63e280a8",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u009f\\ufdd0\\u008d\\u009b\\xe2本\\u202b\\u200b\\U000e007fc\\u2028\"",
+    "quoted": "\"\\u009f\\ufdd0\\u008d\\u009b\\xe2本\\u202b\\u200b\\U000e007fc\\u2028\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "cca7e280ae",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u0327\\u202e\"",
+    "quoted": "\"\\u0327\\u202e\""
+  },
+  {
+    "in": "22efbfbf2ec2622df3b080801bf3b08080",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\\"\\uffff.\\xc2b-\\U000f0000\\x1b\\U000f0000\"",
+    "quoted": "\"\\\"\\uffff.\\xc2b-\\U000f0000\\x1b\\U000f0000\""
+  },
+  {
+    "in": "f09f9880e2808fe2808defb790e2808de2808dcca7f3a081bf",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"😀\\u200f\\u200d\\ufdd0\\u200d\\u200ḑ\\U000e007f\"",
+    "quoted": "\"😀\\u200f\\u200d\\ufdd0\\u200d\\u200ḑ\\U000e007f\""
+  },
+  {
+    "in": "63f0c29fc29ff01fefbfbee280ae0d",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"c\\xf0\\u009f\\u009f\\xf0\\x1f\\ufffe\\u202e\\r\"",
+    "quoted": "\"c\\xf0\\u009f\\u009f\\xf0\\x1f\\ufffe\\u202e\\r\""
+  },
+  {
+    "in": "e697a5efbbbfc28d",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"日\\ufeff\\u008d\"",
+    "quoted": "\"日\\ufeff\\u008d\""
+  },
+  {
+    "in": "e2d790c280d79007e2808c1b",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xe2א\\u0080א\\a\\u200c\\x1b\"",
+    "quoted": "\"\\xe2א\\u0080א\\a\\u200c\\x1b\""
+  },
+  {
+    "in": "c28d7fc2a0f3b0808020c2adefa3bfefbbbf",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u008d\\x7f \\U000f0000 \\u00ad\\uf8ff\\ufeff\"",
+    "quoted": "\"\\u008d\\x7f \\U000f0000 \\u00ad\\uf8ff\\ufeff\""
+  },
+  {
+    "in": "c280e281a02fc2ad",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u0080\\u2060/\\u00ad\"",
+    "quoted": "\"\\u0080\\u2060/\\u00ad\""
+  },
+  {
+    "in": "c29befbfbeefa3bfd790",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u009b\\ufffe\\uf8ffא\"",
+    "quoted": "\"\\u009b\\ufffe\\uf8ffא\""
+  },
+  {
+    "in": "c2275ce2808fe280adbf0bd89cc29c",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xc2'\\\\\\u200f\\u202d\\xbf\\v\\u061c\\u009c\"",
+    "quoted": "\"\\xc2'\\\\\\u200f\\u202d\\xbf\\v\\u061c\\u009c\""
+  },
+  {
+    "in": "c280e280aef3a087af",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u0080\\u202e󠇯\"",
+    "quoted": "\"\\u0080\\u202e󠇯\""
+  },
+  {
+    "in": "7f",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\x7f\"",
+    "quoted": "\"\\x7f\""
+  },
+  {
+    "in": "f3a087aff3b08080e281a8c285e281a9f3a081bfefbfbe08",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\U000e01ef\\U000f0000\\u2068\\u0085\\u2069\\U000e007f\\ufffe\\b\"",
+    "quoted": "\"\\U000e01ef\\U000f0000\\u2068\\u0085\\u2069\\U000e007f\\ufffe\\b\""
+  },
+  {
+    "in": "61c29fe280a9f48fbfbdc285c29b08cc80cc80",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"a\\u009f\\u2029\\U0010fffd\\u0085\\u009b\\b̀̀\"",
+    "quoted": "\"a\\u009f\\u2029\\U0010fffd\\u0085\\u009b\\b̀̀\""
+  },
+  {
+    "in": "f0cca7c29cf3a087afe280a8",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xf0̧\\u009c󠇯\\u2028\"",
+    "quoted": "\"\\xf0̧\\u009c󠇯\\u2028\""
+  },
+  {
+    "in": "c28d7d08efbfbec3a91fe280ade2808fc29c",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\u008d}\\b\\ufffeé\\x1f\\u202d\\u200f\\u009c\"",
+    "quoted": "\"\\u008d}\\b\\ufffeé\\x1f\\u202d\\u200f\\u009c\""
+  },
+  {
+    "in": "",
+    "repeat": 1,
+    "valid": true,
+    "out": "",
+    "quoted": "\"\""
+  },
+  {
+    "in": "1bc29fe280a8f3b08080ede281a6efbfbdf3a087afee8080e69cac",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\x1b\\u009f\\u2028\\U000f0000\\xed\\u2066�󠇯\\ue000本\"",
+    "quoted": "\"\\x1b\\u009f\\u2028\\U000f0000\\xed\\u2066�󠇯\\ue000本\""
+  },
+  {
+    "in": "e281a0c28de2808cefb790a009f48fbfbdefbfbd",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\u2060\\u008d\\u200c\\ufdd0\\xa0\\t\\U0010fffd�\"",
+    "quoted": "\"\\u2060\\u008d\\u200c\\ufdd0\\xa0\\t\\U0010fffd�\""
+  },
+  {
+    "in": "f09f98805fc280c29bc29fcc80f3a08081e2808ed790",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"😀_\\u0080\\u009b\\u009f̀\\U000e0001\\u200eא\"",
+    "quoted": "\"😀_\\u0080\\u009b\\u009f̀\\U000e0001\\u200eא\""
+  },
+  {
+    "in": "f3a081bf",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\U000e007f\"",
+    "quoted": "\"\\U000e007f\""
+  },
+  {
+    "in": "0cc280e2808bc285",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\f\\u0080\\u200b\\u0085\"",
+    "quoted": "\"\\f\\u0080\\u200b\\u0085\""
+  }
+]
