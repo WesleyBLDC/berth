@@ -49,6 +49,9 @@ const (
 	resetCalls = 32
 )
 
+// accept is websocket.Accept; a test swaps it to hold a handshake open.
+var accept = websocket.Accept
+
 // Proxy opens one endpoint per ready browser.
 type Proxy struct {
 	Log *slog.Logger
@@ -71,7 +74,7 @@ func (p *Proxy) Serve(id string, conn ports.BrowserConn, tokenHash [32]byte) (st
 	e := &endpoint{
 		log: p.Log, id: id, conn: conn, tokenHash: tokenHash, addr: ln.Addr().String(), ctx: ctx,
 		maxBytes: orDefault(p.MaxQueuedBytes, DefaultMaxQueuedBytes), resetWait: orDefault(p.ResetWait, DefaultResetWait),
-		stale: map[int64]string{}, hides: make(chan hideJob, maxTracked),
+		stale: map[int64]string{}, hides: make(chan hideJob, maxTracked), slot: make(chan struct{}, 1),
 	}
 	for range resetCalls {
 		go e.hideWorker()
@@ -117,6 +120,11 @@ type endpoint struct {
 	resetWait time.Duration
 	// ctx ends with the endpoint; the detaches of hidden sessions run on it.
 	ctx context.Context
+
+	// slot is held by the one connection allowed at a time, from before its handshake until its
+	// state is undone. It is apart from mu, so a client that stalls its handshake holds up no one
+	// else, the pipe's reader included.
+	slot chan struct{}
 
 	mu     sync.Mutex
 	active *websocket.Conn
@@ -200,25 +208,13 @@ func (e *endpoint) closeActive() {
 }
 
 func (e *endpoint) socket(w http.ResponseWriter, r *http.Request) {
-	e.mu.Lock()
-	if e.active != nil {
-		e.mu.Unlock()
+	select {
+	case e.slot <- struct{}{}:
+	default:
 		http.Error(w, "another CDP connection is open", http.StatusConflict)
 		return
 	}
-	ws, err := websocket.Accept(w, r, nil)
-	if err != nil {
-		e.mu.Unlock()
-		return
-	}
-	e.active = ws
-	e.mu.Unlock()
-	ws.SetReadLimit(maxMessage)
 	ctx, cancel := context.WithCancel(r.Context())
-	// The reset runs after the request ends, so it must not end with it.
-	defer e.release(context.WithoutCancel(r.Context()), ws)
-	defer cancel()
-
 	out := make(chan []byte, queued)
 	var dropOnce sync.Once
 	drop := func() { dropOnce.Do(cancel) }
@@ -234,12 +230,25 @@ func (e *endpoint) socket(w http.ResponseWriter, r *http.Request) {
 			drop()
 		}
 	}
+	// The connection is tracked from before its handshake, so what the browser sends while the
+	// handshake runs is queued for it, and its state is undone even when the handshake fails.
 	e.mu.Lock()
 	e.cur = &client{
 		inFlight: map[int64]call{}, sessions: map[string]session{}, targets: map[string]map[string]bool{},
 		waiting: map[string]bool{}, push: push, drop: drop,
 	}
 	e.mu.Unlock()
+	ws, err := accept(w, r, nil)
+	// The reset runs after the request ends, so it must not end with it.
+	defer e.release(context.WithoutCancel(r.Context()), ws)
+	defer cancel()
+	if err != nil {
+		return
+	}
+	e.mu.Lock()
+	e.active = ws
+	e.mu.Unlock()
+	ws.SetReadLimit(maxMessage)
 	go func() {
 		for {
 			select {
@@ -312,7 +321,9 @@ func (e *endpoint) socket(w http.ResponseWriter, r *http.Request) {
 // release ends a connection and frees its slot only once its state is undone, so nothing it
 // left reaches the next connection.
 func (e *endpoint) release(ctx context.Context, ws *websocket.Conn) {
-	_ = ws.CloseNow()
+	if ws != nil {
+		_ = ws.CloseNow()
+	}
 	e.mu.Lock()
 	c := e.cur
 	c.push = nil
@@ -322,6 +333,7 @@ func (e *endpoint) release(ctx context.Context, ws *websocket.Conn) {
 	e.cur = nil
 	e.active = nil
 	e.mu.Unlock()
+	<-e.slot
 }
 
 // toBrowser records a message about to be sent, or says why it may not be: a session the

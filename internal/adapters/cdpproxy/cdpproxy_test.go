@@ -807,3 +807,61 @@ func TestCallsAreRefusedWhileStaleTrackingIsFull(t *testing.T) {
 	write(t, next, `{"id":20000,"method":"Target.getTargets"}`)
 	refusedWith(t, read(t, next), 20000, "too many calls left unanswered")
 }
+
+func TestAStalledHandshakeHoldsUpNoBrowserMessage(t *testing.T) {
+	entered, release := make(chan struct{}), make(chan struct{})
+	t.Cleanup(cdpproxy.SetAccept(func(w http.ResponseWriter, r *http.Request, o *websocket.AcceptOptions) (*websocket.Conn, error) {
+		close(entered)
+		<-release
+		return websocket.Accept(w, r, o)
+	}))
+	fb, endpoint, _ := serve(t)
+	dialed := make(chan error, 1)
+	go func() {
+		ws, _, err := dial(t, endpoint, true)
+		if err == nil {
+			_ = ws.CloseNow()
+		}
+		dialed <- err
+	}()
+	<-entered
+	emitted := make(chan error, 1)
+	go func() { emitted <- fb.Emit([]byte(`{"method":"Target.targetCreated","params":{}}`)) }()
+	select {
+	case err := <-emitted:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		close(release)
+		t.Fatal("a browser message waited on a stalled handshake")
+	}
+	if _, status, err := dial(t, endpoint, true); err == nil || status != http.StatusConflict {
+		t.Fatalf("a second connection during the handshake: %d %v, want 409", status, err)
+	}
+	close(release)
+	if err := <-dialed; err != nil {
+		t.Fatal(err)
+	}
+}
+
+// What the browser sends once a connection has its slot, while its handshake still runs, reaches
+// that connection instead of being lost.
+func TestABrowserMessageDuringTheHandshakeReachesTheConnection(t *testing.T) {
+	var fb *testutil.FakeBrowser
+	t.Cleanup(cdpproxy.SetAccept(func(w http.ResponseWriter, r *http.Request, o *websocket.AcceptOptions) (*websocket.Conn, error) {
+		if err := fb.Emit([]byte(`{"method":"Target.targetCreated","params":{}}`)); err != nil {
+			t.Error(err)
+		}
+		return websocket.Accept(w, r, o)
+	}))
+	fb, endpoint, _ := serve(t)
+	ws, _, err := dial(t, endpoint, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ws.CloseNow() }()
+	if m := read(t, ws); m["method"] != "Target.targetCreated" {
+		t.Fatalf("got %v, want the message sent during the handshake", m)
+	}
+}
