@@ -158,5 +158,20 @@
     "in": "é inner mark",
     "out": "é inner mark",
     "quoted": "\"é inner mark\""
+  },
+  {
+    "in": "\"x\\n\"",
+    "out": "\"\\\"x\\\\n\\\"\"",
+    "quoted": "\"\\\"x\\\\n\\\"\""
+  },
+  {
+    "in": "\"",
+    "out": "\"\\\"\"",
+    "quoted": "\"\\\"\""
+  },
+  {
+    "in": "a\"b",
+    "out": "a\"b",
+    "quoted": "\"a\\\"b\""
   }
 ]

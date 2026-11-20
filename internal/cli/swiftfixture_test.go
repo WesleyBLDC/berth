@@ -37,6 +37,7 @@ var shownCorpus = []string{
 	"del\x7f", "nul\x00x", "rtl\u202eabc", "nel\u0085", "zwsp\u200b", "bom\ufeff", "ls\u2028", "ps\u2029",
 	"quote\" and \x1b", "private\ue000", "tag\U000E0001", "supp private\U000F0000",
 	"\u0301acute first", "\ufe0fselector first", "\U000E0100supplement selector first", "e\u0301 inner mark",
+	`"x\n"`, `"`, `a"b`,
 }
 
 // quoted is the app's always quoting form: strconv.QuoteToGraphic, with a leading combining mark

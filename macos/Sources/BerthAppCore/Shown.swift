@@ -3,9 +3,10 @@ import Foundation
 /// The Swift twin of the berth CLI's shown: text a process chose is shown as is when every
 /// character is graphic, else quoted with Go's escapes (strconv.QuoteToGraphic), so a browser's
 /// owner name or profile folder cannot hide text behind control, bidi or format characters.
-/// The cases in Fixtures/shown.json come from the Go function itself.
+/// Text that begins with a quote is quoted too, so a typed out escape cannot pass for the
+/// character it names. The cases in Fixtures/shown.json come from the Go function itself.
 public func shown(_ text: String) -> String {
-    text.unicodeScalars.allSatisfy(isGraphic) ? text : quoted(text)
+    !text.hasPrefix("\"") && text.unicodeScalars.allSatisfy(isGraphic) ? text : quoted(text)
 }
 
 /// Text always quoted with Go's escapes (strconv.QuoteToGraphic), for where a person must see

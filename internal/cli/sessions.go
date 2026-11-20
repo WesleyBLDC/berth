@@ -325,9 +325,10 @@ func printHistory(out io.Writer, hist []*berthv1.Transition) {
 // shown makes text a process chose (paths, profile folders, names) safe to print: a string with
 // any control byte (ESC, CR, LF, other C0 and C1, DEL), format character or invalid UTF-8 is
 // printed quoted with Go escapes, so it cannot move the cursor, recolour or fake lines in the
-// terminal. Ordinary paths print as they are.
+// terminal. Ordinary paths print as they are. Text that begins with a quote is quoted too, so
+// "x\n" typed out cannot pass for an x and a line break.
 func shown(text string) string {
-	if utf8.ValidString(text) && !strings.ContainsFunc(text, func(r rune) bool { return !unicode.IsGraphic(r) }) {
+	if utf8.ValidString(text) && !strings.HasPrefix(text, `"`) && !strings.ContainsFunc(text, func(r rune) bool { return !unicode.IsGraphic(r) }) {
 		return text
 	}
 	return strconv.QuoteToGraphic(text)
