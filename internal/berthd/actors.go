@@ -18,6 +18,9 @@ import (
 // machine.ErrIllegal or api.ErrUnavailable by why the actor stopped, so it never reaches a caller.
 var errActorStopped = errors.New("actor stopped")
 
+// errLoadPanicked is the load error a waiter sees when the load it waited on panicked.
+var errLoadPanicked = errors.New("actor load panicked")
+
 // actors keeps one running actor per entity of one machine, created on first use.
 type actors[S ~string, E machine.Event, F any] struct {
 	ctx        context.Context
@@ -129,7 +132,18 @@ func (a *actors[S, E, F]) get(ctx context.Context, entity string) (*slot[S, E, F
 
 // load starts the actor for sl, which holds the entity's place in live, and closes sl.ready.
 func (a *actors[S, E, F]) load(ctx context.Context, entity string, sl *slot[S, E, F]) error { //nolint:contextcheck // an actor outlives the call that first needed it
-	defer close(sl.ready)
+	defer func() {
+		// A panic must not leave a placeholder that never readies: waiters would block for good.
+		r := recover()
+		if r != nil {
+			sl.loadErr = errLoadPanicked
+			a.forget(entity, sl)
+		}
+		close(sl.ready)
+		if r != nil {
+			panic(r)
+		}
+	}()
 	// An actor in a final state is forgotten before its waiter hears the outcome, so the next step,
 	// which can start only after that, finds no stale actor and loads a fresh one.
 	var actor *machine.Actor[S, E, F]

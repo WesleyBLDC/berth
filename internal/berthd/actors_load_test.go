@@ -94,3 +94,46 @@ func TestSlowLoadBlocksOnlyItsOwnEntity(t *testing.T) {
 		t.Fatalf("slow entity version %d, want 2 from one actor", st.Version)
 	}
 }
+
+// A load that panics leaves no placeholder behind, so the next step loads afresh instead of
+// waiting for good.
+func TestAPanickingLoadLeavesNoPlaceholder(t *testing.T) {
+	var panics atomic.Bool
+	panics.Store(true)
+	kit := &actors[slowState, loadEvent, string]{
+		ctx: t.Context(), log: slog.New(slog.DiscardHandler), store: testutil.NewStore(), clock: testutil.NewClock(),
+		kind: "load", initial: "A", transition: loadTransition,
+		run: func(string) machine.Runner[loadEvent, string] {
+			if panics.Load() {
+				panic("run factory failed")
+			}
+			return func(context.Context, string) ([]loadEvent, error) { return nil, nil }
+		},
+		live: map[string]*slot[slowState, loadEvent, string]{},
+	}
+	func() {
+		defer func() {
+			if recover() == nil {
+				t.Fatal("the load's panic was swallowed")
+			}
+		}()
+		_, _, _ = step(t.Context(), kit, "load/p", loadEvent{}, nil, "X")
+	}()
+	if n := kit.count(); n != 0 {
+		t.Fatalf("a panicking load left %d actors", n)
+	}
+	panics.Store(false)
+	done := make(chan error, 1)
+	go func() {
+		_, _, err := step(t.Context(), kit, "load/p", loadEvent{}, nil, "X")
+		done <- err
+	}()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("the next step waited on the panicked load")
+	}
+}
