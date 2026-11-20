@@ -5,17 +5,37 @@
 #   scripts/gate.sh check            make check, which must end with "check: PASS"
 #   scripts/gate.sh merge <branch>   from the main checkout: rebase the branch onto main in its worktree,
 #                                    check it, fast forward main, and check main again
-#   scripts/gate.sh push             gitleaks and the personal data grep, then a fast forward push of main
+#   scripts/gate.sh push             gitleaks and the personal data scan over the new commits, then a fast
+#                                    forward push of main, only of a tree that passed make check
 #
-# BERTH_GATE_CHECK replaces "make check" for the gate's own test (scripts/test-gate.sh).
+# BERTH_GATE_CHECK replaces "make check" for the gate's own test (scripts/test-gate.sh); push accepts the
+# passes it records only when BERTH_GATE_TEST_ACCEPT_FAKE=1, which only that test sets.
 # pipefail is in POSIX.1-2024 and in every sh macOS ships (bash and dash), though shellcheck predates that.
 # shellcheck disable=SC3040
 set -euo pipefail
 
-check_cmd=${BERTH_GATE_CHECK:-make check}
+real_check='make check'
+check_cmd=${BERTH_GATE_CHECK:-$real_check}
+if [ "$check_cmd" = "$real_check" ]; then
+  check_label=$real_check
+else
+  check_label=BERTH_GATE_CHECK
+fi
 pass_line='check: PASS'
-# Built from pieces so this file does not match its own grep.
+# Built from pieces so this file does not match its own scan.
 personal='wezz''dc|/Users''/wes|auto''complete|auto''protect'
+common=$(git rev-parse --path-format=absolute --git-common-dir)
+passed="$common/berth-gate-passed"
+lock="$common/berth-gate.lock"
+scratch=$(mktemp -d "${TMPDIR:-/tmp}/berth-gate.XXXXXX")
+locked=0
+cleanup() {
+  rm -rf "$scratch"
+  if [ "$locked" -eq 1 ]; then rm -rf "$lock"; fi
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
 say() { printf 'gate: %s\n' "$*"; }
 die() {
@@ -38,6 +58,17 @@ run() {
   [ "$st" -eq 0 ] || die "$name"
 }
 
+take_lock() {
+  if mkdir "$lock" 2>/dev/null; then
+    locked=1
+    echo "$$" >"$lock/pid"
+    say "lock $lock: taken"
+    return 0
+  fi
+  holder=$(cat "$lock/pid" 2>/dev/null || echo unknown)
+  die "another gate merge or push (pid $holder) holds $lock; if no gate is running, remove that directory"
+}
+
 clean() {
   status=$(git -C "$1" status --porcelain)
   if [ -n "$status" ]; then
@@ -48,18 +79,30 @@ clean() {
   say "clean tree in $1: exit 0"
 }
 
-passed_file() { printf '%s/berth-gate-passed\n' "$(git rev-parse --path-format=absolute --git-common-dir)"; }
+record_pass() {
+  printf '%s %s\n' "$1" "$check_label" >>"$passed"
+  tail -n 100 "$passed" >"$scratch/passed"
+  cat "$scratch/passed" >"$passed"
+}
+
+forget_pass() {
+  [ -f "$passed" ] || return 0
+  grep -v "^$1 " "$passed" >"$scratch/passed" || true
+  cat "$scratch/passed" >"$passed"
+}
 
 # check_in DIR: returns nonzero unless the check exits 0 and its last line is the pass line.
-# A pass on a clean tree is recorded by tree hash, so push can prove the exact tree passed.
+# The pass is recorded for push only when the tree was clean before the check and is the same clean tree after.
 check_in() {
   dir=$1
-  log=$(mktemp "${TMPDIR:-/tmp}/berth-gate.XXXXXX")
-  say "check in $dir: $check_cmd"
+  before_tree=
+  if [ -z "$(git -C "$dir" status --porcelain)" ]; then
+    before_tree=$(git -C "$dir" rev-parse 'HEAD^{tree}')
+  fi
+  say "check in $dir: $check_label"
   st=0
-  (cd "$dir" && sh -c "$check_cmd") 2>&1 | tee "$log" || st=$?
-  last=$(tail -n 1 "$log")
-  rm -f "$log"
+  (cd "$dir" && sh -c "$check_cmd") 2>&1 | tee "$scratch/log" || st=$?
+  last=$(tail -n 1 "$scratch/log" | tr -d '\000-\037\177')
   say "check in $dir: exit $st"
   if [ "$st" -ne 0 ]; then
     return 1
@@ -68,10 +111,14 @@ check_in() {
     say "check in $dir: last line is '$last', not '$pass_line'"
     return 1
   fi
-  if [ -z "$(git -C "$dir" status --porcelain)" ]; then
-    git -C "$dir" rev-parse 'HEAD^{tree}' >>"$(passed_file)"
+  after_tree=$(git -C "$dir" rev-parse 'HEAD^{tree}')
+  if [ -z "$before_tree" ]; then
+    say "check in $dir: the tree was not clean before the check, so this pass is not recorded for push"
+  elif [ "$after_tree" != "$before_tree" ] || [ -n "$(git -C "$dir" status --porcelain)" ]; then
+    say "check in $dir: the tree changed during the check, so this pass is not recorded for push"
   else
-    say "check in $dir: tree not clean, so this pass is not recorded for push"
+    record_pass "$before_tree"
+    say "check in $dir: recorded tree $before_tree"
   fi
 }
 
@@ -90,9 +137,8 @@ on_main_checkout() {
 }
 
 worktree_of() {
-  git worktree list --porcelain >"$1.list"
-  awk -v ref="branch refs/heads/$2" '/^worktree /{w=substr($0,10)} $0==ref{print w}' "$1.list"
-  rm -f "$1.list"
+  git worktree list --porcelain >"$scratch/list"
+  awk -v ref="branch refs/heads/$1" '/^worktree /{w=substr($0,10)} $0==ref{print w}' "$scratch/list"
 }
 
 do_check() {
@@ -104,11 +150,10 @@ do_merge() {
   branch=$1
   [ "$branch" != main ] || die 'merge a work branch into main, not main itself'
   on_main_checkout merge
+  take_lock
   top=$(git rev-parse --show-toplevel)
   git show-ref --verify --quiet "refs/heads/$branch" || die "no local branch $branch"
-  tmp=$(mktemp "${TMPDIR:-/tmp}/berth-gate.XXXXXX")
-  wt=$(worktree_of "$tmp" "$branch")
-  rm -f "$tmp"
+  wt=$(worktree_of "$branch")
   [ -n "$wt" ] || die "branch $branch is not checked out in any worktree"
   clean "$top"
   clean "$wt"
@@ -126,52 +171,83 @@ do_merge() {
   check_in "$wt" || die "check of $branch after the rebase; nothing merged"
   run fast-forward git merge --ff-only "$branch"
   if ! check_in "$top"; then
-    git reset --keep "$before"
+    forget_pass "$(git rev-parse 'HEAD^{tree}')"
+    after=$(git rev-parse main)
+    git reset --keep "$before" ||
+      die "check of main after the fast forward, and main could not be reset: main left at $after; restore it with git reset --keep $before once the tree is clean"
     die "check of main after the fast forward; main reset to $before, nothing merged"
   fi
   say "merge: PASS, main is at $(git rev-parse --short main); nothing pushed"
 }
 
-do_push() {
-  on_main_checkout push
-  top=$(git rev-parse --show-toplevel)
-  clean "$top"
-  run fetch git fetch origin main
-  say 'fast forward of origin/main'
+# scan_personal BASE SHA: the added lines of every commit in BASE..SHA and the tree at SHA, case insensitively.
+scan_personal() {
+  say "patches of $1..$2"
   st=0
-  git merge-base --is-ancestor origin/main main || st=$?
-  say "fast forward of origin/main: exit $st"
-  [ "$st" -eq 0 ] || die 'main is not a fast forward of origin/main; rebase it, never force'
-  if [ "$(git rev-parse main)" = "$(git rev-parse origin/main)" ]; then
-    say 'push: nothing to push'
-    return 0
-  fi
-
-  tree=$(git rev-parse 'main^{tree}')
-  say "tree $tree passed check"
-  pf=$(passed_file)
+  git -C "$top" log -p --no-color --format='commit %H' "$1..$2" -- ':/' ':(exclude,top)gen' >"$scratch/patches" || st=$?
+  say "patches of $1..$2: exit $st"
+  [ "$st" -eq 0 ] || die "patches of $1..$2"
+  say 'personal data in the added lines'
   st=0
-  [ -f "$pf" ] && grep -qxF "$tree" "$pf" || st=$?
-  say "tree $tree passed check: exit $st"
-  [ "$st" -eq 0 ] || die 'this exact tree has not passed check; run scripts/gate.sh check first'
-
-  version=$(awk '/gitleaks\/gitleaks/{f=1;next} f&&/rev:/{print $2;exit}' "$top/.pre-commit-config.yaml")
-  [ -n "$version" ] || die 'no gitleaks rev in .pre-commit-config.yaml'
-  run gitleaks go run "github.com/zricethezav/gitleaks/v8@$version" git --no-banner --redact \
-    --log-opts=origin/main..main "$top"
-
-  say 'personal data grep'
+  grep -inE "^\+.*($personal)" "$scratch/patches" || st=$?
+  say "personal data in the added lines: exit $st"
+  case $st in
+    1) ;;
+    0) die 'personal data in the new commits' ;;
+    *) die 'personal data scan of the patches could not run' ;;
+  esac
+  say "personal data in the tree at $2"
   st=0
-  git grep -nE "$personal" -- . ':!gen' || st=$?
-  say "personal data grep: exit $st"
+  git -C "$top" grep -inE "$personal" "$2" -- ':/' ':(exclude,top)gen' || st=$?
+  say "personal data in the tree at $2: exit $st"
   case $st in
     1) ;;
     0) die 'personal data in the tree' ;;
     *) die 'personal data grep could not run' ;;
   esac
+}
 
-  run push git push origin main:main
-  say 'push: PASS'
+do_push() {
+  on_main_checkout push
+  take_lock
+  top=$(git rev-parse --show-toplevel)
+  clean "$top"
+  sha=$(git rev-parse main)
+  say "pushing main at $sha"
+  run fetch git fetch origin main
+  base=$(git rev-parse origin/main)
+  say "fast forward of origin/main $base"
+  st=0
+  git merge-base --is-ancestor "$base" "$sha" || st=$?
+  say "fast forward of origin/main $base: exit $st"
+  [ "$st" -eq 0 ] || die 'main is not a fast forward of origin/main; rebase it, never force'
+  if [ "$sha" = "$base" ]; then
+    say 'push: nothing to push'
+    return 0
+  fi
+
+  tree=$(git rev-parse "$sha^{tree}")
+  say "tree $tree passed $real_check"
+  st=1
+  if [ -f "$passed" ]; then
+    if grep -qxF "$tree $real_check" "$passed"; then
+      st=0
+    elif [ "${BERTH_GATE_TEST_ACCEPT_FAKE:-}" = 1 ] && grep -qxF "$tree BERTH_GATE_CHECK" "$passed"; then
+      st=0
+    fi
+  fi
+  say "tree $tree passed $real_check: exit $st"
+  [ "$st" -eq 0 ] || die "this exact tree has not passed $real_check; run scripts/gate.sh check on a clean tree first"
+
+  version=$(awk '/gitleaks\/gitleaks/{f=1;next} f&&/rev:/{print $2;exit}' "$top/.pre-commit-config.yaml")
+  [ -n "$version" ] || die 'no gitleaks rev in .pre-commit-config.yaml'
+  run gitleaks go run "github.com/zricethezav/gitleaks/v8@$version" git --no-banner --redact \
+    "--log-opts=$base..$sha" "$top"
+
+  scan_personal "$base" "$sha"
+
+  run push git push origin "$sha:refs/heads/main"
+  say "push: PASS, origin/main is at $sha"
 }
 
 [ $# -ge 1 ] || usage

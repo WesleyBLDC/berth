@@ -1,6 +1,6 @@
 export DEVELOPER_DIR ?= /Applications/Xcode.app/Contents/Developer
 
-.PHONY: build native app gen test test-native test-app e2e lint fmt vuln verify breaking check gate test-gate hooks
+.PHONY: build native app gen test test-native test-app e2e lint fmt vuln verify breaking check gate test-gate gitleaks-full hooks
 
 build: ## Build berthd, berth, berth-proxy and berth-mcp into bin/; sign the three that trust each other with secrets
 	go build -o bin/ ./cmd/...
@@ -58,6 +58,9 @@ test-gate: ## The gate's own test: a failing merge, a failing check and a dirty 
 
 check: lint verify breaking test-gate test test-native test-app e2e vuln ## Everything that must pass before a commit
 	@echo "check: PASS"
+
+gitleaks-full: ## gitleaks over the whole history, at the version .pre-commit-config.yaml pins
+	go run github.com/zricethezav/gitleaks/v8@$$(awk '/gitleaks\/gitleaks/{f=1;next} f&&/rev:/{print $$2;exit}' .pre-commit-config.yaml) git --no-banner --redact .
 
 gate: ## make check through the gate, which fails unless it ends with "check: PASS"; merge and push with scripts/gate.sh
 	scripts/gate.sh check

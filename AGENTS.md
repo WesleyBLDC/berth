@@ -25,9 +25,10 @@ Paste its last lines in your report; a failure is investigated to its root cause
 | `make breaking` | `buf breaking` against the local `main` branch |
 | `make gate` | `scripts/gate.sh check`: `make check`, failing unless it exits 0 and ends with `check: PASS` |
 | `scripts/gate.sh merge <branch>` | From the main checkout: rebases the branch onto `main` in its worktree, checks it, fast forwards `main` and checks again; never pushes |
-| `scripts/gate.sh push` | gitleaks over the new commits, the personal data grep, then a fast forward push of `main`, only of a tree that passed the gate's check; never forces |
+| `scripts/gate.sh push` | gitleaks and a case insensitive personal data scan over every new commit, then a fast forward push of `main`, only of a tree whose clean checkout passed `make check` through the gate; never forces |
+| `make gitleaks-full` | gitleaks over the whole history |
 
-The gate prints every step and its exit code, stops at the first failure with nothing merged or pushed, and `scripts/test-gate.sh` (in `make check`) proves it; never hand chain `git rebase`, `make check`, `git merge` and `git push` instead, since one pipe such as `| tail -1` can hide a failed step.
+The gate prints every step and its exit code, holds a lock so a merge and a push never overlap, stops at the first failure with nothing merged or pushed, and `scripts/test-gate.sh` (in `make check`) proves it; never hand chain `git rebase`, `make check`, `git merge` and `git push` instead, since one pipe such as `| tail -1` can hide a failed step.
 Planned by [the test lab](docs/plans/test-lab.md), not built yet: `make lab-image` (builds the tart base image) and `make lab-test` (the unattended VM suites).
 
 Binaries: `berthd` (daemon), `berth` (CLI and the `berth top` TUI), `berth-proxy` (one per `berth run --proxy`), `berth-native` (Swift, the only reader of Keychain values), and `berth-mcp` (an MCP server over stdio for agents without a shell).

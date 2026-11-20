@@ -1,6 +1,8 @@
 #!/bin/sh
 # Proves scripts/gate.sh stops before anything moves: a failing merge, a failing check, a check without its
-# pass line and a dirty tree each leave main and origin where they were, and only a clean pass merges or pushes.
+# pass line, a dirty tree, a held lock, a tree changed during its check, a fake check's pass, a gitleaks hit and
+# personal data anywhere in the new commits each leave main and origin where they were, and only a clean pass of
+# the exact tree merges or pushes.
 # Runs in throwaway repositories with a fake check, so it never runs make check itself.
 # pipefail is in POSIX.1-2024 and in every sh macOS ships (bash and dash), though shellcheck predates that.
 # shellcheck disable=SC3040
@@ -14,12 +16,40 @@ trap 'rm -rf "$root"' EXIT
 export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
 export GIT_AUTHOR_NAME=gate GIT_AUTHOR_EMAIL=gate@example.invalid
 export GIT_COMMITTER_NAME=gate GIT_COMMITTER_EMAIL=gate@example.invalid
-# The fake check fails on a fail-check file, ends without the pass line on a no-pass file,
-# and fails only in the main checkout when $root/fail-main exists.
-export BERTH_GATE_CHECK="if [ -e fail-check ]; then echo boom; exit 1; fi
-if [ -e no-pass ]; then echo done; exit 0; fi
-if [ -e '$root/fail-main' ] && [ \"\$(basename \"\$PWD\")\" = main ]; then echo boom; exit 1; fi
-echo 'check: PASS'"
+# The fake check, as a file so each case can steer it with marker files under $root.
+cat >"$root/fake-check.sh" <<'FAKE'
+here=$(basename "$PWD")
+if [ -e "$GATE_TEST_ROOT/slow" ]; then
+  touch "$GATE_TEST_ROOT/started"
+  while [ ! -e "$GATE_TEST_ROOT/release" ]; do sleep 0.1; done
+fi
+if [ -e fail-check ]; then
+  echo boom
+  exit 1
+fi
+if [ -e no-pass ]; then
+  echo done
+  exit 0
+fi
+if [ -e "$GATE_TEST_ROOT/escape" ]; then
+  printf 'check: PASS\033[2J\n'
+  exit 0
+fi
+if [ "$here" = main ] && [ -e "$GATE_TEST_ROOT/fail-main" ]; then
+  echo boom
+  exit 1
+fi
+if [ "$here" = main ] && [ -e "$GATE_TEST_ROOT/fail-main-dirty" ]; then
+  echo dirty >>b.txt
+  echo boom
+  exit 1
+fi
+echo 'check: PASS'
+FAKE
+export GATE_TEST_ROOT="$root"
+export BERTH_GATE_CHECK="sh '$root/fake-check.sh'"
+export BERTH_GATE_TEST_ACCEPT_FAKE=1
+esc=$(printf '\033')
 
 failures=0
 n=0
@@ -57,6 +87,20 @@ commit_in() {
 }
 
 ref() { git -C "$case_dir/main" rev-parse "$1"; }
+passed() { printf '%s\n' "$case_dir/main/.git/berth-gate-passed"; }
+
+# wait_for FILE: polls up to 30 seconds for a background step.
+wait_for() {
+  i=0
+  while [ ! -e "$1" ]; do
+    i=$((i + 1))
+    [ "$i" -lt 300 ] || {
+      fail "timed out waiting for $1"
+      return 1
+    }
+    sleep 0.1
+  done
+}
 origin_main() { git -C "$case_dir/origin.git" rev-parse main; }
 
 # gate_in NAME DIR ARGS...: runs the gate and keeps its output; sets st.
@@ -116,6 +160,43 @@ gate_in 'failing check after fast forward' "$case_dir/main" merge work
 rm -f "$root/fail-main"
 expect_refused 'failing check after fast forward'
 expect_unmoved 'failing check after fast forward' "$m" "$o"
+t=$(git -C "$case_dir/main" rev-parse 'work^{tree}')
+! grep -q "^$t " "$(passed)" || fail 'failing check after fast forward: the tree is still recorded as passed'
+
+# The second check fails and dirties a file the merge brought in, so main cannot be reset: the gate says so.
+setup
+commit_in "$case_dir/work" b.txt two
+touch "$root/fail-main-dirty"
+m=$(ref main)
+gate_in 'unresettable main' "$case_dir/main" merge work
+rm -f "$root/fail-main-dirty"
+expect_refused 'unresettable main'
+grep -q "could not be reset: main left at $(ref work); restore it with git reset --keep $m" "$case_dir/out" ||
+  fail 'unresettable main: no restore instructions'
+
+# A check whose last line carries control characters fails, and the gate echoes the line without them.
+setup
+commit_in "$case_dir/work" b.txt two
+touch "$root/escape"
+m=$(ref main) o=$(origin_main)
+gate_in 'control characters' "$case_dir/main" merge work
+rm -f "$root/escape"
+expect_refused 'control characters'
+expect_unmoved 'control characters' "$m" "$o"
+grep 'last line is' "$case_dir/out" >"$case_dir/echoed" || fail 'control characters: no last line echoed'
+! grep -q "$esc" "$case_dir/echoed" || fail 'control characters: the echoed line kept an escape'
+
+# A merge while another gate holds the lock is refused.
+setup
+commit_in "$case_dir/work" b.txt two
+mkdir "$case_dir/main/.git/berth-gate.lock"
+m=$(ref main) o=$(origin_main)
+gate_in 'merge during a held lock' "$case_dir/main" merge work
+expect_refused 'merge during a held lock'
+expect_unmoved 'merge during a held lock' "$m" "$o"
+grep -q 'holds' "$case_dir/out" || fail 'merge during a held lock: refused for another reason'
+[ -d "$case_dir/main/.git/berth-gate.lock" ] || fail 'merge during a held lock: removed the lock it did not take'
+rmdir "$case_dir/main/.git/berth-gate.lock"
 
 # A dirty tree in the main checkout, then in the branch's worktree.
 setup
@@ -151,6 +232,38 @@ expect_refused 'push of a dirty tree'
 expect_unmoved 'push of a dirty tree' "$m" "$o"
 rm "$case_dir/main/stray.txt"
 
+# Push refuses a tree whose only pass came from a fake check, unless the test says to accept it.
+commit_in "$case_dir/main" g.txt fake
+gate_in 'check by the fake' "$case_dir/main" check
+m=$(ref main)
+export BERTH_GATE_TEST_ACCEPT_FAKE=0
+gate_in 'push of a fake pass' "$case_dir/main" push
+export BERTH_GATE_TEST_ACCEPT_FAKE=1
+expect_refused 'push of a fake pass'
+expect_unmoved 'push of a fake pass' "$m" "$o"
+grep -q 'has not passed make check' "$case_dir/out" || fail 'push of a fake pass: refused for another reason'
+
+# A commit during a slow check: the pass is not recorded, so push refuses the new tree.
+touch "$root/slow"
+(cd "$case_dir/main" && "$gate" check) >"$case_dir/slow.out" 2>&1 &
+slow=$!
+wait_for "$root/started"
+commit_in "$case_dir/main" h.txt racing
+touch "$root/release"
+wait "$slow" || fail 'commit during a slow check: the check failed'
+rm -f "$root/slow" "$root/started" "$root/release"
+grep -q 'changed during the check' "$case_dir/slow.out" || fail 'commit during a slow check: the pass was recorded'
+m=$(ref main)
+gate_in 'push after a commit during the check' "$case_dir/main" push
+expect_refused 'push after a commit during the check'
+expect_unmoved 'push after a commit during the check' "$m" "$o"
+
+# The record keeps only its last 100 passes.
+seq 1 150 >>"$(passed)"
+gate_in 'check with a long record' "$case_dir/main" check
+[ "$(wc -l <"$(passed)" | tr -d ' ')" -eq 100 ] || fail 'long record: not trimmed to 100 lines'
+[ "$(tail -n 1 "$(passed)")" = "$(ref 'main^{tree}') BERTH_GATE_CHECK" ] || fail 'long record: the newest pass is not last'
+
 # Push refuses a tree that never passed check.
 commit_in "$case_dir/main" c.txt unchecked
 m=$(ref main)
@@ -166,7 +279,7 @@ m=$(ref main)
 gate_in 'push of personal data' "$case_dir/main" push
 expect_refused 'push of personal data'
 expect_unmoved 'push of personal data' "$m" "$o"
-grep -q 'personal data in the tree' "$case_dir/out" || fail 'push of personal data: refused for another reason'
+grep -q 'personal data in the new commits' "$case_dir/out" || fail 'push of personal data: refused for another reason'
 git -C "$case_dir/main" revert --no-edit HEAD >/dev/null
 
 # Push refuses main when origin moved on: never a force push.
@@ -195,6 +308,23 @@ expect_unmoved 'push of a leak' "$m" "$o"
 grep -q '^gate: FAIL: gitleaks' "$case_dir/out" || fail 'push of a leak: refused for another reason'
 git -C "$case_dir/main" reset -q --hard origin/main
 
+# A push while a slow merge holds the lock is refused, and the merge still lands.
+git -C "$case_dir/main" worktree add -q "$case_dir/late" -b late
+commit_in "$case_dir/late" l.txt late
+touch "$root/slow"
+(cd "$case_dir/main" && "$gate" merge late) >"$case_dir/merge.out" 2>&1 &
+slow=$!
+wait_for "$root/started"
+o=$(origin_main)
+gate_in 'push during a merge' "$case_dir/main" push
+expect_refused 'push during a merge'
+[ "$(origin_main)" = "$o" ] || fail 'push during a merge: origin moved'
+grep -q 'holds' "$case_dir/out" || fail 'push during a merge: refused for another reason'
+touch "$root/release"
+wait "$slow" || fail 'push during a merge: the merge failed'
+rm -f "$root/slow" "$root/started" "$root/release"
+[ ! -d "$case_dir/main/.git/berth-gate.lock" ] || fail 'push during a merge: the merge left its lock'
+
 # A checked, clean fast forward pushes.
 commit_in "$case_dir/main" f.txt clean
 gate_in 'check before the push' "$case_dir/main" check
@@ -205,6 +335,49 @@ gate_in 'clean push' "$case_dir/main" push
 }
 [ "$(origin_main)" = "$(ref main)" ] || fail 'clean push: origin is not at main'
 grep -q '^gate: gitleaks: exit 0' "$case_dir/out" || fail 'clean push: gitleaks did not run'
+
+# The tree scan runs from the top whatever the cwd: personal data that reached origin before the gate,
+# at the top of the tree, is found from a subdirectory.
+setup
+mkdir "$case_dir/main/sub"
+commit_in "$case_dir/main" sub/s.txt sub
+printf '%s\n' "wezz""dc" >"$case_dir/main/top.txt"
+git -C "$case_dir/main" add top.txt
+git -C "$case_dir/main" commit -q -m top
+git -C "$case_dir/main" push -q origin main
+commit_in "$case_dir/main" sub/t.txt next
+gate_in 'check of the top level personal data' "$case_dir/main" check
+m=$(ref main) o=$(origin_main)
+gate_in 'push from a subdirectory' "$case_dir/main/sub" push
+expect_refused 'push from a subdirectory'
+expect_unmoved 'push from a subdirectory' "$m" "$o"
+grep -q 'personal data in the tree' "$case_dir/out" || fail 'push from a subdirectory: refused for another reason'
+
+# Personal data added then removed is still in the pushed history, so push refuses it.
+setup
+printf '%s\n' "wezz""dc" >"$case_dir/main/top.txt"
+git -C "$case_dir/main" add top.txt
+git -C "$case_dir/main" commit -q -m top
+git -C "$case_dir/main" rm -q top.txt
+git -C "$case_dir/main" commit -q -m untop
+gate_in 'check after the removal' "$case_dir/main" check
+m=$(ref main) o=$(origin_main)
+gate_in 'push of added then removed personal data' "$case_dir/main" push
+expect_refused 'push of added then removed personal data'
+expect_unmoved 'push of added then removed personal data' "$m" "$o"
+grep -q 'personal data in the new commits' "$case_dir/out" || fail 'push of added then removed personal data: refused for another reason'
+
+# A capitalised spelling is personal data too.
+setup
+printf '%s\n' "Auto""Complete" >"$case_dir/main/k.txt"
+git -C "$case_dir/main" add k.txt
+git -C "$case_dir/main" commit -q -m capital
+gate_in 'check of the capitalised spelling' "$case_dir/main" check
+m=$(ref main) o=$(origin_main)
+gate_in 'push of a capitalised spelling' "$case_dir/main" push
+expect_refused 'push of a capitalised spelling'
+expect_unmoved 'push of a capitalised spelling' "$m" "$o"
+grep -q 'personal data in the' "$case_dir/out" || fail 'push of a capitalised spelling: refused for another reason'
 
 if [ "$failures" -ne 0 ]; then
   echo "test-gate: $failures failures"
