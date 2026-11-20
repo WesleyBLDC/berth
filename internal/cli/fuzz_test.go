@@ -31,7 +31,7 @@ func allGraphic(s string) bool {
 
 // FuzzShown checks that shown's output is valid UTF-8 of graphic runes only, and unambiguous:
 // text printed as it is never begins with a quote, and quoted text unquotes to the input, so no
-// two inputs print the same.
+// two inputs print the same, and opens with no mark that would join its quote.
 func FuzzShown(f *testing.F) {
 	for _, s := range append(shownCorpus, nastyText...) {
 		f.Add(s)
@@ -49,6 +49,9 @@ func FuzzShown(f *testing.F) {
 		}
 		if back, err := strconv.Unquote(out); err != nil || back != s {
 			t.Fatalf("shown(%q) = %q, which unquotes to %q (%v)", s, out, back, err)
+		}
+		if r, _ := utf8.DecodeRuneInString(out[1:]); unicode.Is(unicode.M, r) {
+			t.Fatalf("shown(%q) = %q opens with a mark that joins its quote", s, out)
 		}
 	})
 }

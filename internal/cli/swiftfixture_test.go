@@ -4,13 +4,9 @@ import (
 	"bytes"
 	"encoding/json"
 	"flag"
-	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
-	"unicode"
-	"unicode/utf8"
 
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -37,23 +33,7 @@ var shownCorpus = []string{
 	"del\x7f", "nul\x00x", "rtl\u202eabc", "nel\u0085", "zwsp\u200b", "bom\ufeff", "ls\u2028", "ps\u2029",
 	"quote\" and \x1b", "private\ue000", "tag\U000E0001", "supp private\U000F0000",
 	"\u0301acute first", "\ufe0fselector first", "\U000E0100supplement selector first", "e\u0301 inner mark",
-	`"x\n"`, `"`, `a"b`,
-}
-
-// quoted is the app's always quoting form: strconv.QuoteToGraphic, with a leading combining mark
-// or variation selector escaped too, since it would join the opening quote. It is the reference
-// the Swift quoted is checked against.
-func quoted(text string) string {
-	q := strconv.QuoteToGraphic(text)
-	r, size := utf8.DecodeRuneInString(q[1:])
-	if !unicode.Is(unicode.M, r) {
-		return q
-	}
-	esc := fmt.Sprintf(`\u%04x`, r)
-	if r > 0xffff {
-		esc = fmt.Sprintf(`\U%08x`, r)
-	}
-	return `"` + esc + q[1+size:]
+	`"x\n"`, `"`, `a"b`, "\u0301mark first\x1b", "\U000E0100selector first\n",
 }
 
 func fixtureSessions() []*berthv1.WatchSessionsResponse {

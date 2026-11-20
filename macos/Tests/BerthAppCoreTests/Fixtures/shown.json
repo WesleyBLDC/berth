@@ -173,5 +173,15 @@
     "in": "a\"b",
     "out": "a\"b",
     "quoted": "\"a\\\"b\""
+  },
+  {
+    "in": "́mark first\u001b",
+    "out": "\"\\u0301mark first\\x1b\"",
+    "quoted": "\"\\u0301mark first\\x1b\""
+  },
+  {
+    "in": "󠄀selector first\n",
+    "out": "\"\\U000e0100selector first\\n\"",
+    "quoted": "\"\\U000e0100selector first\\n\""
   }
 ]

@@ -336,5 +336,21 @@ func shown(text string) string {
 	if utf8.ValidString(text) && !strings.HasPrefix(text, `"`) && !strings.ContainsFunc(text, func(r rune) bool { return !unicode.IsGraphic(r) }) {
 		return text
 	}
-	return strconv.QuoteToGraphic(text)
+	return quoted(text)
+}
+
+// quoted is text always quoted, with Go escapes (strconv.QuoteToGraphic), and a leading
+// combining mark or variation selector escaped too, since it would join the opening quote.
+// Berth.app's quoted is checked against it.
+func quoted(text string) string {
+	q := strconv.QuoteToGraphic(text)
+	r, size := utf8.DecodeRuneInString(q[1:])
+	if !unicode.Is(unicode.M, r) {
+		return q
+	}
+	esc := fmt.Sprintf(`\u%04x`, r)
+	if r > 0xffff {
+		esc = fmt.Sprintf(`\U%08x`, r)
+	}
+	return `"` + esc + q[1+size:]
 }
