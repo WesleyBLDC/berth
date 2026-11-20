@@ -165,9 +165,9 @@ do_push() {
   git grep -nE "$personal" -- . ':!gen' || st=$?
   say "personal data grep: exit $st"
   case $st in
-  1) ;;
-  0) die 'personal data in the tree' ;;
-  *) die 'personal data grep could not run' ;;
+    1) ;;
+    0) die 'personal data in the tree' ;;
+    *) die 'personal data grep could not run' ;;
   esac
 
   run push git push origin main:main
@@ -176,17 +176,17 @@ do_push() {
 
 [ $# -ge 1 ] || usage
 case $1 in
-check)
-  [ $# -eq 1 ] || usage
-  do_check
-  ;;
-merge)
-  [ $# -eq 2 ] || usage
-  do_merge "$2"
-  ;;
-push)
-  [ $# -eq 1 ] || usage
-  do_push
-  ;;
-*) usage ;;
+  check)
+    [ $# -eq 1 ] || usage
+    do_check
+    ;;
+  merge)
+    [ $# -eq 2 ] || usage
+    do_merge "$2"
+    ;;
+  push)
+    [ $# -eq 1 ] || usage
+    do_push
+    ;;
+  *) usage ;;
 esac

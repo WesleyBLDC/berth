@@ -6,11 +6,20 @@ file=$(jq -r '.tool_input.file_path // empty')
 root=$(git -C "$(dirname "$file")" rev-parse --show-toplevel 2>/dev/null) || exit 0
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 
-nearest() { d=$(dirname "$1"); while [ "$d" != "/" ] && [ ! -f "$d/$2" ]; do d=$(dirname "$d"); done; [ -f "$d/$2" ] && echo "$d"; }
-report() { out=$("$@" 2>&1) || { echo "$out" | head -40 >&2; exit 2; }; }
+nearest() {
+  d=$(dirname "$1")
+  while [ "$d" != "/" ] && [ ! -f "$d/$2" ]; do d=$(dirname "$d"); done
+  [ -f "$d/$2" ] && echo "$d"
+}
+report() {
+  out=$("$@" 2>&1) || {
+    echo "$out" | head -40 >&2
+    exit 2
+  }
+}
 
 case "$file" in
-  */gen/*|*.pb.go|*.pb.swift|*.grpc.swift|*.connect.go) exit 0 ;;
+  */gen/* | *.pb.go | *.pb.swift | *.grpc.swift | *.connect.go) exit 0 ;;
   *.go)
     mod=$(nearest "$file" go.mod) || exit 0
     cd "$mod" || exit 0
@@ -29,14 +38,13 @@ case "$file" in
     buf format -w "$file" >/dev/null 2>&1
     report buf lint
     ;;
-  *.py)
-    uvx ruff format -q "$file" >/dev/null 2>&1
-    report uvx ruff check --config "$root/ruff.toml" "$file"
-    ;;
   *.sh)
-    report shellcheck "$file"
+    cd "$root" || exit 0
+    report prek run shellcheck shfmt --files "$file"
     ;;
   *.md)
+    cd "$root" || exit 0
+    report prek run rumdl-check --files "$file"
     if grep -n "$(printf '\342\200\224\|\342\200\223')" "$file" >&2; then
       echo "Dashes used as punctuation in $file; use a comma, colon, parentheses or a new sentence." >&2
       exit 2

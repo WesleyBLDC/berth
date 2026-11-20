@@ -1,0 +1,10 @@
+# rumdl lints Markdown and never rewrites it (scripts run rumdl check only).
+[global]
+# One sentence per line is the house style, so line length never applies.
+# Agent and skill files open with frontmatter and prose, the README with its logo and CLAUDE.md with an import,
+# so a first line heading (MD041) does not fit them.
+disable = ["MD013", "MD041"]
+
+[MD033]
+# The README's logo switches between its light and dark lockups.
+allowed-elements = ["p", "picture", "source", "img"]

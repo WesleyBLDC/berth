@@ -4,7 +4,10 @@
 # runtime, so no debugger or injected library can attach to it. berthd trusts the berth CLI
 # and berth-native only by this team, identifier and the cdhash of the signed file.
 set -eu
-[ $# -eq 2 ] || { echo "usage: scripts/sign.sh <file> <identifier>" >&2; exit 2; }
+[ $# -eq 2 ] || {
+  echo "usage: scripts/sign.sh <file> <identifier>" >&2
+  exit 2
+}
 file=$1
 identifier=$2
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
@@ -32,7 +35,16 @@ fi
 codesign --force --sign "$identity" --identifier "$identifier" --options runtime --timestamp=none "$file"
 codesign --verify --strict "$file"
 details=$(codesign -dv "$file" 2>&1)
-echo "$details" | grep -qx "TeamIdentifier=$team" || { echo "sign: wrong team in $file" >&2; exit 1; }
-echo "$details" | grep -qx "Identifier=$identifier" || { echo "sign: wrong identifier in $file" >&2; exit 1; }
-echo "$details" | grep -q "flags=.*runtime" || { echo "sign: hardened runtime missing in $file" >&2; exit 1; }
+echo "$details" | grep -qx "TeamIdentifier=$team" || {
+  echo "sign: wrong team in $file" >&2
+  exit 1
+}
+echo "$details" | grep -qx "Identifier=$identifier" || {
+  echo "sign: wrong identifier in $file" >&2
+  exit 1
+}
+echo "$details" | grep -q "flags=.*runtime" || {
+  echo "sign: hardened runtime missing in $file" >&2
+  exit 1
+}
 echo "sign: $file signed by team $team as $identifier"

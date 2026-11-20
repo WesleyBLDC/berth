@@ -15,7 +15,7 @@ Paste its last lines in your report; a failure is investigated to its root cause
 | `make test` | Unit tests, seconds; run after every change |
 | `make e2e` | Real `berthd` and `berth` binaries in a temporary `BERTH_HOME` |
 | `make lint` | Every linter, including untracked files |
-| `make fmt` | Format Go, Protobuf, Swift, Python |
+| `make fmt` | Format Go, Protobuf, Swift and shell |
 | `make gen` | Regenerate `gen/` after editing `proto/` |
 | `make build` | `bin/berthd`, `bin/berth` and `bin/berth-proxy`, signed, and `bin/berth-mcp`, unsigned (it holds nothing and nothing trusts it) |
 | `make test-app` | `Berth.app`'s Swift tests, and its bundle built and checked signed ad hoc; opens no window |
@@ -118,8 +118,9 @@ What the parallel workers and their reviews learned; the skills carry the detail
 
 - Go: `golangci-lint` v2 (`.golangci.yml`): gofumpt (told `module-path: berth`), goimports, exhaustive, depguard, forbidigo, gosec, errorlint, noctx, revive and more. `revive`'s exported comment rule is off on purpose.
 - Protobuf: `buf format`, `buf lint` (STANDARD), `buf breaking` (FILE).
-- Swift: `swift format` from the Xcode toolchain. Python and shell: `ruff`, `shellcheck`.
-- Every file: whitespace, final newline, private keys, `gitleaks`, no em or en dashes in Markdown.
+- Swift: `swift format` from the Xcode toolchain. Shell: `shellcheck`, and `shfmt -d` styled by `.editorconfig`'s `[*.sh]` section (two spaces, POSIX, indented `case` items).
+- Markdown: `rumdl check` (`.rumdl.toml`: line length and first line heading off), which only reports and never rewraps.
+- Every file: whitespace, final newline, private keys, `gitleaks`, no em or en dashes in Markdown. There is no Python, so there is no Python linter.
 - prek runs these as git hooks and only sees tracked files; `make lint` also lints untracked Go and Protobuf.
 - Claude Code hooks (`.claude/settings.json`) format and lint each file after an edit and refuse Bash commands that would print a Keychain secret.
 

@@ -10,10 +10,16 @@ else
   tmp=$(mktemp -d)
   trap 'rm -rf "$tmp"' EXIT
   app="$tmp/Berth.app"
-  "$root/scripts/build-app.sh" --adhoc "$app" >"$tmp/build.log" 2>&1 || { cat "$tmp/build.log"; exit 1; }
+  "$root/scripts/build-app.sh" --adhoc "$app" >"$tmp/build.log" 2>&1 || {
+    cat "$tmp/build.log"
+    exit 1
+  }
 fi
 
-fail() { echo "check-app-bundle: $*" >&2; exit 1; }
+fail() {
+  echo "check-app-bundle: $*" >&2
+  exit 1
+}
 plist() { /usr/libexec/PlistBuddy -c "Print :$2" "$1" 2>/dev/null || true; }
 
 info="$app/Contents/Info.plist"

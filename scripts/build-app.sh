@@ -10,7 +10,10 @@ set -eu
 export DEVELOPER_DIR="${DEVELOPER_DIR:-/Applications/Xcode.app/Contents/Developer}"
 root=$(cd "$(dirname "$0")/.." && pwd)
 adhoc=0
-if [ "${1:-}" = "--adhoc" ]; then adhoc=1; shift; fi
+if [ "${1:-}" = "--adhoc" ]; then
+  adhoc=1
+  shift
+fi
 app=${1:-$root/bin/Berth.app}
 
 sign() {

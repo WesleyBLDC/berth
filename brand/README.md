@@ -45,6 +45,7 @@ The wordmark in the SVGs is converted to outlines, so it renders correctly witho
 **Secondary text:** `#C9D2DC` on navy, `#4A5568` on cream.
 
 Rules:
+
 - The key is always brass (or deep brass on light backgrounds). The brass key is the signature, so don't recolor it.
 - Use brass sparingly, as one accent per screen. If everything is gold, nothing stands out.
 - Deep brass on cream passes contrast for graphics and large text (3:1), but not for small body text. Use Ink for body copy.
@@ -73,16 +74,19 @@ Rules:
 
 ## Setup snippets
 
-**Website `<head>`**
+**Website `<head>`:**
+
 ```html
 <link rel="icon" href="/favicon.ico" sizes="any">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="theme-color" content="#16263F">
 ```
+
 For a web manifest, use `icon-192.png` and `icon-512.png`.
 
-**CSS tokens**
+**CSS tokens:**
+
 ```css
 @import "colors/tokens.css";
 body { background: var(--berth-gradient); color: var(--berth-mist); font-family: var(--berth-font-body); }
@@ -93,6 +97,7 @@ h1, h2 { font-family: var(--berth-font-display); }
 **macOS app (Xcode):** drag `app-icon-macos-*.png` into the AppIcon slots in `Assets.xcassets` (16, 32, 64, 128, 256, 512, 1024). Or set `Berth.icns` as the app icon for non-Xcode builds (Electron, Tauri and similar).
 
 **macOS menu bar (Swift):** add `berthTemplate.png` and `berthTemplate@2x.png` to your assets. Because the name ends in `Template`, macOS tints the icon automatically for light mode, dark mode and the highlighted state:
+
 ```swift
 statusItem.button?.image = NSImage(named: "berthTemplate")
 statusItem.button?.image?.isTemplate = true

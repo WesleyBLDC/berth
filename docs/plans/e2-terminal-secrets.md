@@ -8,6 +8,7 @@ Design: [ARCHITECTURE.md](../../ARCHITECTURE.md#secrets-store-and-use-never-read
 ## Scope of this slice (E2a)
 
 In:
+
 - `berth secret request <name> --why "<reason>"`: a native dialog (secure field plus Touch ID) stores the value; the caller gets only `saved <name>`.
 - `berth secret add <name>`: the same native dialog, with the person as the requester, so no value ever passes through a Go process to store it.
 - `berth secret ls`: names, consumers, last used, use count; never values.
@@ -29,6 +30,7 @@ Out (E2b, later): the header proxy, `copy`, `rotate`, `rm`, the Keychain "Always
 ## Flows (fixed by the contract item)
 
 **Store** (`request` and `add`):
+
 1. CLI calls `RequestSecret(request_id, name, reason)`.
 2. `berthd` builds the requester facts from the socket peer: pid, executable, process tree up to the harness, working directory.
 3. `berthd` asks `berth-native` (port `Approver.StoreSecret`) to show the dialog with those facts; the person pastes the value and confirms with Touch ID; `berth-native` writes Keychain item `berth.<name>`.
@@ -37,6 +39,7 @@ Out (E2b, later): the header proxy, `copy`, `rotate`, `rm`, the Keychain "Always
 **Grant**: `GrantSecret(request_id, name, exe_path, args_glob)`; `berthd` identifies the executable (port `ExecIdentity`: resolved path, SHA-256, team and signing ID when signed), asks `Approver.ConfirmPower` for Touch ID with those facts, and stores the grant.
 
 **Use** (`berth run --env KEY=<name> -- <cmd>`):
+
 1. `berth run` resolves `<cmd>` and calls `AuthorizeUse(request_id, name, exe_path, argv)`.
 2. `berthd` identifies the executable itself (never trusting a client hash), matches an `Active` grant, and returns a single use ticket: 32 random bytes, bound to name, exe hash and the caller's pid, valid 30 seconds.
 3. `berth run` starts `berth-native read`, passing the ticket on stdin.

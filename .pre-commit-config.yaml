@@ -16,15 +16,20 @@ repos:
     rev: v8.30.1
     hooks:
       - id: gitleaks
-  - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.17.5
-    hooks:
-      - id: ruff-check
-      - id: ruff-format
   - repo: https://github.com/shellcheck-py/shellcheck-py
     rev: v0.11.0.1-1
     hooks:
       - id: shellcheck
+  - repo: https://github.com/scop/pre-commit-shfmt
+    rev: v3.14.1-1
+    hooks:
+      - id: shfmt
+        # Report, never rewrite; the style comes from .editorconfig's [*.sh] section.
+        args: [-d]
+  - repo: https://github.com/rvben/rumdl-pre-commit
+    rev: v0.3.5
+    hooks:
+      - id: rumdl-check
   - repo: local
     hooks:
       - id: golangci-lint

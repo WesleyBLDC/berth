@@ -126,14 +126,14 @@ There are no GitHub workflows yet; item 5 adds the first, so `actionlint` comes 
 | Go | golangci-lint v2 (gofumpt, goimports and the configured linters) | 2.15.0 | Exists |
 | Swift | `swift format lint --strict` from the Xcode toolchain; SwiftLint is not added, since its rules overlap and it is one more binary | Swift 6.3 toolchain (`swift format` 6.3.0) | Exists |
 | Shell | shellcheck (`shellcheck-py`) | v0.11.0.1-1 hook (shellcheck 0.11.0) | Exists |
-| Shell | shfmt through `scop/pre-commit-shfmt`, `-d`, reading `.editorconfig` with a new `[*.sh]` section (`indent_size = 2`, `shell_variant = posix`) so today's two space scripts stay as they are | v3.14.1-1 (shfmt 3.14.1) | Planned, item 2 |
+| Shell | shfmt through `scop/pre-commit-shfmt`, `-d`, reading `.editorconfig`'s `[*.sh]` section (`indent_size = 2`, `shell_variant = posix`, and `switch_case_indent = true` so today's indented `case` items stay as they are); `make fmt` runs the same version with `-w` | v3.14.1-1 (shfmt 3.14.1) | Exists (item 2) |
 | Protobuf | `buf format` and `buf lint` (STANDARD), `buf breaking` (FILE) | 1.75.0 | Exists |
-| Markdown | rumdl through `rvben/rumdl-pre-commit` (`rumdl-check`), with MD013 (line length) off so one sentence per line never fights it, and inline HTML allowed for the README logo; a lint, never a rewrap | v0.3.5 | Planned, item 2 |
+| Markdown | rumdl through `rvben/rumdl-pre-commit` (`rumdl-check`), with MD013 (line length) off so one sentence per line never fights it, MD041 (first line heading) off since agent and skill files open with frontmatter, the README with its logo and `CLAUDE.md` with an import, and inline HTML allowed for the README logo; a lint, never a rewrap | v0.3.5 | Exists (item 2) |
 | Markdown | The no em or en dash hook (pygrep) | | Exists |
 | YAML, JSON, TOML | `check-yaml`, `check-json`, `check-toml` from pre-commit-hooks; no formatter for 14 small files | v6.0.0 | Exists |
 | GitHub Actions | actionlint | Pinned to its release current when item 5 adds the first workflow | Planned, item 5 |
 | Every file | trailing whitespace, final newline, merge conflicts, large files, private keys, gitleaks | pre-commit-hooks v6.0.0, gitleaks v8.30.1 | Exists |
-| Python | ruff | | Removed in item 2: no Python in the repository |
+| Python | ruff | | Removed (item 2): no Python in the repository |
 
 Prettier is not chosen: it needs Node for files no JavaScript touches, and with `proseWrap: preserve` it adds little over rumdl.
 markdownlint-cli2 (v0.24.1) would also work with MD013 off, but pulls in Node.

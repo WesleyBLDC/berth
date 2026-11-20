@@ -38,11 +38,11 @@ lint: ## Every linter and hook over every file, untracked Go and Protobuf includ
 	scripts/lint-proto.sh
 	prek run --all-files
 
-fmt: ## Format Go, Swift, Protobuf and Python
+fmt: ## Format Go, Swift, Protobuf and shell
 	golangci-lint fmt ./...
 	buf format -w
 	find . -name '*.swift' -not -path '*/.build/*' -print0 | xargs -0 -r xcrun swift format -i
-	uvx ruff format .
+	git ls-files -z '*.sh' | xargs -0 -r go run mvdan.cc/sh/v3/cmd/shfmt@v3.14.1 -w
 
 vuln: ## Known vulnerabilities in dependencies
 	go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
