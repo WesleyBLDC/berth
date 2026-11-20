@@ -865,3 +865,25 @@ func TestABrowserMessageDuringTheHandshakeReachesTheConnection(t *testing.T) {
 		t.Fatalf("got %v, want the message sent during the handshake", m)
 	}
 }
+
+// A connection whose handshake finishes after stop is closed, not left open past the endpoint.
+func TestAHandshakeFinishingAfterStopIsClosed(t *testing.T) {
+	var stop func()
+	t.Cleanup(cdpproxy.SetAccept(func(w http.ResponseWriter, r *http.Request, o *websocket.AcceptOptions) (*websocket.Conn, error) {
+		ws, err := websocket.Accept(w, r, o)
+		stop()
+		return ws, err
+	}))
+	_, endpoint, s := serve(t)
+	stop = s
+	ws, _, err := dial(t, endpoint, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ws.CloseNow() }()
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	if _, _, err := ws.Read(ctx); err == nil || ctx.Err() != nil {
+		t.Fatalf("the connection outlived stop: %v", err)
+	}
+}

@@ -95,9 +95,11 @@ func (p *Proxy) Serve(id string, conn ports.BrowserConn, tokenHash [32]byte) (st
 	stop := func() {
 		once.Do(func() {
 			_ = srv.Close()
+			// Cancelled before closeActive, so a handshake that finishes after this either finds the
+			// endpoint stopped or sets active before closeActive closes it.
+			cancel()
 			e.closeActive()
 			conn.Sink(nil)
-			cancel()
 		})
 	}
 	return "http://" + e.addr, stop, nil
@@ -246,6 +248,11 @@ func (e *endpoint) socket(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	e.mu.Lock()
+	if e.ctx.Err() != nil {
+		// Stopped during the handshake: the hijacked connection must not outlive the endpoint.
+		e.mu.Unlock()
+		return
+	}
 	e.active = ws
 	e.mu.Unlock()
 	ws.SetReadLimit(maxMessage)
