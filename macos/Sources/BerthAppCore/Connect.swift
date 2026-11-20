@@ -246,6 +246,7 @@ struct Envelope: Equatable {
     var flags: UInt8
     var payload: [UInt8]
 
+    static let compressed: UInt8 = 0x01
     static let endStream: UInt8 = 0x02
 
     static func encode(_ payload: [UInt8]) -> [UInt8] {
@@ -282,8 +283,10 @@ private struct WireError: Decodable {
     var message: String?
     var details: [Detail]?
 
+    /// A code Connect does not define reads as unknown, as connect-go reads it.
     var clientError: ClientError {
-        ClientError.refused(code: code ?? "unknown", message: message ?? "", reason: reason)
+        let known = code.flatMap { connectCodes.contains($0) ? $0 : nil } ?? "unknown"
+        return ClientError.refused(code: known, message: message ?? "", reason: reason)
     }
 
     /// The berth.v1.ErrorInfo detail's reason (field 1, a varint), when present.
@@ -299,6 +302,12 @@ private struct WireError: Decodable {
         return nil
     }
 }
+
+private let connectCodes: Set = [
+    "canceled", "unknown", "invalid_argument", "deadline_exceeded", "not_found", "already_exists",
+    "permission_denied", "resource_exhausted", "failed_precondition", "aborted", "out_of_range",
+    "unimplemented", "internal", "unavailable", "data_loss", "unauthenticated",
+]
 
 private struct EndOfStream: Decodable {
     var error: WireError?
@@ -383,13 +392,21 @@ private func readStream<Response: Decodable & Sendable>(
         envelopes.feed(piece)
         while let envelope = try envelopes.next() {
             if envelope.flags & Envelope.endStream != 0 {
+                // Like connect-go: a compressed end, or any byte after the end, is a broken stream.
+                guard envelope.flags & Envelope.compressed == 0 else { throw ClientError.malformed("a compressed end") }
+                guard envelopes.isEmpty else { throw ClientError.malformed("data after the end of stream") }
+                while let more = try reader.next() {
+                    guard more.isEmpty else { throw ClientError.malformed("data after the end of stream") }
+                }
                 let end = try? JSONDecoder().decode(EndOfStream.self, from: Data(envelope.payload))
                 guard let end else { throw ClientError.malformed("a bad end of stream") }
                 if let error = end.error { throw error.clientError }
                 return
             }
             guard envelope.flags == 0 else { throw ClientError.malformed("a compressed or unknown message") }
-            guard let message = try? JSONDecoder().decode(Response.self, from: Data(envelope.payload)) else {
+            // An empty message is the message with every field unset, as connect-go reads it.
+            let payload = envelope.payload.isEmpty ? Array("{}".utf8) : envelope.payload
+            guard let message = try? JSONDecoder().decode(Response.self, from: Data(payload)) else {
                 throw ClientError.malformed("a message does not decode")
             }
             continuation.yield(message)

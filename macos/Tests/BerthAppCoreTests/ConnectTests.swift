@@ -116,6 +116,34 @@ private func cut(_ bytes: [UInt8], every size: Int) -> [[UInt8]] {
     }
 }
 
+/// Where the app once read a stream differently from connect-go, found by the Go and Swift corpus.
+@Test func streamsReadAsConnectGoReadsThem() async throws {
+    let end = envelope("{}", flags: 2)
+    let refused = envelope(#"{"error":{"code":"permission_denied","message":"no"}}"#, flags: 2)
+    for body in [
+        end + envelope(snapshotJSON), end + Array("junk".utf8), end + refused, refused + end, envelope("{}", flags: 3),
+    ] {
+        let (_, s) = stream([chunkedAnswer(body, chunk: 5)])
+        do {
+            _ = try await collect(s)
+            Issue.record("a stream broken after its end passed")
+        } catch let error as ClientError {
+            guard case .malformed = error else {
+                Issue.record("a stream broken after its end gave \(error)")
+                continue
+            }
+        }
+    }
+    let (_, empty) = stream([chunkedAnswer(envelope("") + end, chunk: 100)])
+    #expect(try await collect(empty) == [.unknown])
+    let (_, unknown) = stream([
+        chunkedAnswer(envelope(#"{"error":{"code":"bogus","message":"no"}}"#, flags: 2), chunk: 100)
+    ])
+    await #expect(throws: ClientError.refused(code: "unknown", message: "no", reason: nil)) {
+        _ = try await collect(unknown)
+    }
+}
+
 @Test func aStreamRefusedUpFrontCarriesTheError() async {
     let (_, s) = stream([Array(unaryAnswer(status: "429 Too Many Requests", #"{"code":"resource_exhausted"}"#).utf8)])
     await #expect(throws: ClientError.refused(code: "resource_exhausted", message: "", reason: nil)) {
