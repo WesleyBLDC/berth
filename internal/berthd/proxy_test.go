@@ -303,7 +303,11 @@ func TestProxySessionLost(t *testing.T) {
 			f.request(t)
 			f.grantProxy(t)
 			id := f.authorizeProxy(t, "gh-token").GetSessionId()
-			time.Sleep(proxyctl.ReadyTimeout)
+			synctest.Sleep(proxyctl.ReadyTimeout - time.Second)
+			if got := f.state(t, "proxy/"+id); got == "Lost" {
+				t.Fatal("the session was lost before the ready timeout")
+			}
+			synctest.Sleep(time.Second)
 			f.eventually(t, "proxy/"+id, "Lost")
 			if h := f.history(t, "proxy/"+id); h[0].Detail != "no ready within 30 seconds" {
 				t.Fatalf("history %+v", h)
@@ -319,7 +323,11 @@ func TestProxySessionLost(t *testing.T) {
 			w := f.watch(t, id)
 			serving(t, w)
 			w.cancel()
-			time.Sleep(endGrace)
+			synctest.Sleep(endGrace - time.Second)
+			if got := f.state(t, "proxy/"+id); got != "Serving" {
+				t.Fatalf("the session is %s before the end grace ran out, want Serving", got)
+			}
+			synctest.Sleep(time.Second)
 			f.eventually(t, "proxy/"+id, "Lost")
 			if rec, _, _ := f.store.ProxySession(t.Context(), id); rec.EndedAt.IsZero() || rec.Injected != 0 {
 				t.Fatalf("lost session row %+v", rec)

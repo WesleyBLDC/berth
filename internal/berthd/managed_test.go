@@ -285,7 +285,17 @@ func TestABrowserWedgedOnItsPipeIsKilledAfterTheGrace(t *testing.T) {
 		f.driver.Wedged = true
 		resp, _ := f.launch(t, "wedged")
 		id := resp.GetBrowser().GetId()
-		if _, err := f.m.CloseBrowser(t.Context(), &berthv1.CloseBrowserRequest{Id: id}); err != nil {
+		closed := make(chan error, 1)
+		go func() {
+			_, err := f.m.CloseBrowser(t.Context(), &berthv1.CloseBrowserRequest{Id: id})
+			closed <- err
+		}()
+		synctest.Sleep(closeGrace - time.Second)
+		if got := f.events(t, id); !slices.Equal(got, []string{"Launch", "Started", "CloseRequested"}) || f.driver.Launched()[0].Killed() {
+			t.Fatalf("events = %v before the grace ran out; the browser must not be killed yet", got)
+		}
+		synctest.Sleep(time.Second)
+		if err := <-closed; err != nil {
 			t.Fatal(err)
 		}
 		waitBrowserClosed(t, f.m, id)

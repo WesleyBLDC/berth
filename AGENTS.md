@@ -90,7 +90,7 @@ Build tags: `berth_lab` (planned, ADR 0020) will compile a lab only certificate 
 
 - Unit tests for transition tables (always with `machinetest.Walk` and a pinned legal pair count), stores and parsers.
 - End to end tests drive the real binaries; prefer one more e2e case over mocks.
-- A test that waits on goroutines or timers runs in `synctest.Test` and waits with `synctest.Wait` or `synctest.Sleep`, never by polling; t.Run cannot be called inside a bubble, so each subtest opens its own. Real sockets, kqueue and `os/exec` pipes freeze the bubble's clock, so those tests stay outside and use `testutil.Eventually`.
+- A test that waits on goroutines or timers runs in `synctest.Test` and waits with `synctest.Wait` or `synctest.Sleep`, never by polling; t.Run cannot be called inside a bubble, so each subtest opens its own. A goroutine blocked on a real socket, kqueue or an `os/exec` pipe is never durably blocked, so neither `synctest.Wait` nor fake time can move past it and the test hangs; keep such tests outside bubbles and use `testutil.Eventually`.
 - Use `t.Context()` and `exec.CommandContext`; socket paths must stay under 104 bytes, so use `os.MkdirTemp("", ...)`, not `t.TempDir()`, for a `BERTH_HOME`.
 - Never use real secrets; tests plant a canary value and assert it never appears in output.
 - `Berth.app`'s Swift models are hand written (ADR 0019); a change to a message the app reads reruns `go test ./internal/cli -run TestSwiftFixtures -update-swift` and updates the Swift models and tests. Swift tests never launch the app or ask for a permission.

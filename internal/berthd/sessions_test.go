@@ -295,7 +295,11 @@ func TestStopTimesOutIntoSIGKILLOfOwnProcessesOnly(t *testing.T) {
 			resp, _ := f.b.StopSession(t.Context(), &berthv1.StopSessionRequest{Id: id})
 			done <- resp
 		}()
-		time.Sleep(stopGrace)
+		synctest.Sleep(stopGrace - time.Second)
+		if got := f.procs.Signals(); len(got) != 1 {
+			t.Fatalf("signals %v before the grace ran out, want only the SIGTERM", got)
+		}
+		synctest.Sleep(time.Second)
 		got := waitSignals(t, f.procs, 3)
 		want := []testutil.SentSignal{{PID: 100, Signal: ports.SignalTerm}, {PID: 100, Signal: ports.SignalKill}, {PID: 101, Signal: ports.SignalKill}}
 		if !slices.Equal(got, want) {
@@ -686,7 +690,11 @@ func TestBootRearmsAStoppingSession(t *testing.T) {
 		if err := b.recover(t.Context()); err != nil {
 			t.Fatal(err)
 		}
-		time.Sleep(stopGrace)
+		synctest.Sleep(stopGrace - time.Second)
+		if got := f.procs.Signals(); len(got) != 1 {
+			t.Fatalf("signals %v before the grace ran out, want only the SIGTERM", got)
+		}
+		synctest.Sleep(time.Second)
 		got := waitSignals(t, f.procs, 3)
 		want := []testutil.SentSignal{{PID: 100, Signal: ports.SignalTerm}, {PID: 100, Signal: ports.SignalKill}, {PID: 101, Signal: ports.SignalKill}}
 		if !slices.Equal(got, want) {
