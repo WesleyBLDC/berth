@@ -311,7 +311,9 @@ func step[S ~string, E machine.Event, F any, K ~string](ctx context.Context, a *
 // event in a final state answers that it is illegal there; any other stop (a failed save, or
 // berthd stopping, either of which may come after the event was saved) is Unavailable, which no
 // caller may mistake for an outcome. It never reads the store, where a later step may already
-// have moved the entity on.
+// have moved the entity on. Keep every follow up an effect returns inside its step's until list:
+// a follow up outside it that ends the entity would stop the actor before the step heard an
+// outcome, and the step would answer Unavailable while berthd runs.
 func (sl *slot[S, E, F]) whyStopped(event E) error {
 	sl.mu.Lock()
 	defer sl.mu.Unlock()

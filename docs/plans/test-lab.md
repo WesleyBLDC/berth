@@ -1,7 +1,7 @@
 # Test lab: unattended end to end tests in macOS VMs
 
 Status: In progress. The maintainer accepted this plan and its eight [decisions](#decisions) on 2026-11-19, and the decision is [ADR 0020](../adr/0020-test-lab-in-macos-vms-with-a-berth-lab-flavor.md), accepted.
-Phase 1 (items 1, 2, 3, 10, 12 and 13, none of which needs a VM) is in progress: items 1, 2, 3 and 10 are built, and items 12 and 13 are in review.
+Phase 1 (items 1, 2, 3, 10, 12 and 13, none of which needs a VM) is in progress: items 1, 2, 3, 10, 12 and 13 are built.
 Phase 1b is item 16, [gate and review hardening](#item-16-gate-and-review-hardening), which also needs no VM.
 Phase 2 starts with a one day tart spike that answers the [spike questions](#phase-2-spike), run before item 5a's image design.
 The work item table's Status column is the source of truth; `ARCHITECTURE.md` follows it.
