@@ -273,6 +273,11 @@ func (e *endpoint) socket(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		m, err := cdppolicy.Parse(raw)
+		if errors.Is(err, cdppolicy.ErrText) {
+			refused++
+			push(refusal(m, "its text holds invalid UTF-8 or a lone surrogate, which Chrome may read differently"))
+			continue
+		}
 		if err != nil {
 			_ = ws.Close(websocket.StatusPolicyViolation, "malformed CDP message")
 			return

@@ -80,11 +80,15 @@ func FuzzParse(f *testing.F) {
 		if (err == nil) != (err2 == nil) || !sameMessage(m, m2) {
 			t.Fatalf("%q parsed as %+v %v, then %+v %v", raw, m, err, m2, err2)
 		}
-		if err != nil && !errors.Is(err, cdppolicy.ErrMalformed) {
-			t.Fatalf("%q refused with %v, which is not ErrMalformed", raw, err)
+		if err != nil && !errors.Is(err, cdppolicy.ErrMalformed) && !errors.Is(err, cdppolicy.ErrText) {
+			t.Fatalf("%q refused with %v, which is neither ErrMalformed nor ErrText", raw, err)
 		}
-		// The bound is generous; a quadratic walk passes it within a few hundred bytes.
-		if allocs := testing.AllocsPerRun(1, func() { _, _ = cdppolicy.Parse(raw) }); allocs > float64(64+2*len(raw)) {
+		if errors.Is(err, cdppolicy.ErrText) && utf8.Valid(raw) && pairedOnly(raw) {
+			t.Fatalf("%q refused for its text, which is fine", raw)
+		}
+		// The bound is loose, since AllocsPerRun counts every allocation in the process, the fuzz
+		// worker's own included; a quadratic walk still passes it within a few kilobytes.
+		if allocs := testing.AllocsPerRun(1, func() { _, _ = cdppolicy.Parse(raw) }); allocs > float64(1024+8*len(raw)) {
 			t.Fatalf("%d bytes took %.0f allocations", len(raw), allocs)
 		}
 		if err != nil {
@@ -389,5 +393,17 @@ func TestParseRefusesExactlyTheLoneSurrogates(t *testing.T) {
 		if (err != nil) != c.Lone {
 			t.Errorf("%s: %v, want refused %v", c.Escape, err, c.Lone)
 		}
+	}
+}
+
+// A message whose only fault is its text is refused with ErrText and still read for its id,
+// so the proxy can refuse it alone; one that is also malformed is ErrMalformed.
+func TestTextFaultsKeepTheID(t *testing.T) {
+	m, err := cdppolicy.Parse([]byte(`{"id":5,"method":"Runtime.evaluate","sessionId":"S","params":{"expression":"\ud83d"}}`))
+	if !errors.Is(err, cdppolicy.ErrText) || m.ID != 5 || m.Method != "Runtime.evaluate" || m.SessionID != "S" {
+		t.Fatalf("parse = %+v %v", m, err)
+	}
+	if _, err := cdppolicy.Parse([]byte(`{"id":5,"id":6,"method":"Page.enable","x":"\ud83d"}`)); !errors.Is(err, cdppolicy.ErrMalformed) {
+		t.Fatalf("a repeated key with a lone surrogate = %v, want ErrMalformed", err)
 	}
 }

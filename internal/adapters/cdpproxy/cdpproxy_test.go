@@ -154,6 +154,39 @@ func TestAllowedPassesAndDeniedIsAnsweredByTheProxy(t *testing.T) {
 	}
 }
 
+// JSON.stringify writes a lone surrogate when text is cut inside an emoji, as an agent's
+// evaluate may; that message is refused by its id and the connection carries on.
+func TestALoneSurrogateIsRefusedAndTheConnectionStays(t *testing.T) {
+	fb, endpoint, _ := serve(t)
+	ws, _, err := dial(t, endpoint, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = ws.CloseNow() }()
+	ctx := t.Context()
+	attach(t, fb, ws, "S", "")
+	cut := `{"id":3,"method":"Runtime.evaluate","sessionId":"S","params":{"expression":"'\ud83d'"}}`
+	if err := ws.Write(ctx, websocket.MessageText, []byte(cut)); err != nil {
+		t.Fatal(err)
+	}
+	m := read(t, ws)
+	if m["id"] != float64(3) || m["sessionId"] != "S" || !strings.Contains(m["error"].(map[string]any)["message"].(string), "lone surrogate") {
+		t.Fatalf("refusal = %v", m)
+	}
+	if err := ws.Write(ctx, websocket.MessageText, []byte(`{"id":4,"method":"Page.enable","sessionId":"S"}`)); err != nil {
+		t.Fatal(err)
+	}
+	testutil.Eventually(func() bool { return len(fb.Sent()) > 0 })
+	for _, sent := range fb.Sent() {
+		if strings.Contains(string(sent), "Runtime.evaluate") {
+			t.Fatalf("the cut message reached the browser: %q", sent)
+		}
+	}
+	if sent := fb.Sent(); !strings.Contains(string(sent[len(sent)-1]), "Page.enable") {
+		t.Fatalf("browser got %q; the connection must carry on", sent)
+	}
+}
+
 func TestOneConnectionAtATimeAndMalformedEndsIt(t *testing.T) {
 	_, endpoint, stop := serve(t)
 	ws, _, err := dial(t, endpoint, true)

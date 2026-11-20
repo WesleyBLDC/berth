@@ -35,6 +35,12 @@ type Message struct {
 // or could be read differently by Go and by Chrome; the proxy ends a connection that sends one.
 var ErrMalformed = errors.New("a CDP message must be one JSON object with an integer id and a string method")
 
+// ErrText means a message that is otherwise well formed holds invalid UTF-8 or a lone surrogate
+// escape, which Go reads as U+FFFD and Chrome may read otherwise. JSON.stringify writes a lone
+// surrogate when text is cut inside an emoji, so the proxy refuses only that message, by the id
+// Parse still returns, and keeps the connection.
+var ErrText = errors.New("a CDP message must be valid UTF-8 with no lone surrogate escape")
+
 // readFields are the keys the policy reads, by where they sit. Go's decoder matches keys without
 // regard to case and lets the last duplicate win, while Chrome matches exactly, so at these
 // levels a key that differs from a known one only by case, or two keys equal but for case, are
@@ -55,14 +61,11 @@ const (
 	MaxDepth = 200
 )
 
-// Parse reads an agent message strictly: valid UTF-8 with no lone surrogate escape, no key
-// repeats anywhere, the levels the policy reads hold no key that Go and Chrome would match
-// differently, and no object or nesting passes the limits.
+// Parse reads an agent message strictly: no key repeats anywhere, the levels the policy reads
+// hold no key that Go and Chrome would match differently, and no object or nesting passes the
+// limits. A message whose only fault is invalid UTF-8 or a lone surrogate escape gets ErrText,
+// with its id, method and session.
 func Parse(raw []byte) (Message, error) {
-	// Go reads invalid UTF-8 and a lone surrogate escape as U+FFFD; what Chrome reads is unknown.
-	if !utf8.Valid(raw) {
-		return Message{}, fmt.Errorf("%w: invalid UTF-8", ErrMalformed)
-	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
 	first, err := dec.Token()
@@ -74,9 +77,6 @@ func Parse(raw []byte) (Message, error) {
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return Message{}, ErrMalformed
-	}
-	if loneSurrogate(raw) {
-		return Message{}, fmt.Errorf("%w: a lone surrogate escape", ErrMalformed)
 	}
 	var m struct {
 		ID        json.RawMessage `json:"id"`
@@ -97,6 +97,10 @@ func Parse(raw []byte) (Message, error) {
 	}
 	if len(msg.Params) > 0 && msg.Params[0] != '{' && string(msg.Params) != "null" {
 		return Message{}, ErrMalformed
+	}
+	// Checked last, so a message refused for its text is otherwise one the proxy can answer.
+	if !utf8.Valid(raw) || loneSurrogate(raw) {
+		return Message{ID: msg.ID, Method: msg.Method, SessionID: msg.SessionID}, ErrText
 	}
 	return msg, nil
 }
