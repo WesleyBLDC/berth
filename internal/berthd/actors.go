@@ -305,11 +305,16 @@ func waitApplied[S ~string, E machine.Event, F any](sl *slot[S, E, F], w chan ap
 				return got.rec, nil
 			}
 		case <-sl.stopped:
-			// An actor that stopped on reaching its final state told the waiter first.
+			// An actor that stopped on reaching its final state, or on refusing the event in one, told
+			// the waiter first; a refusal is this step's answer, since a later step may already have
+			// moved the entity on by the time stopped reads its state.
 			for {
 				select {
 				case got := <-w:
-					if got.err == nil && slices.Contains(until, got.rec.Event) {
+					if got.err != nil {
+						return ports.TransitionRecord{}, got.err
+					}
+					if slices.Contains(until, got.rec.Event) {
 						return got.rec, nil
 					}
 				default:
