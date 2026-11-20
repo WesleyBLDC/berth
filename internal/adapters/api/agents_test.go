@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"connectrpc.com/connect/v2"
@@ -128,49 +129,45 @@ func TestAgentSocketNeedsAValidToken(t *testing.T) {
 }
 
 func TestAgentStoreRequestsAreLimitedPerSession(t *testing.T) {
-	f := setupAgents(t)
-	f.secrets.block = make(chan struct{})
-	secrets, _ := f.agent("good-1")
-	first := make(chan error, 1)
-	go func() {
-		_, err := secrets.RequestSecret(t.Context(), &berthv1.RequestSecretRequest{RequestId: "store-0001", Name: "a", Reason: "r"})
-		first <- err
-	}()
-	deadline := time.Now().Add(5 * time.Second)
-	for {
+	synctest.Test(t, func(t *testing.T) {
+		f := setupAgents(t)
+		f.secrets.block = make(chan struct{})
+		secrets, _ := f.agent("good-1")
+		first := make(chan error, 1)
+		go func() {
+			_, err := secrets.RequestSecret(t.Context(), &berthv1.RequestSecretRequest{RequestId: "store-0001", Name: "a", Reason: "r"})
+			first <- err
+		}()
+		synctest.Wait()
 		f.fake.mu.Lock()
 		open := f.fake.open
 		f.fake.mu.Unlock()
-		if open == 1 {
-			break
-		}
-		if time.Now().After(deadline) {
+		if open != 1 {
 			t.Fatal("the first store never opened")
 		}
-		time.Sleep(5 * time.Millisecond)
-	}
-	_, err := secrets.RequestSecret(t.Context(), &berthv1.RequestSecretRequest{RequestId: "store-0002", Name: "b", Reason: "r"})
-	if connect.CodeOf(err) != connect.CodeResourceExhausted || api.ReasonOf(err) != berthv1.ErrorReason_ERROR_REASON_RATE_LIMITED {
-		t.Fatalf("a store over the limit: %v (%v)", err, api.ReasonOf(err))
-	}
-	close(f.secrets.block)
-	if err := <-first; err != nil {
-		t.Fatal(err)
-	}
-	// A retry replays the stored reply without taking a slot.
-	if _, err := secrets.RequestSecret(t.Context(), &berthv1.RequestSecretRequest{RequestId: "store-0001", Name: "a", Reason: "r"}); err != nil {
-		t.Fatal(err)
-	}
-	if f.fake.admits != 1 {
-		t.Fatalf("admitted %d stores, want 1", f.fake.admits)
-	}
-	// The owner socket carries no session and is never limited.
-	ownerSecrets := setupSecrets(t, &fakeSecrets{}).secrets
-	for i := range 3 {
-		if _, err := ownerSecrets.RequestSecret(t.Context(), &berthv1.RequestSecretRequest{RequestId: "owner-000" + string(rune('1'+i)), Name: "o", Reason: "r"}); err != nil {
-			t.Fatalf("owner store %d: %v", i, err)
+		_, err := secrets.RequestSecret(t.Context(), &berthv1.RequestSecretRequest{RequestId: "store-0002", Name: "b", Reason: "r"})
+		if connect.CodeOf(err) != connect.CodeResourceExhausted || api.ReasonOf(err) != berthv1.ErrorReason_ERROR_REASON_RATE_LIMITED {
+			t.Fatalf("a store over the limit: %v (%v)", err, api.ReasonOf(err))
 		}
-	}
+		close(f.secrets.block)
+		if err := <-first; err != nil {
+			t.Fatal(err)
+		}
+		// A retry replays the stored reply without taking a slot.
+		if _, err := secrets.RequestSecret(t.Context(), &berthv1.RequestSecretRequest{RequestId: "store-0001", Name: "a", Reason: "r"}); err != nil {
+			t.Fatal(err)
+		}
+		if f.fake.admits != 1 {
+			t.Fatalf("admitted %d stores, want 1", f.fake.admits)
+		}
+		// The owner socket carries no session and is never limited.
+		ownerSecrets := setupSecrets(t, &fakeSecrets{}).secrets
+		for i := range 3 {
+			if _, err := ownerSecrets.RequestSecret(t.Context(), &berthv1.RequestSecretRequest{RequestId: "owner-000" + string(rune('1'+i)), Name: "o", Reason: "r"}); err != nil {
+				t.Fatalf("owner store %d: %v", i, err)
+			}
+		}
+	})
 }
 
 func TestEachAgentSessionKeepsItsOwnReplies(t *testing.T) {

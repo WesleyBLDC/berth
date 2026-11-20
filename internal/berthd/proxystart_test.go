@@ -11,6 +11,7 @@ import (
 	"slices"
 	"sync"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	berthv1 "berth/gen/berth/v1"
@@ -204,7 +205,7 @@ func ended(t *testing.T, done <-chan error) error {
 	select {
 	case err := <-done:
 		return err
-	case <-time.After(5 * time.Second):
+	case <-time.After(time.Minute):
 		t.Fatal("StartProxy did not return")
 		return nil
 	}
@@ -224,279 +225,304 @@ func agentFixture(t *testing.T) *fixture {
 // TestStartProxyRunsTheProxyForTheAgentSession: berthd's own proxy serves the agent with the
 // facts its child needs, its session names the agent session, and the agent session's end stops it.
 func TestStartProxyRunsTheProxyForTheAgentSession(t *testing.T) {
-	f := agentFixture(t)
-	fs := newFakeStarter(t, f)
-	resp, done := started(api.WithAgentSession(t.Context(), agentSession), t, f, "gh-token")
-	if resp.GetOutcome() != berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED || len(resp.GetSessionId()) != 32 || resp.GetPort() != 4123 ||
-		resp.GetCredential() != startedCredential || resp.GetCaPem() != testCA || resp.GetPlaceholders()["API_KEY"] != "berth-proxy-placeholder" {
-		t.Fatalf("first message %v", resp)
-	}
-	rec, ok, err := f.store.ProxySession(t.Context(), resp.GetSessionId())
-	if err != nil || !ok || rec.PID != proxyPID || rec.AgentSession != agentSession {
-		t.Fatalf("session row %+v %v %v", rec, ok, err)
-	}
-	fs.mu.Lock()
-	modes := slices.Clone(fs.modes)
-	fs.mu.Unlock()
-	if !slices.Equal(modes, []string{proxyctl.ModeAgent}) {
-		t.Fatalf("berthd started its proxy in modes %q, want agent", modes)
-	}
-	f.s.stopAgentSessions(t.Context(), agentSession)
-	if err := ended(t, done); err != nil {
-		t.Fatal(err)
-	}
-	f.eventually(t, "proxy/"+resp.GetSessionId(), "Ended")
-	if fs.starts() != 1 || f.s.startedFor(proxyPID) != "" {
-		t.Fatalf("%d starts, pid still recorded for %q", fs.starts(), f.s.startedFor(proxyPID))
-	}
+	synctest.Test(t, func(t *testing.T) {
+		f := agentFixture(t)
+		fs := newFakeStarter(t, f)
+		resp, done := started(api.WithAgentSession(t.Context(), agentSession), t, f, "gh-token")
+		if resp.GetOutcome() != berthv1.UseOutcome_USE_OUTCOME_AUTHORIZED || len(resp.GetSessionId()) != 32 || resp.GetPort() != 4123 ||
+			resp.GetCredential() != startedCredential || resp.GetCaPem() != testCA || resp.GetPlaceholders()["API_KEY"] != "berth-proxy-placeholder" {
+			t.Fatalf("first message %v", resp)
+		}
+		rec, ok, err := f.store.ProxySession(t.Context(), resp.GetSessionId())
+		if err != nil || !ok || rec.PID != proxyPID || rec.AgentSession != agentSession {
+			t.Fatalf("session row %+v %v %v", rec, ok, err)
+		}
+		fs.mu.Lock()
+		modes := slices.Clone(fs.modes)
+		fs.mu.Unlock()
+		if !slices.Equal(modes, []string{proxyctl.ModeAgent}) {
+			t.Fatalf("berthd started its proxy in modes %q, want agent", modes)
+		}
+		f.s.stopAgentSessions(t.Context(), agentSession)
+		if err := ended(t, done); err != nil {
+			t.Fatal(err)
+		}
+		f.eventually(t, "proxy/"+resp.GetSessionId(), "Ended")
+		if fs.starts() != 1 || f.s.startedFor(proxyPID) != "" {
+			t.Fatalf("%d starts, pid still recorded for %q", fs.starts(), f.s.startedFor(proxyPID))
+		}
+	})
 }
 
 // TestStartProxyStopsWhenTheStreamCloses: the caller exiting (its stream closing) ends the
 // proxy's session cleanly.
 func TestStartProxyStopsWhenTheStreamCloses(t *testing.T) {
-	f := agentFixture(t)
-	newFakeStarter(t, f)
-	ctx, cancel := context.WithCancel(api.WithAgentSession(t.Context(), agentSession))
-	resp, done := started(ctx, t, f, "gh-token")
-	cancel()
-	if err := ended(t, done); err != nil {
-		t.Fatal(err)
-	}
-	f.eventually(t, "proxy/"+resp.GetSessionId(), "Ended")
+	synctest.Test(t, func(t *testing.T) {
+		f := agentFixture(t)
+		newFakeStarter(t, f)
+		ctx, cancel := context.WithCancel(api.WithAgentSession(t.Context(), agentSession))
+		resp, done := started(ctx, t, f, "gh-token")
+		cancel()
+		if err := ended(t, done); err != nil {
+			t.Fatal(err)
+		}
+		f.eventually(t, "proxy/"+resp.GetSessionId(), "Ended")
+	})
 }
 
 func TestStartProxyWithoutAGrantStartsNothing(t *testing.T) {
-	f := agentFixture(t)
-	fs := newFakeStarter(t, f)
-	resp, done := started(api.WithAgentSession(t.Context(), agentSession), t, f, "gh-token", "other")
-	if resp.GetOutcome() != berthv1.UseOutcome_USE_OUTCOME_NO_GRANT || resp.GetSessionId() != "" || resp.GetCredential() != "" {
-		t.Fatalf("first message %v", resp)
-	}
-	if err := ended(t, done); err != nil || fs.starts() != 0 {
-		t.Fatalf("end %v, %d starts", err, fs.starts())
-	}
+	synctest.Test(t, func(t *testing.T) {
+		f := agentFixture(t)
+		fs := newFakeStarter(t, f)
+		resp, done := started(api.WithAgentSession(t.Context(), agentSession), t, f, "gh-token", "other")
+		if resp.GetOutcome() != berthv1.UseOutcome_USE_OUTCOME_NO_GRANT || resp.GetSessionId() != "" || resp.GetCredential() != "" {
+			t.Fatalf("first message %v", resp)
+		}
+		if err := ended(t, done); err != nil || fs.starts() != 0 {
+			t.Fatalf("end %v, %d starts", err, fs.starts())
+		}
+	})
 }
 
 // TestStartProxyRefusesAControlLineWithoutASession: a process berthd started that never held a
 // trusted session gets nothing passed on and is killed.
 func TestStartProxyRefusesAControlLineWithoutASession(t *testing.T) {
-	f := agentFixture(t)
-	fs := newFakeStarter(t, f)
-	fs.skipAuthorize = true
-	resp, done := started(api.WithAgentSession(t.Context(), agentSession), t, f, "gh-token")
-	if err := ended(t, done); resp != nil || !errors.Is(err, api.ErrProxyNotStarted) {
-		t.Fatalf("got %v, %v", resp, err)
-	}
-	if !fs.killed[proxyPID] {
-		t.Fatal("the process was not killed")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		f := agentFixture(t)
+		fs := newFakeStarter(t, f)
+		fs.skipAuthorize = true
+		resp, done := started(api.WithAgentSession(t.Context(), agentSession), t, f, "gh-token")
+		if err := ended(t, done); resp != nil || !errors.Is(err, api.ErrProxyNotStarted) {
+			t.Fatalf("got %v, %v", resp, err)
+		}
+		if !fs.killed[proxyPID] {
+			t.Fatal("the process was not killed")
+		}
+	})
 }
 
 // TestStartProxyLimitsEachAgentSession: one agent session can have berthd run at most
 // maxStartedProxies proxies at once; the owner has no limit.
 func TestStartProxyLimitsEachAgentSession(t *testing.T) {
-	f := agentFixture(t)
-	fs := newFakeStarter(t, f)
-	fs.hang = true
-	ctx, cancel := context.WithCancel(api.WithAgentSession(t.Context(), agentSession))
-	var wg sync.WaitGroup
-	for range maxStartedProxies {
-		wg.Go(func() {
-			_ = f.s.StartProxy(ctx, &berthv1.StartProxyRequest{Names: []string{"gh-token"}}, func(*berthv1.StartProxyResponse) error { return nil })
-		})
-	}
-	testutil.Eventually(func() bool { return fs.starts() >= maxStartedProxies })
-	err := f.s.StartProxy(ctx, &berthv1.StartProxyRequest{Names: []string{"gh-token"}}, func(*berthv1.StartProxyResponse) error { return nil })
-	if !errors.Is(err, api.ErrRateLimited) || fs.starts() != maxStartedProxies {
-		t.Fatalf("one start too many: %v, %d starts", err, fs.starts())
-	}
-	ownerCtx, stopOwner := context.WithCancel(t.Context())
-	ownerDone := make(chan error, 1)
-	go func() {
-		ownerDone <- f.s.StartProxy(ownerCtx, &berthv1.StartProxyRequest{Names: []string{"gh-token"}}, func(*berthv1.StartProxyResponse) error { return nil })
-	}()
-	testutil.Eventually(func() bool { return fs.starts() >= maxStartedProxies+1 })
-	if fs.starts() != maxStartedProxies+1 {
-		t.Fatalf("the owner was limited: %d starts", fs.starts())
-	}
-	stopOwner()
-	cancel()
-	wg.Wait()
-	if err := <-ownerDone; err != nil && !errors.Is(err, api.ErrProxyNotStarted) {
-		t.Fatal(err)
-	}
-	// Every slot is free again once those calls ended.
-	f.s.mu.Lock()
-	n := len(f.s.starting)
-	f.s.mu.Unlock()
-	if n != 0 {
-		t.Fatalf("%d agent sessions still hold starts", n)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		f := agentFixture(t)
+		fs := newFakeStarter(t, f)
+		fs.hang = true
+		ctx, cancel := context.WithCancel(api.WithAgentSession(t.Context(), agentSession))
+		var wg sync.WaitGroup
+		for range maxStartedProxies {
+			wg.Go(func() {
+				_ = f.s.StartProxy(ctx, &berthv1.StartProxyRequest{Names: []string{"gh-token"}}, func(*berthv1.StartProxyResponse) error { return nil })
+			})
+		}
+		synctest.Wait()
+		err := f.s.StartProxy(ctx, &berthv1.StartProxyRequest{Names: []string{"gh-token"}}, func(*berthv1.StartProxyResponse) error { return nil })
+		if !errors.Is(err, api.ErrRateLimited) || fs.starts() != maxStartedProxies {
+			t.Fatalf("one start too many: %v, %d starts", err, fs.starts())
+		}
+		ownerCtx, stopOwner := context.WithCancel(t.Context())
+		ownerDone := make(chan error, 1)
+		go func() {
+			ownerDone <- f.s.StartProxy(ownerCtx, &berthv1.StartProxyRequest{Names: []string{"gh-token"}}, func(*berthv1.StartProxyResponse) error { return nil })
+		}()
+		synctest.Wait()
+		if fs.starts() != maxStartedProxies+1 {
+			t.Fatalf("the owner was limited: %d starts", fs.starts())
+		}
+		stopOwner()
+		cancel()
+		wg.Wait()
+		if err := <-ownerDone; err != nil && !errors.Is(err, api.ErrProxyNotStarted) {
+			t.Fatal(err)
+		}
+		// Every slot is free again once those calls ended.
+		f.s.mu.Lock()
+		n := len(f.s.starting)
+		f.s.mu.Unlock()
+		if n != 0 {
+			t.Fatalf("%d agent sessions still hold starts", n)
+		}
+	})
 }
 
 // TestStartProxyKillsAProxyThatIgnoresItsStdin: a proxy that keeps running after its stream
 // closed is killed after stopWait, and berthd drops its record only after the exit and reaps it
 // only after that.
 func TestStartProxyKillsAProxyThatIgnoresItsStdin(t *testing.T) {
-	f := agentFixture(t)
-	f.s.stopWait = 50 * time.Millisecond
-	fs := newFakeStarter(t, f)
-	fs.ignoreStdin = true
-	ctx, cancel := context.WithCancel(api.WithAgentSession(t.Context(), agentSession))
-	resp, done := started(ctx, t, f, "gh-token")
-	cancel()
-	if err := ended(t, done); err != nil {
-		t.Fatal(err)
-	}
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
-	if !fs.killed[proxyPID] || !fs.reaped[proxyPID] || !fs.recorded[proxyPID] {
-		t.Fatalf("killed %v, reaped %v, record held until the exit %v", fs.killed[proxyPID], fs.reaped[proxyPID], fs.recorded[proxyPID])
-	}
-	if f.s.startedFor(proxyPID) != "" {
-		t.Fatal("the record outlived the call")
-	}
-	f.eventually(t, "proxy/"+resp.GetSessionId(), "Ended")
+	synctest.Test(t, func(t *testing.T) {
+		f := agentFixture(t)
+		fs := newFakeStarter(t, f)
+		fs.ignoreStdin = true
+		ctx, cancel := context.WithCancel(api.WithAgentSession(t.Context(), agentSession))
+		resp, done := started(ctx, t, f, "gh-token")
+		cancel()
+		if err := ended(t, done); err != nil {
+			t.Fatal(err)
+		}
+		fs.mu.Lock()
+		defer fs.mu.Unlock()
+		if !fs.killed[proxyPID] || !fs.reaped[proxyPID] || !fs.recorded[proxyPID] {
+			t.Fatalf("killed %v, reaped %v, record held until the exit %v", fs.killed[proxyPID], fs.reaped[proxyPID], fs.recorded[proxyPID])
+		}
+		if f.s.startedFor(proxyPID) != "" {
+			t.Fatal("the record outlived the call")
+		}
+		f.eventually(t, "proxy/"+resp.GetSessionId(), "Ended")
+	})
 }
 
 // TestStartProxyForgetsOnlyItsOwnRecord: a call ending never drops a record a later call made
 // for the same pid.
 func TestStartProxyForgetsOnlyItsOwnRecord(t *testing.T) {
-	f := agentFixture(t)
-	first, later := &startRecord{agent: "first"}, &startRecord{agent: "later"}
-	f.s.started[proxyPID] = later
-	f.s.forget(proxyPID, first)
-	if f.s.startedFor(proxyPID) != "later" {
-		t.Fatal("the first call dropped the later call's record")
-	}
-	f.s.forget(proxyPID, later)
-	if f.s.startedFor(proxyPID) != "" {
-		t.Fatal("the later call's record stayed")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		f := agentFixture(t)
+		first, later := &startRecord{agent: "first"}, &startRecord{agent: "later"}
+		f.s.started[proxyPID] = later
+		f.s.forget(proxyPID, first)
+		if f.s.startedFor(proxyPID) != "later" {
+			t.Fatal("the first call dropped the later call's record")
+		}
+		f.s.forget(proxyPID, later)
+		if f.s.startedFor(proxyPID) != "" {
+			t.Fatal("the later call's record stayed")
+		}
+	})
 }
 
 // TestStartProxyLimitsStartsPerHour: one agent session can have berthd start maxStartsPerHour
 // proxies in any rolling hour, failed ones included.
 func TestStartProxyLimitsStartsPerHour(t *testing.T) {
-	f := agentFixture(t)
-	fs := newFakeStarter(t, f)
-	fs.failAtOnce = true
-	ctx := api.WithAgentSession(t.Context(), agentSession)
-	start := func() error {
-		return f.s.StartProxy(ctx, &berthv1.StartProxyRequest{Names: []string{"gh-token"}}, func(*berthv1.StartProxyResponse) error { return nil })
-	}
-	for i := range maxStartsPerHour {
-		if err := start(); !errors.Is(err, api.ErrProxyNotStarted) {
-			t.Fatalf("start %d: %v", i, err)
+	synctest.Test(t, func(t *testing.T) {
+		f := agentFixture(t)
+		fs := newFakeStarter(t, f)
+		fs.failAtOnce = true
+		ctx := api.WithAgentSession(t.Context(), agentSession)
+		start := func() error {
+			return f.s.StartProxy(ctx, &berthv1.StartProxyRequest{Names: []string{"gh-token"}}, func(*berthv1.StartProxyResponse) error { return nil })
 		}
-	}
-	if err := start(); !errors.Is(err, api.ErrRateLimited) || fs.starts() != maxStartsPerHour {
-		t.Fatalf("one start too many in the hour: %v, %d starts", err, fs.starts())
-	}
-	f.clock.Advance(time.Hour)
-	if err := start(); !errors.Is(err, api.ErrProxyNotStarted) || fs.starts() != maxStartsPerHour+1 {
-		t.Fatalf("an hour later: %v, %d starts", err, fs.starts())
-	}
+		for i := range maxStartsPerHour {
+			if err := start(); !errors.Is(err, api.ErrProxyNotStarted) {
+				t.Fatalf("start %d: %v", i, err)
+			}
+		}
+		if err := start(); !errors.Is(err, api.ErrRateLimited) || fs.starts() != maxStartsPerHour {
+			t.Fatalf("one start too many in the hour: %v, %d starts", err, fs.starts())
+		}
+		f.clock.Advance(time.Hour)
+		if err := start(); !errors.Is(err, api.ErrProxyNotStarted) || fs.starts() != maxStartsPerHour+1 {
+			t.Fatalf("an hour later: %v, %d starts", err, fs.starts())
+		}
+	})
 }
 
 // TestStartProxyCountsRefusalsAgainstTheLimit: a call refused for want of a grant counts too, so
 // an agent session cannot add UseRefused rows without limit.
 func TestStartProxyCountsRefusalsAgainstTheLimit(t *testing.T) {
-	f := newFixture(t, &testutil.Approver{})
-	f.request(t)
-	f.s.AgentLive = func(_ context.Context, id string) bool { return id == agentSession }
-	fs := newFakeStarter(t, f)
-	ctx := api.WithAgentSession(t.Context(), agentSession)
-	for i := range maxStartsPerHour + 3 {
-		var got *berthv1.StartProxyResponse
-		err := f.s.StartProxy(ctx, &berthv1.StartProxyRequest{Names: []string{"gh-token"}}, func(r *berthv1.StartProxyResponse) error { got = r; return nil })
-		switch {
-		case i < maxStartsPerHour && (err != nil || got.GetOutcome() != berthv1.UseOutcome_USE_OUTCOME_NO_GRANT):
-			t.Fatalf("call %d: %v %v", i, got, err)
-		case i >= maxStartsPerHour && !errors.Is(err, api.ErrRateLimited):
-			t.Fatalf("call %d past the limit: %v %v", i, got, err)
+	synctest.Test(t, func(t *testing.T) {
+		f := newFixture(t, &testutil.Approver{})
+		f.request(t)
+		f.s.AgentLive = func(_ context.Context, id string) bool { return id == agentSession }
+		fs := newFakeStarter(t, f)
+		ctx := api.WithAgentSession(t.Context(), agentSession)
+		for i := range maxStartsPerHour + 3 {
+			var got *berthv1.StartProxyResponse
+			err := f.s.StartProxy(ctx, &berthv1.StartProxyRequest{Names: []string{"gh-token"}}, func(r *berthv1.StartProxyResponse) error { got = r; return nil })
+			switch {
+			case i < maxStartsPerHour && (err != nil || got.GetOutcome() != berthv1.UseOutcome_USE_OUTCOME_NO_GRANT):
+				t.Fatalf("call %d: %v %v", i, got, err)
+			case i >= maxStartsPerHour && !errors.Is(err, api.ErrRateLimited):
+				t.Fatalf("call %d past the limit: %v %v", i, got, err)
+			}
 		}
-	}
-	refused := 0
-	for _, r := range f.history(t, "secret/gh-token") {
-		if r.Event == "UseRefused" {
-			refused++
+		refused := 0
+		for _, r := range f.history(t, "secret/gh-token") {
+			if r.Event == "UseRefused" {
+				refused++
+			}
 		}
-	}
-	if fs.starts() != 0 || refused > maxStartsPerHour {
-		t.Fatalf("%d starts, %d refusals recorded, want at most %d", fs.starts(), refused, maxStartsPerHour)
-	}
+		if fs.starts() != 0 || refused > maxStartsPerHour {
+			t.Fatalf("%d starts, %d refusals recorded, want at most %d", fs.starts(), refused, maxStartsPerHour)
+		}
+	})
 }
 
 func TestStartProxyWithAnUnreadableCAStopsTheProxy(t *testing.T) {
-	f := agentFixture(t)
-	fs := newFakeStarter(t, f)
-	fs.caFile = filepath.Join(t.TempDir(), "missing.pem")
-	resp, done := started(api.WithAgentSession(t.Context(), agentSession), t, f, "gh-token")
-	if err := ended(t, done); resp != nil || !errors.Is(err, api.ErrProxyNotStarted) {
-		t.Fatalf("got %v, %v", resp, err)
-	}
-	fs.mu.Lock()
-	defer fs.mu.Unlock()
-	if !fs.killed[proxyPID] || !fs.reaped[proxyPID] {
-		t.Fatal("the proxy was not killed and reaped")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		f := agentFixture(t)
+		fs := newFakeStarter(t, f)
+		fs.caFile = filepath.Join(t.TempDir(), "missing.pem")
+		resp, done := started(api.WithAgentSession(t.Context(), agentSession), t, f, "gh-token")
+		if err := ended(t, done); resp != nil || !errors.Is(err, api.ErrProxyNotStarted) {
+			t.Fatalf("got %v, %v", resp, err)
+		}
+		fs.mu.Lock()
+		defer fs.mu.Unlock()
+		if !fs.killed[proxyPID] || !fs.reaped[proxyPID] {
+			t.Fatal("the proxy was not killed and reaped")
+		}
+	})
 }
 
 // TestStartProxyWhoseFirstSendFailsStopsTheProxy: a caller gone before the facts reach it gets
 // its proxy ended.
 func TestStartProxyWhoseFirstSendFailsStopsTheProxy(t *testing.T) {
-	f := agentFixture(t)
-	newFakeStarter(t, f)
-	gone := errors.New("caller gone")
-	err := f.s.StartProxy(api.WithAgentSession(t.Context(), agentSession), &berthv1.StartProxyRequest{Names: []string{"gh-token"}},
-		func(*berthv1.StartProxyResponse) error { return gone })
-	if !errors.Is(err, gone) {
-		t.Fatalf("got %v", err)
-	}
-	open, err := f.store.OpenProxySessions(t.Context())
-	if err != nil || len(open) != 0 {
-		t.Fatalf("open sessions %v %v", open, err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		f := agentFixture(t)
+		newFakeStarter(t, f)
+		gone := errors.New("caller gone")
+		err := f.s.StartProxy(api.WithAgentSession(t.Context(), agentSession), &berthv1.StartProxyRequest{Names: []string{"gh-token"}},
+			func(*berthv1.StartProxyResponse) error { return gone })
+		if !errors.Is(err, gone) {
+			t.Fatalf("got %v", err)
+		}
+		open, err := f.store.OpenProxySessions(t.Context())
+		if err != nil || len(open) != 0 {
+			t.Fatalf("open sessions %v %v", open, err)
+		}
+	})
 }
 
 // An agent session's end drops its start times, so the limiter keeps nothing for it.
 func TestAgentSessionEndDropsItsProxyStartTimes(t *testing.T) {
-	f := agentFixture(t)
-	fs := newFakeStarter(t, f)
-	fs.failAtOnce = true
-	ctx := api.WithAgentSession(t.Context(), agentSession)
-	_ = f.s.StartProxy(ctx, &berthv1.StartProxyRequest{Names: []string{"gh-token"}}, func(*berthv1.StartProxyResponse) error { return nil })
-	f.s.mu.Lock()
-	n := len(f.s.startTimes[agentSession])
-	f.s.mu.Unlock()
-	if n != 1 {
-		t.Fatalf("start times before the end = %d, want 1", n)
-	}
-	f.s.stopAgentSessions(t.Context(), agentSession)
-	f.s.mu.Lock()
-	_, kept := f.s.startTimes[agentSession]
-	f.s.mu.Unlock()
-	if kept {
-		t.Fatal("an ended agent session's start times must be dropped")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		f := agentFixture(t)
+		fs := newFakeStarter(t, f)
+		fs.failAtOnce = true
+		ctx := api.WithAgentSession(t.Context(), agentSession)
+		_ = f.s.StartProxy(ctx, &berthv1.StartProxyRequest{Names: []string{"gh-token"}}, func(*berthv1.StartProxyResponse) error { return nil })
+		f.s.mu.Lock()
+		n := len(f.s.startTimes[agentSession])
+		f.s.mu.Unlock()
+		if n != 1 {
+			t.Fatalf("start times before the end = %d, want 1", n)
+		}
+		f.s.stopAgentSessions(t.Context(), agentSession)
+		f.s.mu.Lock()
+		_, kept := f.s.startTimes[agentSession]
+		f.s.mu.Unlock()
+		if kept {
+			t.Fatal("an ended agent session's start times must be dropped")
+		}
+	})
 }
 
 // A start that races its agent session's end recreates the start times the end dropped; once
 // the start settles they are dropped again, so an ended session keeps nothing in the limiter.
 func TestAStartRacingTheSessionEndKeepsNoStartTimes(t *testing.T) {
-	f := agentFixture(t)
-	fs := newFakeStarter(t, f)
-	fs.failAtOnce = true
-	// The session's end and its stopAgentSessions ran just before this start reserved.
-	f.s.AgentLive = func(context.Context, string) bool { return false }
-	f.s.stopAgentSessions(t.Context(), agentSession)
-	ctx := api.WithAgentSession(t.Context(), agentSession)
-	_ = f.s.StartProxy(ctx, &berthv1.StartProxyRequest{Names: []string{"gh-token"}}, func(*berthv1.StartProxyResponse) error { return nil })
-	f.s.mu.Lock()
-	_, kept := f.s.startTimes[agentSession]
-	f.s.mu.Unlock()
-	if kept {
-		t.Fatal("a start that raced its agent session's end must not leave start times behind")
-	}
+	synctest.Test(t, func(t *testing.T) {
+		f := agentFixture(t)
+		fs := newFakeStarter(t, f)
+		fs.failAtOnce = true
+		// The session's end and its stopAgentSessions ran just before this start reserved.
+		f.s.AgentLive = func(context.Context, string) bool { return false }
+		f.s.stopAgentSessions(t.Context(), agentSession)
+		ctx := api.WithAgentSession(t.Context(), agentSession)
+		_ = f.s.StartProxy(ctx, &berthv1.StartProxyRequest{Names: []string{"gh-token"}}, func(*berthv1.StartProxyResponse) error { return nil })
+		f.s.mu.Lock()
+		_, kept := f.s.startTimes[agentSession]
+		f.s.mu.Unlock()
+		if kept {
+			t.Fatal("a start that raced its agent session's end must not leave start times behind")
+		}
+	})
 }

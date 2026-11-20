@@ -12,6 +12,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 
 	"connectrpc.com/connect/v2"
 	"connectrpc.com/connect/v2/connectinprocess"
@@ -21,7 +22,6 @@ import (
 
 	berthv1 "berth/gen/berth/v1"
 	"berth/gen/berth/v1/berthv1connect"
-	"berth/internal/testutil"
 )
 
 // toolsSHA256 pins tools.json: a changed tool definition must change this on purpose, since MCP
@@ -290,13 +290,16 @@ func TestServeOverStdio(t *testing.T) {
 
 // The server's end removes every token file it left.
 func TestServeRemovesTokenFilesWhenItEnds(t *testing.T) {
-	s, dir := start(t, &fakeDaemon{})
-	opened, _ := s.call(1, "browser_open", `{}`)
-	_ = s.in.Close()
-	file := opened["token_file"].(string)
-	if !testutil.Eventually(func() bool { _, err := os.Stat(file); return os.IsNotExist(err) }) {
-		t.Fatalf("token file %s in %s survived the server", file, dir)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		s, dir := start(t, &fakeDaemon{})
+		opened, _ := s.call(1, "browser_open", `{}`)
+		_ = s.in.Close()
+		file := opened["token_file"].(string)
+		synctest.Wait()
+		if _, err := os.Stat(file); !os.IsNotExist(err) {
+			t.Fatalf("token file %s in %s survived the server", file, dir)
+		}
+	})
 }
 
 func mustJSON(t *testing.T, v any) string {

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"connectrpc.com/connect/v2"
@@ -185,21 +186,23 @@ func TestAuthorizeUseNeverRecordsTheTicket(t *testing.T) {
 }
 
 func TestOpenStoreDialogDoesNotBlockOtherCalls(t *testing.T) {
-	fake := &fakeSecrets{block: make(chan struct{})}
-	f := setupSecrets(t, fake)
-	done := make(chan error, 1)
-	go func() {
-		_, err := f.secrets.RequestSecret(context.Background(), &berthv1.RequestSecretRequest{RequestId: "req-slow-0001", Name: "gh-token", Reason: "r"})
-		done <- err
-	}()
-	time.Sleep(50 * time.Millisecond)
-	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
-	defer cancel()
-	if _, err := f.daemon.Shutdown(ctx, &berthv1.ShutdownRequest{RequestId: "req-stop-0001"}); err != nil {
-		t.Fatalf("shutdown waited on the open dialog: %v", err)
-	}
-	close(fake.block)
-	if err := <-done; err != nil {
-		t.Fatal(err)
-	}
+	synctest.Test(t, func(t *testing.T) {
+		fake := &fakeSecrets{block: make(chan struct{})}
+		f := setupSecrets(t, fake)
+		done := make(chan error, 1)
+		go func() {
+			_, err := f.secrets.RequestSecret(context.Background(), &berthv1.RequestSecretRequest{RequestId: "req-slow-0001", Name: "gh-token", Reason: "r"})
+			done <- err
+		}()
+		synctest.Wait()
+		ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
+		defer cancel()
+		if _, err := f.daemon.Shutdown(ctx, &berthv1.ShutdownRequest{RequestId: "req-stop-0001"}); err != nil {
+			t.Fatalf("shutdown waited on the open dialog: %v", err)
+		}
+		close(fake.block)
+		if err := <-done; err != nil {
+			t.Fatal(err)
+		}
+	})
 }
