@@ -425,11 +425,15 @@ func (r *modelRun[S, E, F]) liveEntities() []string {
 // nothing an entity in its state must not hold.
 func (r *modelRun[S, E, F]) settle(where string, touched ...string) {
 	r.t.Helper()
-	rows := r.rows(touched...)
-	var problems []string
-	// Polled finely: the saved hook runs just after the step's waiter hears its outcome.
+	var (
+		rows     map[string][]ports.TransitionRecord
+		problems []string
+	)
+	// Polled finely: the saved hook runs just after the step's waiter hears its outcome. The rows
+	// are read again on each poll, so the walk is checked only once it is at rest.
 	ok := false
 	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Microsecond) {
+		rows = r.rows(touched...)
 		if problems = r.restProblems(rows); len(problems) == 0 {
 			ok = true
 			break
@@ -704,6 +708,10 @@ func (r *modelRun[S, E, F]) concurrent(phase, walkers, perWalker int, stop bool)
 		})
 	}
 	wg.Wait()
+	// A caller that gave up returned before the actor finished with its event; wait for those too.
+	if !testutil.Eventually(func() bool { return idle(kit) }) {
+		r.fault("steps of callers that gave up never finished")
+	}
 	if stop {
 		<-stopped
 		r.stop(true)
@@ -754,7 +762,7 @@ func (r *modelRun[S, E, F]) checkSteps(steps []modelStep[E], stop bool) {
 			if tokens[st.token] {
 				r.fault("%s %s answered illegal but was saved", st.token, st.event.Name())
 			}
-			if !stop && r.legalThroughout(all[st.entity], st) {
+			if r.legalThroughout(all[st.entity], st) {
 				r.fault("%s %s on %s answered illegal, yet the table accepts it in every state between v%d and v%d", st.token, st.event.Name(), st.entity, st.from, st.to)
 			}
 		case errors.Is(st.err, api.ErrUnavailable):
@@ -768,6 +776,13 @@ func (r *modelRun[S, E, F]) checkSteps(steps []modelStep[E], stop bool) {
 			r.fault("%s %s: unexpected error %v", st.token, st.event.Name(), st.err)
 		}
 	}
+}
+
+// idle reports whether no step is still waiting on kit's actors.
+func idle[S ~string, E machine.Event, F any](kit *actors[S, E, F]) bool {
+	kit.mu.Lock()
+	defer kit.mu.Unlock()
+	return kit.busy == 0
 }
 
 // legalThroughout reports whether the table accepts st's event in every state its entity was

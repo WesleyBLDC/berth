@@ -305,6 +305,11 @@ None of these is decided; each lists the default this plan proposes until he ans
 | E | Disk budget: the `-base` image plus a minimal Xcode (about 50 to 70 GB) rather than the Xcode image (about 140 GB), against about 225 GB free | The smaller image if the spike's cold build works in it | Spike questions 4 and 6 |
 | F | [ADR 0019](../adr/0019-berth-app-speaks-connect-json-over-the-socket.md) (Connect JSON over the socket for `Berth.app`) is still Proposed, though the app is built on it | Accept it; this plan does not change its status | Nothing |
 
+## Follow ups
+
+- **Item 13, an idle actor on a non final entity:** a caller that gives up before its event is sent can leave the fresh actor it started for a live entity idling until another event comes; that is by design for one entity, but a churn test (many short lived entities, each touched once by a cancelled call) should prove it stays bounded.
+- **Item 13, orphaned children on a panic:** the browser walk's fake spawn starts real `sleep` children and its cleanup kills them, but a panic in another goroutine ends the test binary before cleanup runs, so those children outlive it; give them a parent death signal or a process group the test reaps from outside.
+
 ## What still needs a person
 
 One short release checklist (item 15), run before a release and never on every change:
