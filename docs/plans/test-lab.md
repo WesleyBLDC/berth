@@ -1,9 +1,10 @@
 # Test lab: unattended end to end tests in macOS VMs
 
-Status: Planned; this plan is written and no code exists. The decision is [ADR 0020](../adr/0020-test-lab-in-macos-vms-with-a-berth-lab-flavor.md), proposed.
+Status: In progress. The maintainer accepted this plan and its eight [decisions](#decisions) on 2026-11-19, and the decision is [ADR 0020](../adr/0020-test-lab-in-macos-vms-with-a-berth-lab-flavor.md), accepted.
+Phase 1 (items 1, 2, 3, 10, 12 and 13, none of which needs a VM) is in progress.
+Phase 2 starts with a one day tart spike, run before item 5's image design.
 
 Goal: every check that today needs the maintainer's hands (real signing, the store dialog and approvals, headful browsers, the app's GUI and permissions, a real second macOS user) runs unattended in macOS VMs, locally and in CI, so the guided manual scripts retire and only a short release checklist needs a person.
-The maintainer was away when this plan was written and asked not to be blocked; every choice that is his to make is under [Decisions for the maintainer](#decisions-for-the-maintainer), with the default taken.
 
 ## Why now
 
@@ -136,7 +137,7 @@ There are no GitHub workflows yet; item 5 adds the first, so `actionlint` comes 
 
 Prettier is not chosen: it needs Node for files no JavaScript touches, and with `proseWrap: preserve` it adds little over rumdl.
 markdownlint-cli2 (v0.24.1) would also work with MD013 off, but pulls in Node.
-dprint (0.65.0) with its Markdown plugin (0.29.0) and `textWrap: "sentence"` would enforce one sentence per line itself; it is decision 6.
+dprint (0.65.0) with its Markdown plugin (0.29.0) and `textWrap: "sentence"` would enforce one sentence per line itself; it is [decision 6](#decisions).
 
 ## Exit gate
 
@@ -159,9 +160,9 @@ dprint (0.65.0) with its Markdown plugin (0.29.0) and `textWrap: "sentence"` wou
 - **Images are large:** about 140 GB for the Xcode base on the host, plus a clone's growth per lane.
 - **FSL-1.1-ALv2** allows this internal use; a hosted service built on tart would not be.
 
-## Decisions for the maintainer
+## Decisions
 
-Defaults taken while he was away; each is cheap to reverse before item 4.
+Accepted by the maintainer on 2026-11-19, each as the default proposed here; each is still cheap to reverse before item 4.
 
 1. **tart over UTM, Anka or Parallels:** free under its current licence, scriptable, a Packer plugin and the cirruslabs images with SIP off.
 2. **Approval through a compiled in seam that reads scripted answers,** with one Accessibility test driving the real password sheet, rather than Accessibility for every approval: faster and steadier, while the real dialog still gets one run.

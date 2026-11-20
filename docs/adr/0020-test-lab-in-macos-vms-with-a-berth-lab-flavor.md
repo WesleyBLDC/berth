@@ -1,6 +1,6 @@
 # 0020: Test lab in macOS VMs with a berth_lab build flavor
 
-Status: Proposed, 2026-11-19; awaiting the maintainer
+Status: Accepted, 2026-11-19
 
 ## Context
 
