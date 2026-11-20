@@ -50,7 +50,12 @@ type actors[S ~string, E machine.Event, F any] struct {
 }
 
 type slot[S ~string, E machine.Event, F any] struct {
-	actor *machine.Actor[S, E, F]
+	// ready is closed once the entity is loaded: actor and cancel are set then, or loadErr is.
+	// The slot holds the entity's place in live while it loads, so a second caller waits for this
+	// actor instead of starting another.
+	ready   chan struct{}
+	loadErr error
+	actor   *machine.Actor[S, E, F]
 	// turn admits one step at a time, from before its event is sent until the actor has
 	// finished with it, so a waiter only ever sees its own outcome and its own data.
 	turn    chan struct{}
@@ -87,18 +92,44 @@ func (sl *slot[S, E, F]) tell(a applied) {
 	}
 }
 
-func (a *actors[S, E, F]) get(ctx context.Context, entity string) (*slot[S, E, F], error) { //nolint:contextcheck // an actor outlives the call that first needed it
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	if sl, ok := a.live[entity]; ok {
-		return sl, nil
+// get returns the entity's live actor, loading it first if there is none. The load runs outside
+// a.mu, so one slow store read holds up only its own entity.
+func (a *actors[S, E, F]) get(ctx context.Context, entity string) (*slot[S, E, F], error) {
+	for {
+		a.mu.Lock()
+		sl, ok := a.live[entity]
+		// A stopping berthd starts no actor: it could still save an event whose outcome no caller
+		// would hear.
+		if !ok && a.ctx.Err() != nil {
+			a.mu.Unlock()
+			return nil, api.ErrUnavailable
+		}
+		if !ok {
+			sl = &slot[S, E, F]{ready: make(chan struct{}), turn: make(chan struct{}, 1), stopped: make(chan struct{})}
+			a.live[entity] = sl
+		}
+		a.mu.Unlock()
+		if !ok {
+			if err := a.load(ctx, entity, sl); err != nil {
+				return nil, err
+			}
+			return sl, nil
+		}
+		select {
+		case <-sl.ready:
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+		// A load that failed was its own caller's error, perhaps its own cancel; try again.
+		if sl.loadErr == nil {
+			return sl, nil
+		}
 	}
-	// A stopping berthd starts no actor: it could still save an event whose outcome no caller
-	// would hear.
-	if a.ctx.Err() != nil {
-		return nil, api.ErrUnavailable
-	}
-	sl := &slot[S, E, F]{turn: make(chan struct{}, 1), stopped: make(chan struct{})}
+}
+
+// load starts the actor for sl, which holds the entity's place in live, and closes sl.ready.
+func (a *actors[S, E, F]) load(ctx context.Context, entity string, sl *slot[S, E, F]) error { //nolint:contextcheck // an actor outlives the call that first needed it
+	defer close(sl.ready)
 	// An actor in a final state is forgotten before its waiter hears the outcome, so the next step,
 	// which can start only after that, finds no stale actor and loads a fresh one.
 	var actor *machine.Actor[S, E, F]
@@ -133,11 +164,12 @@ func (a *actors[S, E, F]) get(ctx context.Context, entity string) (*slot[S, E, F
 		},
 	})
 	if err != nil {
-		return nil, err
+		sl.loadErr = err
+		a.forget(entity, sl)
+		return err
 	}
 	sl.actor = actor
 	sl.ended = slices.Contains(a.final, actor.State())
-	a.live[entity] = sl
 	actorCtx, cancel := context.WithCancel(a.ctx)
 	sl.cancel = cancel
 	go func() {
@@ -153,7 +185,7 @@ func (a *actors[S, E, F]) get(ctx context.Context, entity string) (*slot[S, E, F
 		a.mu.Unlock()
 		close(sl.stopped)
 	}()
-	return sl, nil
+	return nil
 }
 
 // forget drops an actor in a final state from the live set; its caller then stops it.
