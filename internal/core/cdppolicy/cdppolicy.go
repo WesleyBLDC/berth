@@ -16,6 +16,8 @@ import (
 	"strconv"
 	"strings"
 	"unicode"
+	"unicode/utf16"
+	"unicode/utf8"
 )
 
 // FirstBerthID is where Berth's own ids on the pipe start; agent ids must stay below it.
@@ -53,10 +55,14 @@ const (
 	MaxDepth = 200
 )
 
-// Parse reads an agent message strictly: no key repeats anywhere, the levels the policy reads
-// hold no key that Go and Chrome would match differently, and no object or nesting passes the
-// limits.
+// Parse reads an agent message strictly: valid UTF-8 with no lone surrogate escape, no key
+// repeats anywhere, the levels the policy reads hold no key that Go and Chrome would match
+// differently, and no object or nesting passes the limits.
 func Parse(raw []byte) (Message, error) {
+	// Go reads invalid UTF-8 and a lone surrogate escape as U+FFFD; what Chrome reads is unknown.
+	if !utf8.Valid(raw) {
+		return Message{}, fmt.Errorf("%w: invalid UTF-8", ErrMalformed)
+	}
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.UseNumber()
 	first, err := dec.Token()
@@ -68,6 +74,9 @@ func Parse(raw []byte) (Message, error) {
 	}
 	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return Message{}, ErrMalformed
+	}
+	if loneSurrogate(raw) {
+		return Message{}, fmt.Errorf("%w: a lone surrogate escape", ErrMalformed)
 	}
 	var m struct {
 		ID        json.RawMessage `json:"id"`
@@ -90,6 +99,40 @@ func Parse(raw []byte) (Message, error) {
 		return Message{}, ErrMalformed
 	}
 	return msg, nil
+}
+
+// loneSurrogate reports a \u escape of half a surrogate pair without its other half. raw is
+// valid JSON, so every backslash starts an escape inside a string. strictjson has the same rule;
+// the core imports only the standard library, so it is repeated here.
+func loneSurrogate(raw []byte) bool {
+	escape := func(i int) rune {
+		if i+6 > len(raw) || raw[i] != '\\' || raw[i+1] != 'u' {
+			return -1
+		}
+		n, err := strconv.ParseUint(string(raw[i+2:i+6]), 16, 16)
+		if err != nil {
+			return -1
+		}
+		return rune(n)
+	}
+	for i := 0; i < len(raw); i++ {
+		if raw[i] != '\\' {
+			continue
+		}
+		r := escape(i)
+		switch {
+		case r < 0:
+			i++
+		case utf16.IsSurrogate(r):
+			if utf16.DecodeRune(r, escape(i+6)) == utf8.RuneError {
+				return true
+			}
+			i += 11
+		default:
+			i += 5
+		}
+	}
+	return false
 }
 
 // walkObject reads the rest of an object whose '{' was just read. Keys are looked up in maps,

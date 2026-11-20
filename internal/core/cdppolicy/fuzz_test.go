@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"net/url"
+	"regexp"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"unicode"
+	"unicode/utf8"
 
 	"berth/internal/core/cdppolicy"
 )
@@ -54,7 +57,8 @@ var parseSeeds = []string{
 	`{"id":1,"method":"Input.dispatchKeyEvent","params":{"commands":["Paste"]}}`,
 	`{"id":1,"method":"Target.createBrowserContext","params":{"proxyServer":null}}`,
 	`{"id":1,"method":"Page.enable","params":{"x":[[[[[[[[[[[]]]]]]]]]]]}}`,
-	"{\"id\":1,\"method\":\"Page.enable\",\"x\":\"\xff\"}", `{"id":1,"method":"Page.enable","x":"\ud800"}`,
+	// Invalid UTF-8 and lone surrogates that once passed are in testdata/fuzz/FuzzParse.
+	`{"id":1,"method":"Page.enable","x":"\ud83d\ude00","y":"\\ud800"}`,
 	`{"id":1,"method":"Page.enable",}`, `{"id":1,"method":"Page.enable"}` + "\n", ` {"id":1,"method":"Page.enable"}`,
 }
 
@@ -81,6 +85,9 @@ func FuzzParse(f *testing.F) {
 		}
 		if err != nil {
 			return
+		}
+		if !utf8.Valid(raw) || !pairedOnly(raw) {
+			t.Fatalf("accepted %q, which holds invalid UTF-8 or a lone surrogate escape", raw)
 		}
 		walkAccepted(t, raw)
 		for _, own := range []func(string) bool{ownOnly, func(string) bool { return false }} {
@@ -178,6 +185,34 @@ func walkAccepted(t *testing.T, raw []byte) {
 		}
 	}
 	walk("", 0)
+}
+
+var escapes = regexp.MustCompile(`\\(u[0-9a-fA-F]{4}|.)`)
+
+// pairedOnly reports whether every surrogate escape in raw is a high one right before a low one,
+// read from the escapes left to right, so an escaped backslash is never taken for an escape.
+func pairedOnly(raw []byte) bool {
+	ms := escapes.FindAllIndex(raw, -1)
+	surrogate := func(k int) uint64 {
+		if k >= len(ms) || ms[k][1]-ms[k][0] != 6 {
+			return 0
+		}
+		n, _ := strconv.ParseUint(string(raw[ms[k][0]+2:ms[k][1]]), 16, 32)
+		return n
+	}
+	for k := 0; k < len(ms); k++ {
+		switch r := surrogate(k); {
+		case r >= 0xd800 && r < 0xdc00:
+			lo := surrogate(k + 1)
+			if lo < 0xdc00 || lo > 0xdfff || ms[k+1][0] != ms[k][1] {
+				return false
+			}
+			k++
+		case r >= 0xdc00 && r <= 0xdfff:
+			return false
+		}
+	}
+	return true
 }
 
 // FuzzParseRefusesKeyClashes builds a message with a key repeated at any level, or a known key

@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"id\":1,\"method\":\"Page.navigate\",\"params\":{\"url\":\"https://a.example/\\udc00\"}}")
