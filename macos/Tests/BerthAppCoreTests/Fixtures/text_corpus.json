@@ -39,7 +39,7 @@
     "repeat": 1,
     "valid": true,
     "out": "́̂⃝",
-    "quoted": "\"\\u0301̂⃝\""
+    "quoted": "\"\\u0301\\u0302\\u20dd\""
   },
   {
     "in": "61cc81",
@@ -210,6 +210,69 @@
     "quoted": "\"😀\\u200d😀\""
   },
   {
+    "in": "22cc8178",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\\"\\u0301x\"",
+    "quoted": "\"\\\"\\u0301x\""
+  },
+  {
+    "in": "22efb88f78",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\\"\\ufe0fx\"",
+    "quoted": "\"\\\"\\ufe0fx\""
+  },
+  {
+    "in": "0acc81",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\n\\u0301\"",
+    "quoted": "\"\\n\\u0301\""
+  },
+  {
+    "in": "5ccc81",
+    "repeat": 1,
+    "valid": true,
+    "out": "\\́",
+    "quoted": "\"\\\\\\u0301\""
+  },
+  {
+    "in": "22cc81",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\\"\\u0301\"",
+    "quoted": "\"\\\"\\u0301\""
+  },
+  {
+    "in": "1bcc81e2839d",
+    "repeat": 1,
+    "valid": true,
+    "out": "\"\\x1b\\u0301\\u20dd\"",
+    "quoted": "\"\\x1b\\u0301\\u20dd\""
+  },
+  {
+    "in": "ffcc81",
+    "repeat": 1,
+    "valid": false,
+    "out": "\"\\xff\\u0301\"",
+    "quoted": "\"\\xff\\u0301\""
+  },
+  {
+    "in": "cc81cc81",
+    "repeat": 1,
+    "valid": true,
+    "out": "́́",
+    "quoted": "\"\\u0301\\u0301\""
+  },
+  {
+    "in": "f3a08480f3a08481",
+    "repeat": 1,
+    "valid": true,
+    "out": "󠄀󠄁",
+    "quoted": "\"\\U000e0100\\U000e0101\""
+  },
+  {
     "in": "61",
     "repeat": 1048576,
     "valid": true,
@@ -234,7 +297,7 @@
     "out": "",
     "quoted": "",
     "outSHA256": "3536f54df0a7760b2834ee38a335d18ae54dacc82ce876f5f8c29493935422a5",
-    "quotedSHA256": "db1b2a345ad3ccfb6b7ea6aeac146a8f7a17788d5ac75d4952c1c162ea7058ce"
+    "quotedSHA256": "005b06717c6fecf12bda0db6b4b91818fedb8466ecbe362ef7f1d5751ddc96e4"
   },
   {
     "in": "ff",
@@ -281,8 +344,8 @@
     "in": "f3a08480e0a4bfe2808cc29b",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\U000e0100ि\\u200c\\u009b\"",
-    "quoted": "\"\\U000e0100ि\\u200c\\u009b\""
+    "out": "\"\\U000e0100\\u093f\\u200c\\u009b\"",
+    "quoted": "\"\\U000e0100\\u093f\\u200c\\u009b\""
   },
   {
     "in": "c29b7bf3a08081c29c200bc2a0",
@@ -295,8 +358,8 @@
     "in": "efb790c280e280abf3a084800be2808cefa3bf2e",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\ufdd0\\u0080\\u202b󠄀\\v\\u200c\\uf8ff.\"",
-    "quoted": "\"\\ufdd0\\u0080\\u202b󠄀\\v\\u200c\\uf8ff.\""
+    "out": "\"\\ufdd0\\u0080\\u202b\\U000e0100\\v\\u200c\\uf8ff.\"",
+    "quoted": "\"\\ufdd0\\u0080\\u202b\\U000e0100\\v\\u200c\\uf8ff.\""
   },
   {
     "in": "c29f61f09f98800ac285efbfbe",
@@ -330,8 +393,8 @@
     "in": "efa3bfe283a3f3a087aff48fbfbde280ab",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\uf8ff⃣󠇯\\U0010fffd\\u202b\"",
-    "quoted": "\"\\uf8ff⃣󠇯\\U0010fffd\\u202b\""
+    "out": "\"\\uf8ff\\u20e3\\U000e01ef\\U0010fffd\\u202b\"",
+    "quoted": "\"\\uf8ff\\u20e3\\U000e01ef\\U0010fffd\\u202b\""
   },
   {
     "in": "f09f98802d",
@@ -344,8 +407,8 @@
     "in": "ffefb880e2808de2808dc2a0c280e697a5bf",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\xff︀\\u200d\\u200d \\u0080日\\xbf\"",
-    "quoted": "\"\\xff︀\\u200d\\u200d \\u0080日\\xbf\""
+    "out": "\"\\xff\\ufe00\\u200d\\u200d \\u0080日\\xbf\"",
+    "quoted": "\"\\xff\\ufe00\\u200d\\u200d \\u0080日\\xbf\""
   },
   {
     "in": "1b61cdaff3a081bf6330e280a9efb790bf",
@@ -407,8 +470,8 @@
     "in": "805aefbfbfe281a080c29cf3a08480e2808fe280ab58ff",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\x80Z\\uffff\\u2060\\x80\\u009c󠄀\\u200f\\u202bX\\xff\"",
-    "quoted": "\"\\x80Z\\uffff\\u2060\\x80\\u009c󠄀\\u200f\\u202bX\\xff\""
+    "out": "\"\\x80Z\\uffff\\u2060\\x80\\u009c\\U000e0100\\u200f\\u202bX\\xff\"",
+    "quoted": "\"\\x80Z\\uffff\\u2060\\x80\\u009c\\U000e0100\\u200f\\u202bX\\xff\""
   },
   {
     "in": "",
@@ -435,22 +498,22 @@
     "in": "5ce280ad1b1befb8800ae2808cbfefb880efbfbf",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\\\\\u202d\\x1b\\x1b︀\\n\\u200c\\xbf︀\\uffff\"",
-    "quoted": "\"\\\\\\u202d\\x1b\\x1b︀\\n\\u200c\\xbf︀\\uffff\""
+    "out": "\"\\\\\\u202d\\x1b\\x1b\\ufe00\\n\\u200c\\xbf\\ufe00\\uffff\"",
+    "quoted": "\"\\\\\\u202d\\x1b\\x1b\\ufe00\\n\\u200c\\xbf\\ufe00\\uffff\""
   },
   {
     "in": "5cc2ade0a483d8a7",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\\\\\u00adःا\"",
-    "quoted": "\"\\\\\\u00adःا\""
+    "out": "\"\\\\\\u00ad\\u0903ا\"",
+    "quoted": "\"\\\\\\u00ad\\u0903ا\""
   },
   {
     "in": "efb88fefb880",
     "repeat": 1,
     "valid": true,
     "out": "️︀",
-    "quoted": "\"\\ufe0f︀\""
+    "quoted": "\"\\ufe0f\\ufe00\""
   },
   {
     "in": "08",
@@ -477,8 +540,8 @@
     "in": "1bcdafefbfbfe380805aefbfbd",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\x1bͯ\\uffff　Z�\"",
-    "quoted": "\"\\x1bͯ\\uffff　Z�\""
+    "out": "\"\\x1b\\u036f\\uffff　Z�\"",
+    "quoted": "\"\\x1b\\u036f\\uffff　Z�\""
   },
   {
     "in": "c2efbbbfe69cacfff09f87baefbfbfe697a5efa3bf07e38080",
@@ -498,15 +561,15 @@
     "in": "e280a8c3a9070ce2839df3a081bfc28dc285e2808ccc8127",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\u2028é\\a\\f⃝\\U000e007f\\u008d\\u0085\\u200ć'\"",
-    "quoted": "\"\\u2028é\\a\\f⃝\\U000e007f\\u008d\\u0085\\u200ć'\""
+    "out": "\"\\u2028é\\a\\f\\u20dd\\U000e007f\\u008d\\u0085\\u200c\\u0301'\"",
+    "quoted": "\"\\u2028é\\a\\f\\u20dd\\U000e007f\\u008d\\u0085\\u200c\\u0301'\""
   },
   {
     "in": "c29fefb880d8a7bf62c2ad",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\u009f︀ا\\xbfb\\u00ad\"",
-    "quoted": "\"\\u009f︀ا\\xbfb\\u00ad\""
+    "out": "\"\\u009f\\ufe00ا\\xbfb\\u00ad\"",
+    "quoted": "\"\\u009f\\ufe00ا\\xbfb\\u00ad\""
   },
   {
     "in": "f3b080800befb790ffc280efbfbd",
@@ -540,8 +603,8 @@
     "in": "efbfbff3b08080e281a9d89ccc80e280aad89cc280c280cdaf",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\uffff\\U000f0000\\u2069\\u061c̀\\u202a\\u061c\\u0080\\u0080ͯ\"",
-    "quoted": "\"\\uffff\\U000f0000\\u2069\\u061c̀\\u202a\\u061c\\u0080\\u0080ͯ\""
+    "out": "\"\\uffff\\U000f0000\\u2069\\u061c\\u0300\\u202a\\u061c\\u0080\\u0080\\u036f\"",
+    "quoted": "\"\\uffff\\U000f0000\\u2069\\u061c\\u0300\\u202a\\u061c\\u0080\\u0080\\u036f\""
   },
   {
     "in": "c29fffefbfbe80e2808f",
@@ -554,8 +617,8 @@
     "in": "e280abbfee8080cc81e0a4bfc2802fefbbbfe281a8f48fbfbd",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\u202b\\xbf\\ue000́ि\\u0080/\\ufeff\\u2068\\U0010fffd\"",
-    "quoted": "\"\\u202b\\xbf\\ue000́ि\\u0080/\\ufeff\\u2068\\U0010fffd\""
+    "out": "\"\\u202b\\xbf\\ue000\\u0301\\u093f\\u0080/\\ufeff\\u2068\\U0010fffd\"",
+    "quoted": "\"\\u202b\\xbf\\ue000\\u0301\\u093f\\u0080/\\ufeff\\u2068\\U0010fffd\""
   },
   {
     "in": "c29ce280aac28dc29ce280a8",
@@ -582,15 +645,15 @@
     "in": "e2808cefb88fd790d8a7ee8080d8a7c2ade2839d0be281a0c280",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\u200c️אا\\ue000ا\\u00ad⃝\\v\\u2060\\u0080\"",
-    "quoted": "\"\\u200c️אا\\ue000ا\\u00ad⃝\\v\\u2060\\u0080\""
+    "out": "\"\\u200c\\ufe0fאا\\ue000ا\\u00ad\\u20dd\\v\\u2060\\u0080\"",
+    "quoted": "\"\\u200c\\ufe0fאا\\ue000ا\\u00ad\\u20dd\\v\\u2060\\u0080\""
   },
   {
     "in": "0bc28df3a08480",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\v\\u008d󠄀\"",
-    "quoted": "\"\\v\\u008d󠄀\""
+    "out": "\"\\v\\u008d\\U000e0100\"",
+    "quoted": "\"\\v\\u008d\\U000e0100\""
   },
   {
     "in": "e280a9c3a9f0",
@@ -603,8 +666,8 @@
     "in": "efbbbfefb88f22ee8080efbfbef3a08480e283a3f09f87ba221b7b",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\ufeff️\\\"\\ue000\\ufffe󠄀⃣🇺\\\"\\x1b{\"",
-    "quoted": "\"\\ufeff️\\\"\\ue000\\ufffe󠄀⃣🇺\\\"\\x1b{\""
+    "out": "\"\\ufeff\\ufe0f\\\"\\ue000\\ufffe\\U000e0100\\u20e3🇺\\\"\\x1b{\"",
+    "quoted": "\"\\ufeff\\ufe0f\\\"\\ue000\\ufffe\\U000e0100\\u20e3🇺\\\"\\x1b{\""
   },
   {
     "in": "c280f3b0808063f09f9880",
@@ -624,15 +687,15 @@
     "in": "efa3bf0dcc81f09f98807df48fbfbde280ab63f48fbfbd",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\uf8ff\\ŕ😀}\\U0010fffd\\u202bc\\U0010fffd\"",
-    "quoted": "\"\\uf8ff\\ŕ😀}\\U0010fffd\\u202bc\\U0010fffd\""
+    "out": "\"\\uf8ff\\r\\u0301😀}\\U0010fffd\\u202bc\\U0010fffd\"",
+    "quoted": "\"\\uf8ff\\r\\u0301😀}\\U0010fffd\\u202bc\\U0010fffd\""
   },
   {
     "in": "0ae2808cee8080c3a9ff0cf3a087af5f",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\n\\u200c\\ue000é\\xff\\f󠇯_\"",
-    "quoted": "\"\\n\\u200c\\ue000é\\xff\\f󠇯_\""
+    "out": "\"\\n\\u200c\\ue000é\\xff\\f\\U000e01ef_\"",
+    "quoted": "\"\\n\\u200c\\ue000é\\xff\\f\\U000e01ef_\""
   },
   {
     "in": "e69cacc2857be2808ce69cace281a6e281a6",
@@ -708,8 +771,8 @@
     "in": "ee8080f3a087afe2808d",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\ue000󠇯\\u200d\"",
-    "quoted": "\"\\ue000󠇯\\u200d\""
+    "out": "\"\\ue000\\U000e01ef\\u200d\"",
+    "quoted": "\"\\ue000\\U000e01ef\\u200d\""
   },
   {
     "in": "e281a0221f62",
@@ -722,8 +785,8 @@
     "in": "e281a0c29ccc80c29fc29be280a9",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\u2060\\u009c̀\\u009f\\u009b\\u2029\"",
-    "quoted": "\"\\u2060\\u009c̀\\u009f\\u009b\\u2029\""
+    "out": "\"\\u2060\\u009c\\u0300\\u009f\\u009b\\u2029\"",
+    "quoted": "\"\\u2060\\u009c\\u0300\\u009f\\u009b\\u2029\""
   },
   {
     "in": "f09f98800a00f00b",
@@ -743,15 +806,15 @@
     "in": "a0e280aef3a087afe280a8e280a9e2e281a9e0a48380",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\xa0\\u202e󠇯\\u2028\\u2029\\xe2\\u2069ः\\x80\"",
-    "quoted": "\"\\xa0\\u202e󠇯\\u2028\\u2029\\xe2\\u2069ः\\x80\""
+    "out": "\"\\xa0\\u202e\\U000e01ef\\u2028\\u2029\\xe2\\u2069\\u0903\\x80\"",
+    "quoted": "\"\\xa0\\u202e\\U000e01ef\\u2028\\u2029\\xe2\\u2069\\u0903\\x80\""
   },
   {
     "in": "e0a483efb790ffe0a483f48fbfbde281a6f3a080810a1be281a061",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\u0903\\ufdd0\\xffः\\U0010fffd\\u2066\\U000e0001\\n\\x1b\\u2060a\"",
-    "quoted": "\"\\u0903\\ufdd0\\xffः\\U0010fffd\\u2066\\U000e0001\\n\\x1b\\u2060a\""
+    "out": "\"\\u0903\\ufdd0\\xff\\u0903\\U0010fffd\\u2066\\U000e0001\\n\\x1b\\u2060a\"",
+    "quoted": "\"\\u0903\\ufdd0\\xff\\u0903\\U0010fffd\\u2066\\U000e0001\\n\\x1b\\u2060a\""
   },
   {
     "in": "efbbbfc29bd8a71b",
@@ -764,8 +827,8 @@
     "in": "e280abf3a0848080e281a9e2808d",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\u202b󠄀\\x80\\u2069\\u200d\"",
-    "quoted": "\"\\u202b󠄀\\x80\\u2069\\u200d\""
+    "out": "\"\\u202b\\U000e0100\\x80\\u2069\\u200d\"",
+    "quoted": "\"\\u202b\\U000e0100\\x80\\u2069\\u200d\""
   },
   {
     "in": "e281a8e69cacee8080c29fe280aef3a081bf",
@@ -778,8 +841,8 @@
     "in": "5a0d5fc2adefbfbecc802d",
     "repeat": 1,
     "valid": true,
-    "out": "\"Z\\r_\\u00ad\\ufffè-\"",
-    "quoted": "\"Z\\r_\\u00ad\\ufffè-\""
+    "out": "\"Z\\r_\\u00ad\\ufffe\\u0300-\"",
+    "quoted": "\"Z\\r_\\u00ad\\ufffe\\u0300-\""
   },
   {
     "in": "2f2e59",
@@ -792,8 +855,8 @@
     "in": "e280ade2808b60c29fe2839d58c2a0c29c0a",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\u202d\\u200b`\\u009f⃝X \\u009c\\n\"",
-    "quoted": "\"\\u202d\\u200b`\\u009f⃝X \\u009c\\n\""
+    "out": "\"\\u202d\\u200b`\\u009f\\u20ddX \\u009c\\n\"",
+    "quoted": "\"\\u202d\\u200b`\\u009f\\u20ddX \\u009c\\n\""
   },
   {
     "in": "e280a9f09f87bae2808fc29be280a9f09f87bae2808cf3a080810befbfbf",
@@ -827,8 +890,8 @@
     "in": "efbfbee2808defbfbde69cacfff3a0808108e281a9efb88fe2808dcc81",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\ufffe\\u200d�本\\xff\\U000e0001\\b\\u2069️\\u200d́\"",
-    "quoted": "\"\\ufffe\\u200d�本\\xff\\U000e0001\\b\\u2069️\\u200d́\""
+    "out": "\"\\ufffe\\u200d�本\\xff\\U000e0001\\b\\u2069\\ufe0f\\u200d\\u0301\"",
+    "quoted": "\"\\ufffe\\u200d�本\\xff\\U000e0001\\b\\u2069\\ufe0f\\u200d\\u0301\""
   },
   {
     "in": "e2808bc285",
@@ -841,8 +904,8 @@
     "in": "07d8a7e0a483c280efb790cca7e2808bc2ad",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\aاः\\u0080\\ufdd0̧\\u200b\\u00ad\"",
-    "quoted": "\"\\aاः\\u0080\\ufdd0̧\\u200b\\u00ad\""
+    "out": "\"\\aاः\\u0080\\ufdd0\\u0327\\u200b\\u00ad\"",
+    "quoted": "\"\\aاः\\u0080\\ufdd0\\u0327\\u200b\\u00ad\""
   },
   {
     "in": "e280acd89ce280a92d",
@@ -855,8 +918,8 @@
     "in": "c2adede280aef3b08080f0cca7e2808b",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\u00ad\\xed\\u202e\\U000f0000\\xf0̧\\u200b\"",
-    "quoted": "\"\\u00ad\\xed\\u202e\\U000f0000\\xf0̧\\u200b\""
+    "out": "\"\\u00ad\\xed\\u202e\\U000f0000\\xf0\\u0327\\u200b\"",
+    "quoted": "\"\\u00ad\\xed\\u202e\\U000f0000\\xf0\\u0327\\u200b\""
   },
   {
     "in": "1fe280aaefa3bfe280ab1bc29b00d8a7",
@@ -932,8 +995,8 @@
     "in": "60e280ac2ee281a8cc80e281a6e697a5",
     "repeat": 1,
     "valid": true,
-    "out": "\"`\\u202c.\\u2068̀\\u2066日\"",
-    "quoted": "\"`\\u202c.\\u2068̀\\u2066日\""
+    "out": "\"`\\u202c.\\u2068\\u0300\\u2066日\"",
+    "quoted": "\"`\\u202c.\\u2068\\u0300\\u2066日\""
   },
   {
     "in": "",
@@ -974,8 +1037,8 @@
     "in": "ede280adcdafe280ad09c2a0",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\xed\\u202dͯ\\u202d\\t \"",
-    "quoted": "\"\\xed\\u202dͯ\\u202d\\t \""
+    "out": "\"\\xed\\u202d\\u036f\\u202d\\t \"",
+    "quoted": "\"\\xed\\u202d\\u036f\\u202d\\t \""
   },
   {
     "in": "c280e281a6c2e2808ee280aee281a7",
@@ -988,8 +1051,8 @@
     "in": "c29fd8a7efbfbfe283a3bf39e2e280a8",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\u009fا\\uffff⃣\\xbf9\\xe2\\u2028\"",
-    "quoted": "\"\\u009fا\\uffff⃣\\xbf9\\xe2\\u2028\""
+    "out": "\"\\u009fا\\uffff\\u20e3\\xbf9\\xe2\\u2028\"",
+    "quoted": "\"\\u009fا\\uffff\\u20e3\\xbf9\\xe2\\u2028\""
   },
   {
     "in": "f09f87ba60efb88fe2808be2808ce280a81ff09f9880efbfbdd8a7",
@@ -1037,15 +1100,15 @@
     "in": "e697a50709f3a08480e280acefb880c2857be697a5",
     "repeat": 1,
     "valid": true,
-    "out": "\"日\\a\\t󠄀\\u202c︀\\u0085{日\"",
-    "quoted": "\"日\\a\\t󠄀\\u202c︀\\u0085{日\""
+    "out": "\"日\\a\\t\\U000e0100\\u202c\\ufe00\\u0085{日\"",
+    "quoted": "\"日\\a\\t\\U000e0100\\u202c\\ufe00\\u0085{日\""
   },
   {
     "in": "f0efb880f09f9880e38080c27eefbfbec28d",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\xf0︀😀　\\xc2~\\ufffe\\u008d\"",
-    "quoted": "\"\\xf0︀😀　\\xc2~\\ufffe\\u008d\""
+    "out": "\"\\xf0\\ufe00😀　\\xc2~\\ufffe\\u008d\"",
+    "quoted": "\"\\xf0\\ufe00😀　\\xc2~\\ufffe\\u008d\""
   },
   {
     "in": "e281a0c2a05f",
@@ -1058,8 +1121,8 @@
     "in": "e280a92ec280c28d7be280aecc81",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\u2029.\\u0080\\u008d{\\u202é\"",
-    "quoted": "\"\\u2029.\\u0080\\u008d{\\u202é\""
+    "out": "\"\\u2029.\\u0080\\u008d{\\u202e\\u0301\"",
+    "quoted": "\"\\u2029.\\u0080\\u008d{\\u202e\\u0301\""
   },
   {
     "in": "e69cace697a507e2808cc2a0c28de280a8e69cac",
@@ -1079,15 +1142,15 @@
     "in": "efa3bfc280f3a087af30",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\uf8ff\\u0080󠇯0\"",
-    "quoted": "\"\\uf8ff\\u0080󠇯0\""
+    "out": "\"\\uf8ff\\u0080\\U000e01ef0\"",
+    "quoted": "\"\\uf8ff\\u0080\\U000e01ef0\""
   },
   {
     "in": "7bee8080c2adbff0efb88fee8080310808",
     "repeat": 1,
     "valid": false,
-    "out": "\"{\\ue000\\u00ad\\xbf\\xf0️\\ue0001\\b\\b\"",
-    "quoted": "\"{\\ue000\\u00ad\\xbf\\xf0️\\ue0001\\b\\b\""
+    "out": "\"{\\ue000\\u00ad\\xbf\\xf0\\ufe0f\\ue0001\\b\\b\"",
+    "quoted": "\"{\\ue000\\u00ad\\xbf\\xf0\\ufe0f\\ue0001\\b\\b\""
   },
   {
     "in": "e2839defbfbe",
@@ -1163,8 +1226,8 @@
     "in": "d8a7f3a08081e2808b09f3a08480e281a0e280ade2808c27",
     "repeat": 1,
     "valid": true,
-    "out": "\"ا\\U000e0001\\u200b\\t󠄀\\u2060\\u202d\\u200c'\"",
-    "quoted": "\"ا\\U000e0001\\u200b\\t󠄀\\u2060\\u202d\\u200c'\""
+    "out": "\"ا\\U000e0001\\u200b\\t\\U000e0100\\u2060\\u202d\\u200c'\"",
+    "quoted": "\"ا\\U000e0001\\u200b\\t\\U000e0100\\u2060\\u202d\\u200c'\""
   },
   {
     "in": "",
@@ -1177,8 +1240,8 @@
     "in": "e0a4bfe2808ce69cace280aae2808ecca7",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\u093f\\u200c本\\u202a\\u200ȩ\"",
-    "quoted": "\"\\u093f\\u200c本\\u202a\\u200ȩ\""
+    "out": "\"\\u093f\\u200c本\\u202a\\u200e\\u0327\"",
+    "quoted": "\"\\u093f\\u200c本\\u202a\\u200e\\u0327\""
   },
   {
     "in": "efb88fe281a0d7905c",
@@ -1191,8 +1254,8 @@
     "in": "efb88ff0e0a4bfe280ade2808e",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\ufe0f\\xf0ि\\u202d\\u200e\"",
-    "quoted": "\"\\ufe0f\\xf0ि\\u202d\\u200e\""
+    "out": "\"\\ufe0f\\xf0\\u093f\\u202d\\u200e\"",
+    "quoted": "\"\\ufe0f\\xf0\\u093f\\u202d\\u200e\""
   },
   {
     "in": "c2",
@@ -1226,22 +1289,22 @@
     "in": "efa3bfe0a483",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\uf8ffः\"",
-    "quoted": "\"\\uf8ffः\""
+    "out": "\"\\uf8ff\\u0903\"",
+    "quoted": "\"\\uf8ff\\u0903\""
   },
   {
     "in": "e280ade2808dbf5cf3a087aff3a0808109efbfbfe0a4bff3a08480e38080",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\u202d\\u200d\\xbf\\\\󠇯\\U000e0001\\t\\uffffि󠄀　\"",
-    "quoted": "\"\\u202d\\u200d\\xbf\\\\󠇯\\U000e0001\\t\\uffffि󠄀　\""
+    "out": "\"\\u202d\\u200d\\xbf\\\\\\U000e01ef\\U000e0001\\t\\uffff\\u093f\\U000e0100　\"",
+    "quoted": "\"\\u202d\\u200d\\xbf\\\\\\U000e01ef\\U000e0001\\t\\uffff\\u093f\\U000e0100　\""
   },
   {
     "in": "08cc807dc29cc28de280abd8a71bc280e69cac",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\b̀}\\u009c\\u008d\\u202bا\\x1b\\u0080本\"",
-    "quoted": "\"\\b̀}\\u009c\\u008d\\u202bا\\x1b\\u0080本\""
+    "out": "\"\\b\\u0300}\\u009c\\u008d\\u202bا\\x1b\\u0080本\"",
+    "quoted": "\"\\b\\u0300}\\u009c\\u008d\\u202bا\\x1b\\u0080本\""
   },
   {
     "in": "e280a9e280ae",
@@ -1310,8 +1373,8 @@
     "in": "f3a08480f48fbfbdc280cc81c2850d61e2808d5abf",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\U000e0100\\U0010fffd\\u0080́\\u0085\\ra\\u200dZ\\xbf\"",
-    "quoted": "\"\\U000e0100\\U0010fffd\\u0080́\\u0085\\ra\\u200dZ\\xbf\""
+    "out": "\"\\U000e0100\\U0010fffd\\u0080\\u0301\\u0085\\ra\\u200dZ\\xbf\"",
+    "quoted": "\"\\U000e0100\\U0010fffd\\u0080\\u0301\\u0085\\ra\\u200dZ\\xbf\""
   },
   {
     "in": "c3a9e0a483f3a084800007f0",
@@ -1324,8 +1387,8 @@
     "in": "c3a9e280a9e281a9cdafe281a600",
     "repeat": 1,
     "valid": true,
-    "out": "\"é\\u2029\\u2069ͯ\\u2066\\x00\"",
-    "quoted": "\"é\\u2029\\u2069ͯ\\u2066\\x00\""
+    "out": "\"é\\u2029\\u2069\\u036f\\u2066\\x00\"",
+    "quoted": "\"é\\u2029\\u2069\\u036f\\u2066\\x00\""
   },
   {
     "in": "f3b08080f3a081bff3a080810cd89ce280aac29ce69cace2",
@@ -1436,8 +1499,8 @@
     "in": "f48fbfbde2808fc2ade280abcc81d89cc29ce2808de2839de2e2808d",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\U0010fffd\\u200f\\u00ad\\u202b́\\u061c\\u009c\\u200d⃝\\xe2\\u200d\"",
-    "quoted": "\"\\U0010fffd\\u200f\\u00ad\\u202b́\\u061c\\u009c\\u200d⃝\\xe2\\u200d\""
+    "out": "\"\\U0010fffd\\u200f\\u00ad\\u202b\\u0301\\u061c\\u009c\\u200d\\u20dd\\xe2\\u200d\"",
+    "quoted": "\"\\U0010fffd\\u200f\\u00ad\\u202b\\u0301\\u061c\\u009c\\u200d\\u20dd\\xe2\\u200d\""
   },
   {
     "in": "c280e281a0e38080d8a7ffefb790",
@@ -1450,8 +1513,8 @@
     "in": "ffe281a9e2808cc28de281a7e280ade2839de280a8f09f9880a0",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\xff\\u2069\\u200c\\u008d\\u2067\\u202d⃝\\u2028😀\\xa0\"",
-    "quoted": "\"\\xff\\u2069\\u200c\\u008d\\u2067\\u202d⃝\\u2028😀\\xa0\""
+    "out": "\"\\xff\\u2069\\u200c\\u008d\\u2067\\u202d\\u20dd\\u2028😀\\xa0\"",
+    "quoted": "\"\\xff\\u2069\\u200c\\u008d\\u2067\\u202d\\u20dd\\u2028😀\\xa0\""
   },
   {
     "in": "f3a087afe281a9efbbbfe281a7",
@@ -1485,15 +1548,15 @@
     "in": "7fe280ace2808cc28062f3a08081ee8080f3a08480",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\x7f\\u202c\\u200c\\u0080b\\U000e0001\\ue000󠄀\"",
-    "quoted": "\"\\x7f\\u202c\\u200c\\u0080b\\U000e0001\\ue000󠄀\""
+    "out": "\"\\x7f\\u202c\\u200c\\u0080b\\U000e0001\\ue000\\U000e0100\"",
+    "quoted": "\"\\x7f\\u202c\\u200c\\u0080b\\U000e0001\\ue000\\U000e0100\""
   },
   {
     "in": "63c2ad3080f3a08081c28defbfbe09f3a08480ed",
     "repeat": 1,
     "valid": false,
-    "out": "\"c\\u00ad0\\x80\\U000e0001\\u008d\\ufffe\\t󠄀\\xed\"",
-    "quoted": "\"c\\u00ad0\\x80\\U000e0001\\u008d\\ufffe\\t󠄀\\xed\""
+    "out": "\"c\\u00ad0\\x80\\U000e0001\\u008d\\ufffe\\t\\U000e0100\\xed\"",
+    "quoted": "\"c\\u00ad0\\x80\\U000e0001\\u008d\\ufffe\\t\\U000e0100\\xed\""
   },
   {
     "in": "e2808cefb790",
@@ -1527,8 +1590,8 @@
     "in": "bf0df3a081bf22efb880e0a4bfefbfbde0a483",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\xbf\\r\\U000e007f\\\"︀ि�ः\"",
-    "quoted": "\"\\xbf\\r\\U000e007f\\\"︀ि�ः\""
+    "out": "\"\\xbf\\r\\U000e007f\\\"\\ufe00\\u093f�ः\"",
+    "quoted": "\"\\xbf\\r\\U000e007f\\\"\\ufe00\\u093f�ः\""
   },
   {
     "in": "ff80efb790e281a6f3a08081bf2d",
@@ -1555,8 +1618,8 @@
     "in": "ed08c2e0a4bff3a0848080c29fefb7901b",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\xed\\b\\xc2ि󠄀\\x80\\u009f\\ufdd0\\x1b\"",
-    "quoted": "\"\\xed\\b\\xc2ि󠄀\\x80\\u009f\\ufdd0\\x1b\""
+    "out": "\"\\xed\\b\\xc2\\u093f\\U000e0100\\x80\\u009f\\ufdd0\\x1b\"",
+    "quoted": "\"\\xed\\b\\xc2\\u093f\\U000e0100\\x80\\u009f\\ufdd0\\x1b\""
   },
   {
     "in": "e281a6e280adf09f9880efbfbe27c3a9e697a5",
@@ -1576,8 +1639,8 @@
     "in": "f3a08480efb880f3b0808058e38080e281a7e280ae09e280a8",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\U000e0100︀\\U000f0000X　\\u2067\\u202e\\t\\u2028\"",
-    "quoted": "\"\\U000e0100︀\\U000f0000X　\\u2067\\u202e\\t\\u2028\""
+    "out": "\"\\U000e0100\\ufe00\\U000f0000X　\\u2067\\u202e\\t\\u2028\"",
+    "quoted": "\"\\U000e0100\\ufe00\\U000f0000X　\\u2067\\u202e\\t\\u2028\""
   },
   {
     "in": "",
@@ -1597,22 +1660,22 @@
     "in": "e280aae280a9efa3bfc2adfff3a087afc280f48fbfbd22f48fbfbd",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\u202a\\u2029\\uf8ff\\u00ad\\xff󠇯\\u0080\\U0010fffd\\\"\\U0010fffd\"",
-    "quoted": "\"\\u202a\\u2029\\uf8ff\\u00ad\\xff󠇯\\u0080\\U0010fffd\\\"\\U0010fffd\""
+    "out": "\"\\u202a\\u2029\\uf8ff\\u00ad\\xff\\U000e01ef\\u0080\\U0010fffd\\\"\\U0010fffd\"",
+    "quoted": "\"\\u202a\\u2029\\uf8ff\\u00ad\\xff\\U000e01ef\\u0080\\U0010fffd\\\"\\U0010fffd\""
   },
   {
     "in": "2fefb790f3a087aff3a08081cca7e2",
     "repeat": 1,
     "valid": false,
-    "out": "\"/\\ufdd0󠇯\\U000e0001̧\\xe2\"",
-    "quoted": "\"/\\ufdd0󠇯\\U000e0001̧\\xe2\""
+    "out": "\"/\\ufdd0\\U000e01ef\\U000e0001\\u0327\\xe2\"",
+    "quoted": "\"/\\ufdd0\\U000e01ef\\U000e0001\\u0327\\xe2\""
   },
   {
     "in": "e280aaedf3a08480cdaf",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\u202a\\xed󠄀ͯ\"",
-    "quoted": "\"\\u202a\\xed󠄀ͯ\""
+    "out": "\"\\u202a\\xed\\U000e0100\\u036f\"",
+    "quoted": "\"\\u202a\\xed\\U000e0100\\u036f\""
   },
   {
     "in": "efa3bf39",
@@ -1667,8 +1730,8 @@
     "in": "e2808ecca7d790f09f9880e697a5",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\u200ȩא😀日\"",
-    "quoted": "\"\\u200ȩא😀日\""
+    "out": "\"\\u200e\\u0327א😀日\"",
+    "quoted": "\"\\u200e\\u0327א😀日\""
   },
   {
     "in": "31d8a7efb88fefb790e697a5",
@@ -1723,8 +1786,8 @@
     "in": "cdafbfc29bfff3a08480c29fefa3bfc29bc29fe697a5e280ad",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\u036f\\xbf\\u009b\\xff󠄀\\u009f\\uf8ff\\u009b\\u009f日\\u202d\"",
-    "quoted": "\"\\u036f\\xbf\\u009b\\xff󠄀\\u009f\\uf8ff\\u009b\\u009f日\\u202d\""
+    "out": "\"\\u036f\\xbf\\u009b\\xff\\U000e0100\\u009f\\uf8ff\\u009b\\u009f日\\u202d\"",
+    "quoted": "\"\\u036f\\xbf\\u009b\\xff\\U000e0100\\u009f\\uf8ff\\u009b\\u009f日\\u202d\""
   },
   {
     "in": "d8a7c28d1bc29fe281a0c29fee808031",
@@ -1751,8 +1814,8 @@
     "in": "e2808cf080e2839df3a081bf",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\u200c\\xf0\\x80⃝\\U000e007f\"",
-    "quoted": "\"\\u200c\\xf0\\x80⃝\\U000e007f\""
+    "out": "\"\\u200c\\xf0\\x80\\u20dd\\U000e007f\"",
+    "quoted": "\"\\u200c\\xf0\\x80\\u20dd\\U000e007f\""
   },
   {
     "in": "e281a9c29cefbfbf07e280ae09e281a0c2ad",
@@ -1765,8 +1828,8 @@
     "in": "cca7c2ade2808ce2808cf3a087afa008c29fe2808de2808fcc81",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\u0327\\u00ad\\u200c\\u200c󠇯\\xa0\\b\\u009f\\u200d\\u200f́\"",
-    "quoted": "\"\\u0327\\u00ad\\u200c\\u200c󠇯\\xa0\\b\\u009f\\u200d\\u200f́\""
+    "out": "\"\\u0327\\u00ad\\u200c\\u200c\\U000e01ef\\xa0\\b\\u009f\\u200d\\u200f\\u0301\"",
+    "quoted": "\"\\u0327\\u00ad\\u200c\\u200c\\U000e01ef\\xa0\\b\\u009f\\u200d\\u200f\\u0301\""
   },
   {
     "in": "ffe2808be280a91be280aa",
@@ -1779,22 +1842,22 @@
     "in": "5af3a08081cc81",
     "repeat": 1,
     "valid": true,
-    "out": "\"Z\\U000e0001́\"",
-    "quoted": "\"Z\\U000e0001́\""
+    "out": "\"Z\\U000e0001\\u0301\"",
+    "quoted": "\"Z\\U000e0001\\u0301\""
   },
   {
     "in": "f0f3a080812df3b08080e2808dc29cee8080efb790e0a4bf0ce0a483",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\xf0\\U000e0001-\\U000f0000\\u200d\\u009c\\ue000\\ufdd0ि\\fः\"",
-    "quoted": "\"\\xf0\\U000e0001-\\U000f0000\\u200d\\u009c\\ue000\\ufdd0ि\\fः\""
+    "out": "\"\\xf0\\U000e0001-\\U000f0000\\u200d\\u009c\\ue000\\ufdd0\\u093f\\f\\u0903\"",
+    "quoted": "\"\\xf0\\U000e0001-\\U000f0000\\u200d\\u009c\\ue000\\ufdd0\\u093f\\f\\u0903\""
   },
   {
     "in": "f3a0848080c29cc25cefb880",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\U000e0100\\x80\\u009c\\xc2\\\\︀\"",
-    "quoted": "\"\\U000e0100\\x80\\u009c\\xc2\\\\︀\""
+    "out": "\"\\U000e0100\\x80\\u009c\\xc2\\\\\\ufe00\"",
+    "quoted": "\"\\U000e0100\\x80\\u009c\\xc2\\\\\\ufe00\""
   },
   {
     "in": "e281a9e280a809c2a0",
@@ -1821,15 +1884,15 @@
     "in": "07e280accdafcc80",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\a\\u202cͯ̀\"",
-    "quoted": "\"\\a\\u202cͯ̀\""
+    "out": "\"\\a\\u202c\\u036f\\u0300\"",
+    "quoted": "\"\\a\\u202c\\u036f\\u0300\""
   },
   {
     "in": "e280a90bf3a08480",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\u2029\\v󠄀\"",
-    "quoted": "\"\\u2029\\v󠄀\""
+    "out": "\"\\u2029\\v\\U000e0100\"",
+    "quoted": "\"\\u2029\\v\\U000e0100\""
   },
   {
     "in": "c29c7ee2808dc2a0",
@@ -1849,8 +1912,8 @@
     "in": "d8a7f0cc800be281a7bf0b",
     "repeat": 1,
     "valid": false,
-    "out": "\"ا\\xf0̀\\v\\u2067\\xbf\\v\"",
-    "quoted": "\"ا\\xf0̀\\v\\u2067\\xbf\\v\""
+    "out": "\"ا\\xf0\\u0300\\v\\u2067\\xbf\\v\"",
+    "quoted": "\"ا\\xf0\\u0300\\v\\u2067\\xbf\\v\""
   },
   {
     "in": "",
@@ -1863,8 +1926,8 @@
     "in": "e281a009efb88fd89cbf1fed",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\u2060\\t️\\u061c\\xbf\\x1f\\xed\"",
-    "quoted": "\"\\u2060\\t️\\u061c\\xbf\\x1f\\xed\""
+    "out": "\"\\u2060\\t\\ufe0f\\u061c\\xbf\\x1f\\xed\"",
+    "quoted": "\"\\u2060\\t\\ufe0f\\u061c\\xbf\\x1f\\xed\""
   },
   {
     "in": "e2839de38080e69cacc29cd8a7f3b08080c2f0",
@@ -1898,8 +1961,8 @@
     "in": "ee80800ae280ace281a6efb880c28de281a0",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\ue000\\n\\u202c\\u2066︀\\u008d\\u2060\"",
-    "quoted": "\"\\ue000\\n\\u202c\\u2066︀\\u008d\\u2060\""
+    "out": "\"\\ue000\\n\\u202c\\u2066\\ufe00\\u008d\\u2060\"",
+    "quoted": "\"\\ue000\\n\\u202c\\u2066\\ufe00\\u008d\\u2060\""
   },
   {
     "in": "c28de280a9efbfbe0b80e281a9e281a9e69cac",
@@ -1933,8 +1996,8 @@
     "in": "e280aaf0e281a0efa3bfcc80e280aee2808be280abf3a087af0d",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\u202a\\xf0\\u2060\\uf8ff̀\\u202e\\u200b\\u202b󠇯\\r\"",
-    "quoted": "\"\\u202a\\xf0\\u2060\\uf8ff̀\\u202e\\u200b\\u202b󠇯\\r\""
+    "out": "\"\\u202a\\xf0\\u2060\\uf8ff\\u0300\\u202e\\u200b\\u202b\\U000e01ef\\r\"",
+    "quoted": "\"\\u202a\\xf0\\u2060\\uf8ff\\u0300\\u202e\\u200b\\u202b\\U000e01ef\\r\""
   },
   {
     "in": "27efb880e2808bd89c7effe280a963e2808b",
@@ -1982,8 +2045,8 @@
     "in": "0d5fc29ce281a9f0e280ad300b80f3a087af",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\r_\\u009c\\u2069\\xf0\\u202d0\\v\\x80󠇯\"",
-    "quoted": "\"\\r_\\u009c\\u2069\\xf0\\u202d0\\v\\x80󠇯\""
+    "out": "\"\\r_\\u009c\\u2069\\xf0\\u202d0\\v\\x80\\U000e01ef\"",
+    "quoted": "\"\\r_\\u009c\\u2069\\xf0\\u202d0\\v\\x80\\U000e01ef\""
   },
   {
     "in": "e280aaf3a081bf7f",
@@ -2010,8 +2073,8 @@
     "in": "efa3bf62efb790efbfbef3a087afefbfbeefb790",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\uf8ffb\\ufdd0\\ufffe󠇯\\ufffe\\ufdd0\"",
-    "quoted": "\"\\uf8ffb\\ufdd0\\ufffe󠇯\\ufffe\\ufdd0\""
+    "out": "\"\\uf8ffb\\ufdd0\\ufffe\\U000e01ef\\ufffe\\ufdd0\"",
+    "quoted": "\"\\uf8ffb\\ufdd0\\ufffe\\U000e01ef\\ufffe\\ufdd0\""
   },
   {
     "in": "a0e2e280a8c2805fe281a8c29fe280acc2",
@@ -2024,8 +2087,8 @@
     "in": "0709d8a730e2808fcc80e280aad790c28d",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\a\\tا0\\u200f̀\\u202aא\\u008d\"",
-    "quoted": "\"\\a\\tا0\\u200f̀\\u202aא\\u008d\""
+    "out": "\"\\a\\tا0\\u200f\\u0300\\u202aא\\u008d\"",
+    "quoted": "\"\\a\\tا0\\u200f\\u0300\\u202aא\\u008d\""
   },
   {
     "in": "d89c0dc29bc29b00e280ad09efbfbf",
@@ -2038,15 +2101,15 @@
     "in": "e2808bed080cefb8801bedefbbbf0dc3a9e280aa",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\u200b\\xed\\b\\f︀\\x1b\\xed\\ufeff\\ré\\u202a\"",
-    "quoted": "\"\\u200b\\xed\\b\\f︀\\x1b\\xed\\ufeff\\ré\\u202a\""
+    "out": "\"\\u200b\\xed\\b\\f\\ufe00\\x1b\\xed\\ufeff\\ré\\u202a\"",
+    "quoted": "\"\\u200b\\xed\\b\\f\\ufe00\\x1b\\xed\\ufeff\\ré\\u202a\""
   },
   {
     "in": "cdaf61e280aee281a0e283a30c",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\u036fa\\u202e\\u2060⃣\\f\"",
-    "quoted": "\"\\u036fa\\u202e\\u2060⃣\\f\""
+    "out": "\"\\u036fa\\u202e\\u2060\\u20e3\\f\"",
+    "quoted": "\"\\u036fa\\u202e\\u2060\\u20e3\\f\""
   },
   {
     "in": "c29ff48fbfbdf3a08081",
@@ -2094,22 +2157,22 @@
     "in": "1f60edc28dcc801f",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\x1f`\\xed\\u008d̀\\x1f\"",
-    "quoted": "\"\\x1f`\\xed\\u008d̀\\x1f\""
+    "out": "\"\\x1f`\\xed\\u008d\\u0300\\x1f\"",
+    "quoted": "\"\\x1f`\\xed\\u008d\\u0300\\x1f\""
   },
   {
     "in": "e2808cf3a08480a0e2808c61c285efbfbfff",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\u200c󠄀\\xa0\\u200ca\\u0085\\uffff\\xff\"",
-    "quoted": "\"\\u200c󠄀\\xa0\\u200ca\\u0085\\uffff\\xff\""
+    "out": "\"\\u200c\\U000e0100\\xa0\\u200ca\\u0085\\uffff\\xff\"",
+    "quoted": "\"\\u200c\\U000e0100\\xa0\\u200ca\\u0085\\uffff\\xff\""
   },
   {
     "in": "e2808ea0e2808e0befbbbfe281a9c29bcdafefb88027",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\u200e\\xa0\\u200e\\v\\ufeff\\u2069\\u009bͯ︀'\"",
-    "quoted": "\"\\u200e\\xa0\\u200e\\v\\ufeff\\u2069\\u009bͯ︀'\""
+    "out": "\"\\u200e\\xa0\\u200e\\v\\ufeff\\u2069\\u009b\\u036f\\ufe00'\"",
+    "quoted": "\"\\u200e\\xa0\\u200e\\v\\ufeff\\u2069\\u009b\\u036f\\ufe00'\""
   },
   {
     "in": "cc8109e69cacefb7907fe2808d7bd790d790",
@@ -2143,8 +2206,8 @@
     "in": "f3a081bfe280aaedc3a9e280ab0c7e0ac280e283a31b",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\U000e007f\\u202a\\xedé\\u202b\\f~\\n\\u0080⃣\\x1b\"",
-    "quoted": "\"\\U000e007f\\u202a\\xedé\\u202b\\f~\\n\\u0080⃣\\x1b\""
+    "out": "\"\\U000e007f\\u202a\\xedé\\u202b\\f~\\n\\u0080\\u20e3\\x1b\"",
+    "quoted": "\"\\U000e007f\\u202a\\xedé\\u202b\\f~\\n\\u0080\\u20e3\\x1b\""
   },
   {
     "in": "",
@@ -2157,8 +2220,8 @@
     "in": "e280a8c29bf48fbfbdefb790d89cf3a08081e0a4bf1fc29bc29c",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\u2028\\u009b\\U0010fffd\\ufdd0\\u061c\\U000e0001ि\\x1f\\u009b\\u009c\"",
-    "quoted": "\"\\u2028\\u009b\\U0010fffd\\ufdd0\\u061c\\U000e0001ि\\x1f\\u009b\\u009c\""
+    "out": "\"\\u2028\\u009b\\U0010fffd\\ufdd0\\u061c\\U000e0001\\u093f\\x1f\\u009b\\u009c\"",
+    "quoted": "\"\\u2028\\u009b\\U0010fffd\\ufdd0\\u061c\\U000e0001\\u093f\\x1f\\u009b\\u009c\""
   },
   {
     "in": "cca7e281a8c29c58c280",
@@ -2171,8 +2234,8 @@
     "in": "e2c29befbbbfed7bc285efb88fc2",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\xe2\\u009b\\ufeff\\xed{\\u0085️\\xc2\"",
-    "quoted": "\"\\xe2\\u009b\\ufeff\\xed{\\u0085️\\xc2\""
+    "out": "\"\\xe2\\u009b\\ufeff\\xed{\\u0085\\ufe0f\\xc2\"",
+    "quoted": "\"\\xe2\\u009b\\ufeff\\xed{\\u0085\\ufe0f\\xc2\""
   },
   {
     "in": "e2808d80e280a963cc81",
@@ -2199,8 +2262,8 @@
     "in": "f3a087afc28dc2ad600b7b1be0a483",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\U000e01ef\\u008d\\u00ad`\\v{\\x1bः\"",
-    "quoted": "\"\\U000e01ef\\u008d\\u00ad`\\v{\\x1bः\""
+    "out": "\"\\U000e01ef\\u008d\\u00ad`\\v{\\x1b\\u0903\"",
+    "quoted": "\"\\U000e01ef\\u008d\\u00ad`\\v{\\x1b\\u0903\""
   },
   {
     "in": "cc80efbfbfe280aac21fc285",
@@ -2213,29 +2276,29 @@
     "in": "e283a3f3b08080e697a509e0a483",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\u20e3\\U000f0000日\\tः\"",
-    "quoted": "\"\\u20e3\\U000f0000日\\tः\""
+    "out": "\"\\u20e3\\U000f0000日\\t\\u0903\"",
+    "quoted": "\"\\u20e3\\U000f0000日\\t\\u0903\""
   },
   {
     "in": "07cdafe69cace0a483f3b0808030e280adc2800c",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\aͯ本ः\\U000f00000\\u202d\\u0080\\f\"",
-    "quoted": "\"\\aͯ本ः\\U000f00000\\u202d\\u0080\\f\""
+    "out": "\"\\a\\u036f本ः\\U000f00000\\u202d\\u0080\\f\"",
+    "quoted": "\"\\a\\u036f本ः\\U000f00000\\u202d\\u0080\\f\""
   },
   {
     "in": "f48fbfbdf0c285f3a08081cc807ff09f9880e281a0e38080",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\U0010fffd\\xf0\\u0085\\U000e0001̀\\x7f😀\\u2060　\"",
-    "quoted": "\"\\U0010fffd\\xf0\\u0085\\U000e0001̀\\x7f😀\\u2060　\""
+    "out": "\"\\U0010fffd\\xf0\\u0085\\U000e0001\\u0300\\x7f😀\\u2060　\"",
+    "quoted": "\"\\U0010fffd\\xf0\\u0085\\U000e0001\\u0300\\x7f😀\\u2060　\""
   },
   {
     "in": "f3a087aff48fbfbda01b1be0a4bf07",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\U000e01ef\\U0010fffd\\xa0\\x1b\\x1bि\\a\"",
-    "quoted": "\"\\U000e01ef\\U0010fffd\\xa0\\x1b\\x1bि\\a\""
+    "out": "\"\\U000e01ef\\U0010fffd\\xa0\\x1b\\x1b\\u093f\\a\"",
+    "quoted": "\"\\U000e01ef\\U0010fffd\\xa0\\x1b\\x1b\\u093f\\a\""
   },
   {
     "in": "f3a081bfefb790f007c29f",
@@ -2269,15 +2332,15 @@
     "in": "80e2839de281a8e281a9e2808c007eefbfbd08e280adefb88f",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\x80⃝\\u2068\\u2069\\u200c\\x00~�\\b\\u202d️\"",
-    "quoted": "\"\\x80⃝\\u2068\\u2069\\u200c\\x00~�\\b\\u202d️\""
+    "out": "\"\\x80\\u20dd\\u2068\\u2069\\u200c\\x00~�\\b\\u202d\\ufe0f\"",
+    "quoted": "\"\\x80\\u20dd\\u2068\\u2069\\u200c\\x00~�\\b\\u202d\\ufe0f\""
   },
   {
     "in": "2fc29fc29cefbfbef3a08081c2a0d790efbfbf0cefb88f2d",
     "repeat": 1,
     "valid": true,
-    "out": "\"/\\u009f\\u009c\\ufffe\\U000e0001 א\\uffff\\f️-\"",
-    "quoted": "\"/\\u009f\\u009c\\ufffe\\U000e0001 א\\uffff\\f️-\""
+    "out": "\"/\\u009f\\u009c\\ufffe\\U000e0001 א\\uffff\\f\\ufe0f-\"",
+    "quoted": "\"/\\u009f\\u009c\\ufffe\\U000e0001 א\\uffff\\f\\ufe0f-\""
   },
   {
     "in": "d89cc29c00efbbbf597fffe281a0e69cac",
@@ -2304,8 +2367,8 @@
     "in": "e2808ee283a32d",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\u200e⃣-\"",
-    "quoted": "\"\\u200e⃣-\""
+    "out": "\"\\u200e\\u20e3-\"",
+    "quoted": "\"\\u200e\\u20e3-\""
   },
   {
     "in": "f09f9880bfed1be697a5",
@@ -2332,8 +2395,8 @@
     "in": "efbfbee281a7e281a7092207e280a9efb88f39c3a9e280ae",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\ufffe\\u2067\\u2067\\t\\\"\\a\\u2029️9é\\u202e\"",
-    "quoted": "\"\\ufffe\\u2067\\u2067\\t\\\"\\a\\u2029️9é\\u202e\""
+    "out": "\"\\ufffe\\u2067\\u2067\\t\\\"\\a\\u2029\\ufe0f9é\\u202e\"",
+    "quoted": "\"\\ufffe\\u2067\\u2067\\t\\\"\\a\\u2029\\ufe0f9é\\u202e\""
   },
   {
     "in": "",
@@ -2367,8 +2430,8 @@
     "in": "efa3bfe697a57d27f09f87ba00cc81",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\uf8ff日}'🇺\\x00́\"",
-    "quoted": "\"\\uf8ff日}'🇺\\x00́\""
+    "out": "\"\\uf8ff日}'🇺\\x00\\u0301\"",
+    "quoted": "\"\\uf8ff日}'🇺\\x00\\u0301\""
   },
   {
     "in": "",
@@ -2388,8 +2451,8 @@
     "in": "c29befbfbe0ce280aee280a800e283a380e281a6f09f87baefb790",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\u009b\\ufffe\\f\\u202e\\u2028\\x00⃣\\x80\\u2066🇺\\ufdd0\"",
-    "quoted": "\"\\u009b\\ufffe\\f\\u202e\\u2028\\x00⃣\\x80\\u2066🇺\\ufdd0\""
+    "out": "\"\\u009b\\ufffe\\f\\u202e\\u2028\\x00\\u20e3\\x80\\u2066🇺\\ufdd0\"",
+    "quoted": "\"\\u009b\\ufffe\\f\\u202e\\u2028\\x00\\u20e3\\x80\\u2066🇺\\ufdd0\""
   },
   {
     "in": "e281a6edf09f9880e281a6efbfbf59e2808ee280ad",
@@ -2465,8 +2528,8 @@
     "in": "ffa0efb8807ff3a08480e280a8",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\xff\\xa0︀\\x7f󠄀\\u2028\"",
-    "quoted": "\"\\xff\\xa0︀\\x7f󠄀\\u2028\""
+    "out": "\"\\xff\\xa0\\ufe00\\x7f\\U000e0100\\u2028\"",
+    "quoted": "\"\\xff\\xa0\\ufe00\\x7f\\U000e0100\\u2028\""
   },
   {
     "in": "5858e281a9c2e2808be280ab",
@@ -2500,8 +2563,8 @@
     "in": "ffefb880f09f87baf3a081bfcc80f3a087af0dc280",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\xff︀🇺\\U000e007f̀󠇯\\r\\u0080\"",
-    "quoted": "\"\\xff︀🇺\\U000e007f̀󠇯\\r\\u0080\""
+    "out": "\"\\xff\\ufe00🇺\\U000e007f\\u0300\\U000e01ef\\r\\u0080\"",
+    "quoted": "\"\\xff\\ufe00🇺\\U000e007f\\u0300\\U000e01ef\\r\\u0080\""
   },
   {
     "in": "",
@@ -2535,8 +2598,8 @@
     "in": "efb790efa3bfe2808be0a4bfe280a92e",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\ufdd0\\uf8ff\\u200bि\\u2029.\"",
-    "quoted": "\"\\ufdd0\\uf8ff\\u200bि\\u2029.\""
+    "out": "\"\\ufdd0\\uf8ff\\u200b\\u093f\\u2029.\"",
+    "quoted": "\"\\ufdd0\\uf8ff\\u200b\\u093f\\u2029.\""
   },
   {
     "in": "58c29be2808b61e2808be38080d8a7cc80e2808defbfbf0c",
@@ -2563,15 +2626,15 @@
     "in": "f09f87bae0a483efa3bfe283a3c28d1fc285c29cc280092d",
     "repeat": 1,
     "valid": true,
-    "out": "\"🇺ः\\uf8ff⃣\\u008d\\x1f\\u0085\\u009c\\u0080\\t-\"",
-    "quoted": "\"🇺ः\\uf8ff⃣\\u008d\\x1f\\u0085\\u009c\\u0080\\t-\""
+    "out": "\"🇺ः\\uf8ff\\u20e3\\u008d\\x1f\\u0085\\u009c\\u0080\\t-\"",
+    "quoted": "\"🇺ः\\uf8ff\\u20e3\\u008d\\x1f\\u0085\\u009c\\u0080\\t-\""
   },
   {
     "in": "efa3bf311fefbfbef3a08081e0a4bfc29b",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\uf8ff1\\x1f\\ufffe\\U000e0001ि\\u009b\"",
-    "quoted": "\"\\uf8ff1\\x1f\\ufffe\\U000e0001ि\\u009b\""
+    "out": "\"\\uf8ff1\\x1f\\ufffe\\U000e0001\\u093f\\u009b\"",
+    "quoted": "\"\\uf8ff1\\x1f\\ufffe\\U000e0001\\u093f\\u009b\""
   },
   {
     "in": "f3a087afe280ad80",
@@ -2591,15 +2654,15 @@
     "in": "f3a08480c28580e0a4bfefb790c3a9e281a0f09f87bac28d",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\U000e0100\\u0085\\x80ि\\ufdd0é\\u2060🇺\\u008d\"",
-    "quoted": "\"\\U000e0100\\u0085\\x80ि\\ufdd0é\\u2060🇺\\u008d\""
+    "out": "\"\\U000e0100\\u0085\\x80\\u093f\\ufdd0é\\u2060🇺\\u008d\"",
+    "quoted": "\"\\U000e0100\\u0085\\x80\\u093f\\ufdd0é\\u2060🇺\\u008d\""
   },
   {
     "in": "08f09f9880d7900c22c285e0a4bfd790",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\b😀א\\f\\\"\\u0085िא\"",
-    "quoted": "\"\\b😀א\\f\\\"\\u0085िא\""
+    "out": "\"\\b😀א\\f\\\"\\u0085\\u093fא\"",
+    "quoted": "\"\\b😀א\\f\\\"\\u0085\\u093fא\""
   },
   {
     "in": "",
@@ -2640,15 +2703,15 @@
     "in": "f3a081bf5fe2808e0bc2cc80e380801b",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\U000e007f_\\u200e\\v\\xc2̀　\\x1b\"",
-    "quoted": "\"\\U000e007f_\\u200e\\v\\xc2̀　\\x1b\""
+    "out": "\"\\U000e007f_\\u200e\\v\\xc2\\u0300　\\x1b\"",
+    "quoted": "\"\\U000e007f_\\u200e\\v\\xc2\\u0300　\\x1b\""
   },
   {
     "in": "e280a8efb8805ac20befbfbe80",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\u2028︀Z\\xc2\\v\\ufffe\\x80\"",
-    "quoted": "\"\\u2028︀Z\\xc2\\v\\ufffe\\x80\""
+    "out": "\"\\u2028\\ufe00Z\\xc2\\v\\ufffe\\x80\"",
+    "quoted": "\"\\u2028\\ufe00Z\\xc2\\v\\ufffe\\x80\""
   },
   {
     "in": "58edf09f9880f09f87ba0be281a8c29b7eefbfbde280a9",
@@ -2675,8 +2738,8 @@
     "in": "7bcca7e281a0e0a4bf0c",
     "repeat": 1,
     "valid": true,
-    "out": "\"{̧\\u2060ि\\f\"",
-    "quoted": "\"{̧\\u2060ि\\f\""
+    "out": "\"{̧\\u2060\\u093f\\f\"",
+    "quoted": "\"{̧\\u2060\\u093f\\f\""
   },
   {
     "in": "f0c2802eefb79080e281a6",
@@ -2696,15 +2759,15 @@
     "in": "d89cc29ff3a08480ed5cf09f87ba7ec29ccc80",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\u061c\\u009f󠄀\\xed\\\\🇺~\\u009c̀\"",
-    "quoted": "\"\\u061c\\u009f󠄀\\xed\\\\🇺~\\u009c̀\""
+    "out": "\"\\u061c\\u009f\\U000e0100\\xed\\\\🇺~\\u009c\\u0300\"",
+    "quoted": "\"\\u061c\\u009f\\U000e0100\\xed\\\\🇺~\\u009c\\u0300\""
   },
   {
     "in": "efb7902fc2ade2839dc2ad",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\ufdd0/\\u00ad⃝\\u00ad\"",
-    "quoted": "\"\\ufdd0/\\u00ad⃝\\u00ad\""
+    "out": "\"\\ufdd0/\\u00ad\\u20dd\\u00ad\"",
+    "quoted": "\"\\ufdd0/\\u00ad\\u20dd\\u00ad\""
   },
   {
     "in": "cc81c29be2808f7be2808df09f9880f09f9880d89ce2808b",
@@ -2717,8 +2780,8 @@
     "in": "c28dd8a700efb880e2808c0980e697a5",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\u008dا\\x00︀\\u200c\\t\\x80日\"",
-    "quoted": "\"\\u008dا\\x00︀\\u200c\\t\\x80日\""
+    "out": "\"\\u008dا\\x00\\ufe00\\u200c\\t\\x80日\"",
+    "quoted": "\"\\u008dا\\x00\\ufe00\\u200c\\t\\x80日\""
   },
   {
     "in": "c29f",
@@ -2787,8 +2850,8 @@
     "in": "2fe280a8f3b08080cc800c39f3a08480c29c",
     "repeat": 1,
     "valid": true,
-    "out": "\"/\\u2028\\U000f0000̀\\f9󠄀\\u009c\"",
-    "quoted": "\"/\\u2028\\U000f0000̀\\f9󠄀\\u009c\""
+    "out": "\"/\\u2028\\U000f0000\\u0300\\f9󠄀\\u009c\"",
+    "quoted": "\"/\\u2028\\U000f0000\\u0300\\f9󠄀\\u009c\""
   },
   {
     "in": "63cdafe280aa",
@@ -2808,8 +2871,8 @@
     "in": "f3a087af1f6000e0a4bfa0ed",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\U000e01ef\\x1f`\\x00ि\\xa0\\xed\"",
-    "quoted": "\"\\U000e01ef\\x1f`\\x00ि\\xa0\\xed\""
+    "out": "\"\\U000e01ef\\x1f`\\x00\\u093f\\xa0\\xed\"",
+    "quoted": "\"\\U000e01ef\\x1f`\\x00\\u093f\\xa0\\xed\""
   },
   {
     "in": "efbfbe",
@@ -2850,8 +2913,8 @@
     "in": "c2efbfbde281a8f3a084807eefbfbee281a0f3a081bfc2a0",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\xc2�\\u2068󠄀~\\ufffe\\u2060\\U000e007f \"",
-    "quoted": "\"\\xc2�\\u2068󠄀~\\ufffe\\u2060\\U000e007f \""
+    "out": "\"\\xc2�\\u2068\\U000e0100~\\ufffe\\u2060\\U000e007f \"",
+    "quoted": "\"\\xc2�\\u2068\\U000e0100~\\ufffe\\u2060\\U000e007f \""
   },
   {
     "in": "0ae281a8d790e38080c2ad08e281a6",
@@ -2878,8 +2941,8 @@
     "in": "5cc28de280aeedf3a087afcca7",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\\\\\u008d\\u202e\\xed󠇯̧\"",
-    "quoted": "\"\\\\\\u008d\\u202e\\xed󠇯̧\""
+    "out": "\"\\\\\\u008d\\u202e\\xed\\U000e01ef\\u0327\"",
+    "quoted": "\"\\\\\\u008d\\u202e\\xed\\U000e01ef\\u0327\""
   },
   {
     "in": "c2805c1fefbbbfc29bbff3b08080",
@@ -2927,8 +2990,8 @@
     "in": "f09f9880e2808fe2808defb790e2808de2808dcca7f3a081bf",
     "repeat": 1,
     "valid": true,
-    "out": "\"😀\\u200f\\u200d\\ufdd0\\u200d\\u200ḑ\\U000e007f\"",
-    "quoted": "\"😀\\u200f\\u200d\\ufdd0\\u200d\\u200ḑ\\U000e007f\""
+    "out": "\"😀\\u200f\\u200d\\ufdd0\\u200d\\u200d\\u0327\\U000e007f\"",
+    "quoted": "\"😀\\u200f\\u200d\\ufdd0\\u200d\\u200d\\u0327\\U000e007f\""
   },
   {
     "in": "63f0c29fc29ff01fefbfbee280ae0d",
@@ -2983,8 +3046,8 @@
     "in": "c280e280aef3a087af",
     "repeat": 1,
     "valid": true,
-    "out": "\"\\u0080\\u202e󠇯\"",
-    "quoted": "\"\\u0080\\u202e󠇯\""
+    "out": "\"\\u0080\\u202e\\U000e01ef\"",
+    "quoted": "\"\\u0080\\u202e\\U000e01ef\""
   },
   {
     "in": "7f",
@@ -3004,15 +3067,15 @@
     "in": "61c29fe280a9f48fbfbdc285c29b08cc80cc80",
     "repeat": 1,
     "valid": true,
-    "out": "\"a\\u009f\\u2029\\U0010fffd\\u0085\\u009b\\b̀̀\"",
-    "quoted": "\"a\\u009f\\u2029\\U0010fffd\\u0085\\u009b\\b̀̀\""
+    "out": "\"a\\u009f\\u2029\\U0010fffd\\u0085\\u009b\\b\\u0300\\u0300\"",
+    "quoted": "\"a\\u009f\\u2029\\U0010fffd\\u0085\\u009b\\b\\u0300\\u0300\""
   },
   {
     "in": "f0cca7c29cf3a087afe280a8",
     "repeat": 1,
     "valid": false,
-    "out": "\"\\xf0̧\\u009c󠇯\\u2028\"",
-    "quoted": "\"\\xf0̧\\u009c󠇯\\u2028\""
+    "out": "\"\\xf0\\u0327\\u009c\\U000e01ef\\u2028\"",
+    "quoted": "\"\\xf0\\u0327\\u009c\\U000e01ef\\u2028\""
   },
   {
     "in": "c28d7d08efbfbec3a91fe280ade2808fc29c",
@@ -3046,8 +3109,8 @@
     "in": "f09f98805fc280c29bc29fcc80f3a08081e2808ed790",
     "repeat": 1,
     "valid": true,
-    "out": "\"😀_\\u0080\\u009b\\u009f̀\\U000e0001\\u200eא\"",
-    "quoted": "\"😀_\\u0080\\u009b\\u009f̀\\U000e0001\\u200eא\""
+    "out": "\"😀_\\u0080\\u009b\\u009f\\u0300\\U000e0001\\u200eא\"",
+    "quoted": "\"😀_\\u0080\\u009b\\u009f\\u0300\\U000e0001\\u200eא\""
   },
   {
     "in": "f3a081bf",

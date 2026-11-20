@@ -339,18 +339,31 @@ func shown(text string) string {
 	return quoted(text)
 }
 
-// quoted is text always quoted, with Go escapes (strconv.QuoteToGraphic), and a leading
-// combining mark or variation selector escaped too, since it would join the opening quote.
-// Berth.app's quoted is checked against it.
+// quoted is text always quoted, with Go escapes (strconv.QuoteToGraphic), and a combining mark
+// or variation selector escaped too where it would join a quote or an escape: first, or right
+// after an escaped rune. Berth.app's quoted is checked against it.
 func quoted(text string) string {
-	q := strconv.QuoteToGraphic(text)
-	r, size := utf8.DecodeRuneInString(q[1:])
-	if !unicode.Is(unicode.M, r) {
-		return q
+	var b strings.Builder
+	b.WriteByte('"')
+	afterEscape := true // the opening quote
+	for i := 0; i < len(text); {
+		r, w := utf8.DecodeRuneInString(text[i:])
+		piece := text[i : i+w]
+		i += w
+		q := strconv.QuoteToGraphic(piece)
+		inner := q[1 : len(q)-1]
+		switch {
+		case afterEscape && unicode.Is(unicode.M, r) && r > 0xffff:
+			fmt.Fprintf(&b, `\U%08x`, r)
+		case afterEscape && unicode.Is(unicode.M, r):
+			fmt.Fprintf(&b, `\u%04x`, r)
+		default:
+			b.WriteString(inner)
+			afterEscape = inner != piece
+			continue
+		}
+		afterEscape = true
 	}
-	esc := fmt.Sprintf(`\u%04x`, r)
-	if r > 0xffff {
-		esc = fmt.Sprintf(`\U%08x`, r)
-	}
-	return `"` + esc + q[1+size:]
+	b.WriteByte('"')
+	return b.String()
 }

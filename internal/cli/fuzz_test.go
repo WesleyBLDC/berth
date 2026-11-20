@@ -18,6 +18,7 @@ var nastyText = []string{
 	"\xff", "a\xc3", "\xed\xa0\x80", "\xf4\x90\x80\x80", "\xc0\xaf", `"`, `""`, `"x\n"`, `"claude"`, `\x1b`, "\"\u202e\"",
 	"\"\x1b", "\u0301", "\u0301\u0301", "\U0001f600\u200d\U0001f600", "\u061c", "\u2066rtl\u2069", "\x7f\u0080\u009f",
 	"\ufffd", "\U0010ffff", "\U000e007f", "\u00ad", "\u180e", "a\u034f", "\u3000", "\u00a0",
+	"\"\u0301", "\"\ufe0f", "\n\u0301", "\\\u0301", "\x1b\u0301\u0301", "\xff\u20dd",
 }
 
 func allGraphic(s string) bool {
@@ -31,7 +32,7 @@ func allGraphic(s string) bool {
 
 // FuzzShown checks that shown's output is valid UTF-8 of graphic runes only, and unambiguous:
 // text printed as it is never begins with a quote, and quoted text unquotes to the input, so no
-// two inputs print the same, and opens with no mark that would join its quote.
+// two inputs print the same, and prints no mark joined to its quote or an escape.
 func FuzzShown(f *testing.F) {
 	for _, s := range append(shownCorpus, nastyText...) {
 		f.Add(s)
@@ -50,10 +51,29 @@ func FuzzShown(f *testing.F) {
 		if back, err := strconv.Unquote(out); err != nil || back != s {
 			t.Fatalf("shown(%q) = %q, which unquotes to %q (%v)", s, out, back, err)
 		}
-		if r, _ := utf8.DecodeRuneInString(out[1:]); unicode.Is(unicode.M, r) {
-			t.Fatalf("shown(%q) = %q opens with a mark that joins its quote", s, out)
+		if markJoinsEscape(out) {
+			t.Fatalf("shown(%q) = %q has a mark joined to its quote or an escape", s, out)
 		}
 	})
+}
+
+// markJoinsEscape reads a Go quoted string unit by unit and reports a mark printed as it is
+// right after the opening quote or an escape, where it would draw on top of them.
+func markJoinsEscape(q string) bool {
+	rest := q[1 : len(q)-1]
+	afterEscape := true
+	for rest != "" {
+		r, _, tail, err := strconv.UnquoteChar(rest, '"')
+		if err != nil {
+			return true
+		}
+		escape := rest[0] == '\\'
+		if !escape && afterEscape && unicode.Is(unicode.M, r) {
+			return true
+		}
+		afterEscape, rest = escape, tail
+	}
+	return false
 }
 
 func unquoted(s string) string {
@@ -64,8 +84,8 @@ func unquoted(s string) string {
 	return u
 }
 
-// FuzzQuoted checks that quoted's output is graphic, unquotes to the input, and opens with no
-// mark that would join its quote.
+// FuzzQuoted checks that quoted's output is graphic, unquotes to the input, and prints no mark
+// where it would join the opening quote or an escape.
 func FuzzQuoted(f *testing.F) {
 	for _, s := range append(shownCorpus, nastyText...) {
 		f.Add(s)
@@ -78,8 +98,8 @@ func FuzzQuoted(f *testing.F) {
 		if back, err := strconv.Unquote(q); err != nil || back != s {
 			t.Fatalf("quoted(%q) = %q, which unquotes to %q (%v)", s, q, back, err)
 		}
-		if r, _ := utf8.DecodeRuneInString(q[1:]); unicode.Is(unicode.M, r) {
-			t.Fatalf("quoted(%q) = %q opens with a mark", s, q)
+		if markJoinsEscape(q) {
+			t.Fatalf("quoted(%q) = %q has a mark joined to its quote or an escape", s, q)
 		}
 	})
 }

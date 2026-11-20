@@ -6,21 +6,27 @@ import Foundation
 /// Text that begins with a quote is quoted too, so a typed out escape cannot pass for the
 /// character it names. The cases in Fixtures/shown.json come from the Go function itself.
 public func shown(_ text: String) -> String {
-    !text.hasPrefix("\"") && text.unicodeScalars.allSatisfy(isGraphic) ? text : quoted(text)
+    // By scalar: String.hasPrefix compares characters, and a quote with a mark after it is one.
+    text.unicodeScalars.first != "\"" && text.unicodeScalars.allSatisfy(isGraphic) ? text : quoted(text)
 }
 
 /// Text always quoted with Go's escapes (strconv.QuoteToGraphic), for where a person must see
-/// where agent or process chosen text starts and ends, as in a notification. A leading
-/// combining mark or variation selector is escaped too, since it would join the opening quote.
+/// where agent or process chosen text starts and ends, as in a notification. A combining mark or
+/// variation selector is escaped too where it would join a quote or an escape: first, or right
+/// after an escaped scalar.
 public func quoted(_ text: String) -> String {
     var out = "\""
-    for (index, scalar) in text.unicodeScalars.enumerated() {
+    var afterEscape = true
+    for scalar in text.unicodeScalars {
+        if scalar != "\"" && scalar != "\\" && isGraphic(scalar) && !(afterEscape && isMark(scalar)) {
+            out.unicodeScalars.append(scalar)
+            afterEscape = false
+            continue
+        }
+        afterEscape = true
         switch scalar {
-        case _ where index == 0 && isMark(scalar):
-            out += scalar.value < 0x10000 ? "\\u" + hex(scalar.value, width: 4) : "\\U" + hex(scalar.value, width: 8)
         case "\"": out += "\\\""
         case "\\": out += "\\\\"
-        case _ where isGraphic(scalar): out.unicodeScalars.append(scalar)
         case "\u{07}": out += "\\a"
         case "\u{08}": out += "\\b"
         case "\u{0C}": out += "\\f"
