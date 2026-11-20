@@ -96,9 +96,54 @@ func (f *forwarder) serve() {
 	}
 }
 
+// badNameRefusal and badUpstreamName name why a head was refused, in fixed text.
+const (
+	badNameRefusal  = "Berth-Refused: a header name is not a valid token or looks like one berth-proxy sets\r\n"
+	badUpstreamName = "Berth-Refused: upstream sent a header name that is not a valid token\r\n"
+)
+
+// validHeaderName reports whether name is an RFC 9110 token, as httpguts.ValidHeaderFieldName
+// does. Go keeps a name such as "Accept-Encoding " under its own key, which a server may still
+// read as Accept-Encoding, so such a name would slip past every rule keyed by the real one.
+func validHeaderName(name string) bool {
+	if name == "" {
+		return false
+	}
+	for _, c := range []byte(name) {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9':
+		case strings.IndexByte("!#$%&'*+-.^_`|~", c) >= 0:
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// lookAlike reports whether a header name is not one berth-proxy sets but a server could read as
+// it: an invalid token, or the granted header or Accept-Encoding spelt with underscores, which CGI
+// style servers map to hyphens.
+func (f *forwarder) lookAlike(h http.Header) bool {
+	for k := range h {
+		if !validHeaderName(k) {
+			return true
+		}
+		if strings.Contains(k, "_") {
+			if c := http.CanonicalHeaderKey(strings.ReplaceAll(k, "_", "-")); c == f.g.Header || c == "Accept-Encoding" {
+				return true
+			}
+		}
+	}
+	return false
+}
+
 // forward handles one request and reports whether the tunnel can carry another.
 func (f *forwarder) forward(req *http.Request) bool {
 	defer func() { _ = req.Body.Close() }()
+	if f.lookAlike(req.Header) {
+		writeStatus(f.client, http.StatusBadRequest, badNameRefusal)
+		return false
+	}
 	if code := f.check(req); code != 0 {
 		if code != http.StatusBadRequest {
 			f.s.refused.Add(1)
@@ -342,6 +387,14 @@ func (f *forwarder) relayResponse(req *http.Request) (keep bool, err error) {
 		}
 		if resp.StatusCode == http.StatusSwitchingProtocols {
 			return false, errors.New("upstream switched protocols")
+		}
+		for k := range resp.Header {
+			if !validHeaderName(k) {
+				_ = resp.Body.Close()
+				f.s.log.Warn("upstream sent an invalid header name; refused", "host", f.g.Host, "port", f.g.Port)
+				writeStatus(f.client, http.StatusBadGateway, badUpstreamName)
+				return false, errors.New("upstream sent an invalid header name")
+			}
 		}
 		if resp.StatusCode >= 200 {
 			break

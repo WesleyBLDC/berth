@@ -73,6 +73,23 @@ func newUpstreamWith(t *testing.T, configure func(*http.Server)) *upstream {
 			}
 			w.Header().Set("Content-Encoding", "gzip")
 			gzipped(w, "body says "+auth)
+		case "/gzip-204":
+			w.Header().Set("Content-Encoding", "gzip")
+			w.WriteHeader(http.StatusNoContent)
+		case "/gzip-304":
+			w.Header().Set("Content-Encoding", "gzip")
+			w.WriteHeader(http.StatusNotModified)
+		case "/bad-name":
+			// An encoded body under a header name with a space before its colon.
+			conn, rw, err := w.(http.Hijacker).Hijack()
+			if err != nil {
+				return
+			}
+			defer func() { _ = conn.Close() }()
+			var body strings.Builder
+			gzipped(&body, "body says "+auth)
+			fmt.Fprintf(rw, "HTTP/1.1 200 OK\r\nContent-Encoding : gzip\r\nContent-Length: %d\r\n\r\n%s", body.Len(), body.String())
+			_ = rw.Flush()
 		case "/always-gzip":
 			// An API that ignores Accept-Encoding: identity.
 			w.Header().Set("Content-Encoding", "gzip")
@@ -568,6 +585,59 @@ func TestEncodedBodiesNeverCarryTheValue(t *testing.T) {
 	}
 	if _, err := tn.r.ReadByte(); err == nil {
 		t.Fatal("the tunnel carried more after the refusal")
+	}
+}
+
+// A response with no body passes whatever encoding it names, since there is nothing to mask.
+func TestEncodedResponsesWithNoBodyPass(t *testing.T) {
+	a := newUpstream(t)
+	f := startProxy(t, upstreamPool(a), a, testGrant(t, target(a.port(), nil)))
+	host := a.authority()
+	tn := f.open(t, host)
+	for _, tc := range []struct {
+		method, path string
+		code         int
+	}{
+		{"HEAD", "/always-gzip", http.StatusOK},
+		{"GET", "/gzip-204", http.StatusNoContent},
+		{"GET", "/gzip-304", http.StatusNotModified},
+	} {
+		resp, _ := tn.do(t, tc.method, tc.method+" "+tc.path+" HTTP/1.1\r\nHost: "+host+"\r\n\r\n")
+		if resp.StatusCode != tc.code || resp.Header.Get("Content-Encoding") != "gzip" {
+			t.Fatalf("%s %s: %d %v, want %d with its encoding", tc.method, tc.path, resp.StatusCode, resp.Header, tc.code)
+		}
+	}
+}
+
+// A header name a server could read as one berth-proxy sets or removes, or any name that is not a
+// valid token, is refused before anything reaches upstream; so is such a name from upstream.
+func TestLookAlikeHeaderNamesAreRefused(t *testing.T) {
+	a := newUpstream(t)
+	plain := testGrant(t, target(a.port(), nil))
+	f := startProxy(t, upstreamPool(a), a, plain)
+	host := a.authority()
+	for _, h := range []string{"Accept-Encoding : gzip", "Authorization : Bearer x", "Accept_Encoding: gzip"} {
+		tn := f.open(t, host)
+		resp, _ := tn.do(t, "GET", "GET /echo HTTP/1.1\r\nHost: "+host+"\r\n"+h+"\r\n\r\n")
+		if resp.StatusCode != http.StatusBadRequest || resp.Header.Get("Berth-Refused") == "" {
+			t.Errorf("%q: %d %v, want 400 with a reason", h, resp.StatusCode, resp.Header)
+		}
+	}
+	if h, _, _, _ := a.snapshot(); len(h) != 0 {
+		t.Fatalf("%d refused requests reached upstream", len(h))
+	}
+
+	b := newUpstream(t)
+	g := startProxy(t, upstreamPool(b), b, testGrant(t, target(b.port(), func(t *berthv1.ProxyTarget) { t.HeaderName = "X-Api-Key"; t.ValuePrefix = "" })))
+	tn := g.open(t, b.authority())
+	if resp, _ := tn.do(t, "GET", "GET / HTTP/1.1\r\nHost: "+b.authority()+"\r\nX_Api_Key: mine\r\n\r\n"); resp.StatusCode != http.StatusBadRequest {
+		t.Fatalf("an underscore spelling of the granted header: %d, want 400", resp.StatusCode)
+	}
+
+	tn = f.open(t, host)
+	resp, body := tn.do(t, "GET", "GET /bad-name HTTP/1.1\r\nHost: "+host+"\r\n\r\n")
+	if resp.StatusCode != http.StatusBadGateway || resp.Header.Get("Berth-Refused") == "" || body != "" {
+		t.Fatalf("an invalid name from upstream: %d %v %q, want 502", resp.StatusCode, resp.Header, body)
 	}
 }
 
