@@ -5,6 +5,11 @@ import (
 	"testing"
 	"unicode"
 	"unicode/utf8"
+
+	"google.golang.org/protobuf/encoding/protojson"
+	"google.golang.org/protobuf/proto"
+
+	berthv1 "berth/gen/berth/v1"
 )
 
 // nastyText is what the fuzzers start from beyond shownCorpus: invalid UTF-8, encoded
@@ -72,6 +77,31 @@ func FuzzQuoted(f *testing.F) {
 		}
 		if r, _ := utf8.DecodeRuneInString(q[1:]); unicode.Is(unicode.M, r) {
 			t.Fatalf("quoted(%q) = %q opens with a mark", s, q)
+		}
+	})
+}
+
+// FuzzGraphicJSON checks that --json output holds only graphic runes and newlines and still
+// reads back as the same message.
+func FuzzGraphicJSON(f *testing.F) {
+	for _, s := range append(shownCorpus, nastyText...) {
+		f.Add(s, "/tmp/a\u0085b")
+	}
+	f.Fuzz(func(t *testing.T, a, b string) {
+		m := &berthv1.Session{Id: a, UserDataDir: b, Owner: &berthv1.SessionOwner{Name: a + b}}
+		raw, err := protojson.MarshalOptions{Multiline: true}.Marshal(m)
+		if err != nil {
+			return // protojson refuses invalid UTF-8, so --json never sees it
+		}
+		out := graphicJSON(raw)
+		for _, r := range out {
+			if r != '\n' && !unicode.IsGraphic(r) {
+				t.Fatalf("graphicJSON of %q left %U", raw, r)
+			}
+		}
+		var back berthv1.Session
+		if err := protojson.Unmarshal([]byte(out), &back); err != nil || !proto.Equal(&back, m) {
+			t.Fatalf("graphicJSON(%q) = %q, which reads back as %v (%v)", raw, out, &back, err)
 		}
 	})
 }

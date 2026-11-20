@@ -278,6 +278,12 @@ func printJSON(env Env, m proto.Message) int {
 		fmt.Fprintln(env.Stderr, err)
 		return ExitError
 	}
+	fmt.Fprintln(env.Stdout, graphicJSON(b))
+	return ExitOK
+}
+
+// graphicJSON escapes every rune of protojson's output that is neither graphic nor a newline.
+func graphicJSON(b []byte) string {
 	var out strings.Builder
 	for _, r := range string(b) {
 		if r == '\n' || unicode.IsGraphic(r) {
@@ -288,8 +294,7 @@ func printJSON(env Env, m proto.Message) int {
 			fmt.Fprintf(&out, `\u%04x`, u)
 		}
 	}
-	fmt.Fprintln(env.Stdout, out.String())
-	return ExitOK
+	return out.String()
 }
 
 func printProcesses(out io.Writer, procs []*berthv1.SessionProcess) {
