@@ -26,5 +26,8 @@ let package = Package(
         // Run by the end to end tests against the real berthd; never bundled.
         .executableTarget(name: "BerthAppProbe", dependencies: ["BerthAppCore"], path: "Sources/berth-app-probe"),
         .testTarget(name: "BerthAppCoreTests", dependencies: ["BerthAppCore"], exclude: ["Fixtures"]),
+        // Renders the app's views offscreen from the shared fixtures and compares them with Snapshots/.
+        .testTarget(
+            name: "BerthAppSnapshotTests", dependencies: ["BerthApp", "BerthAppCore"], exclude: ["Snapshots"]),
     ]
 )

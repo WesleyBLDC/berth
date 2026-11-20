@@ -94,6 +94,7 @@ Build tags: `berth_lab` (planned, ADR 0020) will compile a lab only certificate 
 - Use `t.Context()` and `exec.CommandContext`; socket paths must stay under 104 bytes, so use `os.MkdirTemp("", ...)`, not `t.TempDir()`, for a `BERTH_HOME`.
 - Never use real secrets; tests plant a canary value and assert it never appears in output.
 - `Berth.app`'s Swift models are hand written (ADR 0019); a change to a message the app reads reruns `go test ./internal/cli -run TestSwiftFixtures -update-swift` and updates the Swift models and tests. Swift tests never launch the app or ask for a permission.
+- `Berth.app`'s views are compared with the images in `macos/Tests/BerthAppSnapshotTests/Snapshots/`, drawn offscreen in a window that is never shown; after an intended UI change, rerun with `BERTH_SNAPSHOT_RECORD=1 make test-app` and look at every changed image, dark ones included. A failure writes the actual image and a diff to `$TMPDIR/berth-snapshots/`.
 - Every injected dependency's real default gets its own test against the real thing (the kernel, a real process, real SQLite): a fake only proves the caller.
 - Browser tests find an installed Chromium (`BERTH_E2E_CHROME`, then the Playwright and Puppeteer caches) and skip with the reason when there is none; they install nothing and kill only the pids they started.
 
