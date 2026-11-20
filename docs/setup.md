@@ -38,11 +38,12 @@ Not needed: Accessibility (input goes through CDP, not synthetic events), Automa
 
 ## Planned for the test lab
 
-The [test lab](plans/test-lab.md)'s VM half is not built yet; none of these is installed or needed for `make check` today.
+The [test lab](plans/test-lab.md)'s VM half is not built yet, and none of these is needed for `make check` today.
+`tart` 2.42.0 is installed on the maintainer's Mac (2026-11-19); Packer with `packer-plugin-tart` and apple/container are not installed yet.
 Its gate and lint stack need nothing new: prek fetches shfmt and rumdl at their pinned versions, and the gate runs gitleaks with `go run`.
 
 | Tool | Needed for |
 |---|---|
 | `tart` and Packer with `packer-plugin-tart` | The macOS base image and the VMs `make lab-test` clones |
 | apple/container | Linux containers for the outside world (upstreams, DNS, hostile pages) |
-| `actionlint` | Linting the lab's GitHub workflow (lab item 5) |
+| `actionlint` | Linting the lab's GitHub workflow (lab item 5b) |

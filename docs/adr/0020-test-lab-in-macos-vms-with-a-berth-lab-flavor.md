@@ -34,3 +34,13 @@ A VM is real macOS: launchd, TCC, the window server, the Keychain and `codesign`
 A flavor with a lab certificate keeps the code checks real instead of switching them off, and keeps the difference from a release build to two seams a test can pin.
 The costs are honest: no Touch ID or Secure Enclave inside a VM, at most 2 macOS VMs at once per Mac under Apple's licence, SIP turned off in the image to pre grant permissions, and a few hundred gigabytes of images.
 The plan with its items is [docs/plans/test-lab.md](../plans/test-lab.md).
+
+## Amendment, 2026-11-19: open questions after review
+
+A supervisor review of the plan left the decision accepted but reopened three of its parts; each is an open question until the maintainer answers, listed in the plan's [open questions](../plans/test-lab.md#open-for-the-maintainer).
+
+- **The self hosted runner is open.** The repository is public, so a self hosted runner on the maintainer's Mac is optional and last (plan item 5b); the lab runs locally with `make lab-test` first (item 5a).
+  If it is built, it runs only on push to `main` and manual dispatch, never on fork pull requests, with approval required for outside collaborators, in a guest with no internet except the outside world.
+- **apple/container is open.** Whether the outside world needs it waits on the spike's question 5, since Go test servers inside the guest may cover everything but Rack and PHP.
+- **The release guard is a sentinel, not the CA's hash.** Lab builds compile in a fixed sentinel string; `scripts/sign.sh` and `scripts/check-app-bundle.sh` refuse any binary holding it or the `berth_e2e` marker, a release test scans built release binaries for it, lab binaries refuse to start outside a VM, and the scripted answer file is readable only by root in the guest or keyed to the run.
+- **The self signed CA is unproven.** Whether it works as a code signing identity for `codesign --verify`, a certificate hash anchor, a TCC `csreq`, `SMAppService` and notifications is the spike's question 1, and if it fails, the trust seam is revisited before plan item 4.
