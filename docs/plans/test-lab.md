@@ -158,6 +158,7 @@ dprint (0.65.0) with its Markdown plugin (0.29.0) and `textWrap: "sentence"` wou
 - **The maintainer's own Chrome profile** (his logins, extensions, years of state) is never in the lab; M2's owner rules are proven on fresh profiles.
 - **apple/container runs on the host, not in the guest**, so the outside world is shared by the two lanes and is reached through published ports.
 - **Images are large:** about 140 GB for the Xcode base on the host, plus a clone's growth per lane.
+- **SwiftUI snapshots (item 10) pin what a process can pin, not everything.** The accent and highlight colour and overlay scrollers are pinned through the test's argument domain, and the appearance, locale, time zone, scale and sRGB bitmap are fixed; Increase Contrast and Reduce Transparency come from the system and cannot be overridden from inside the test, so a failure names them when either is on. System fonts and AppKit controls change between macOS releases, so a macOS update can need one re-record; the images are byte identical run to run on one Mac.
 - **FSL-1.1-ALv2** allows this internal use; a hosted service built on tart would not be.
 
 ## Decisions

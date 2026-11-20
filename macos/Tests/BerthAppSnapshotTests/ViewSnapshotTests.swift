@@ -15,7 +15,7 @@ struct ViewSnapshotTests {
         let watch = try await watching(model.run, until: { model.link == .watching })
         defer { watch.cancel() }
         try Snapshot.check(
-            SessionsWindow(model: model), named: "sessions", look: look, size: CGSize(width: 980, height: 150))
+            SessionsWindow(model: model), named: "sessions", look: look, size: listSize, tableRows: 3)
     }
 
     @Test(arguments: Look.allCases)
@@ -48,12 +48,46 @@ struct ViewSnapshotTests {
         let model = SessionsModel(source: FixedSessions(try sessionMessages()))
         let watch = try await watching(model.run, until: { model.link == .watching })
         defer { watch.cancel() }
-        let size = CGSize(width: 980, height: 150)
-        let dark = try Snapshot.render(SessionsWindow(model: model), look: .dark, size: size)
-        let light = try Snapshot.render(SessionsWindow(model: model), look: .light, size: size)
+        let dark = try Snapshot.render(SessionsWindow(model: model), look: .dark, size: listSize, tableRows: 3)
+        let light = try Snapshot.render(SessionsWindow(model: model), look: .light, size: listSize, tableRows: 3)
         #expect(dark.luminance() < 0.3, "the dark list is not on a dark background")
         #expect(light.luminance() > 0.7, "the light list is not on a light background")
         #expect(dark.brightestShare(above: 0.75) > 0.005, "the dark list has too little light text")
+    }
+}
+
+let listSize = CGSize(width: 980, height: 150)
+
+/// The session list as the snapshots draw it, from the given messages.
+@MainActor
+func renderedList(_ messages: [WatchSessionsResponse]) async throws -> Pixels {
+    let model = SessionsModel(source: FixedSessions(messages))
+    let watch = try await watching(model.run, until: { model.link == .watching })
+    defer { watch.cancel() }
+    return try Snapshot.render(SessionsWindow(model: model), look: .light, size: listSize, tableRows: 3)
+}
+
+/// The compare itself: it must fail on the smallest real change and pass on an exact copy.
+@MainActor @Suite(.serialized)
+struct CompareTests {
+    /// One digit of one id: about 25 pixels, the smallest change the list can show.
+    @Test func oneChangedDigitFails() async throws {
+        let base = try await renderedList(try sessionMessages())
+        var messages = try sessionMessages()
+        guard case .snapshot(var snapshot) = messages[0] else { throw SnapshotError.render("no snapshot") }
+        snapshot.sessions[1].id = snapshot.sessions[1].id.replacingOccurrences(of: "5151", with: "5161")
+        messages[0] = .snapshot(snapshot)
+        let changed = try await renderedList(messages)
+        #expect(changed.differing(from: base, tolerance: Snapshot.channelTolerance).count > Snapshot.differingMax)
+        #expect(!Snapshot.matches(changed, base))
+    }
+
+    @Test func pngRoundTripIsExact() async throws {
+        let base = try await renderedList(try sessionMessages())
+        let read = try #require(Pixels(png: try Snapshot.png(base)))
+        #expect(read.differing(from: base, tolerance: 0).isEmpty)
+        #expect(read.bytes == base.bytes)
+        #expect(Snapshot.matches(read, base))
     }
 }
 

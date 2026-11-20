@@ -24,19 +24,25 @@ enum Snapshot {
     static let differingMax = 10
 
     static let folder = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Snapshots")
+    /// One folder per test process, so parallel runs never overwrite each other's failures.
     static let failures = FileManager.default.temporaryDirectory.appendingPathComponent("berth-snapshots")
+        .appendingPathComponent(String(ProcessInfo.processInfo.processIdentifier))
     static var recording: Bool { ProcessInfo.processInfo.environment["BERTH_SNAPSHOT_RECORD"] == "1" }
 
     /// Renders the view offscreen and compares it with its reference image, or records it.
     @MainActor
     static func check<V: View>(
-        _ view: V, named name: String, look: Look, size: CGSize, sourceLocation: SourceLocation = #_sourceLocation
+        _ view: V, named name: String, look: Look, size: CGSize, tableRows: Int? = nil,
+        sourceLocation: SourceLocation = #_sourceLocation
     ) throws {
-        let actual = try render(view, look: look, size: size)
+        let actual = try render(view, look: look, size: size, tableRows: tableRows)
         let file = "\(name)-\(look.rawValue).png"
         let reference = folder.appendingPathComponent(file)
         if recording {
             try png(actual).write(to: reference)
+            // A record run never passes, so it cannot stand in for a compare by mistake.
+            Issue.record(
+                Comment(rawValue: "recorded \(reference.path), re-run to compare"), sourceLocation: sourceLocation)
             return
         }
         guard let data = try? Data(contentsOf: reference), let expected = Pixels(png: data) else {
@@ -48,23 +54,58 @@ enum Snapshot {
             return
         }
         let differing = actual.differing(from: expected, tolerance: channelTolerance)
-        guard actual.width != expected.width || actual.height != expected.height || differing.count > differingMax
-        else { return }
+        guard !matches(actual, expected) else { return }
         let saved = try keep(actual, as: file)
         let diff = try keep(actual.marking(differing), as: file.replacingOccurrences(of: ".png", with: "-diff.png"))
         let sizes = "\(actual.width)x\(actual.height) against \(expected.width)x\(expected.height)"
         let message: String =
             "\(file) differs from its reference: \(differing.count) pixels (at most \(differingMax)), \(sizes); "
             + "actual \(saved.path), diff \(diff.path); if the change is intended, "
-            + "run BERTH_SNAPSHOT_RECORD=1 make test-app"
+            + "run BERTH_SNAPSHOT_RECORD=1 make test-app" + accessibilityNote
         Issue.record(Comment(rawValue: message), sourceLocation: sourceLocation)
     }
+
+    /// Whether a render matches its reference: the same size and at most differingMax pixels
+    /// apart beyond the channel tolerance.
+    static func matches(_ actual: Pixels, _ expected: Pixels) -> Bool {
+        actual.width == expected.width && actual.height == expected.height
+            && actual.differing(from: expected, tolerance: channelTolerance).count <= differingMax
+    }
+
+    /// Increase Contrast and Reduce Transparency are read from the system and cannot be pinned
+    /// from inside the test, so a failure names them when either is on.
+    @MainActor
+    static var accessibilityNote: String {
+        var on: [String] = []
+        if NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast { on.append("Increase Contrast") }
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceTransparency { on.append("Reduce Transparency") }
+        return on.isEmpty ? "" : "; \(on.joined(separator: " and ")) is on in System Settings, Accessibility, Display"
+    }
+
+    /// Pins the appearance settings a process can override for itself, through the argument
+    /// domain, which outranks the person's own defaults: the blue accent and highlight, and
+    /// overlay scrollers whether or not a mouse is attached. AppKit reads them once, so this runs
+    /// before anything draws, and it fails loudly if AppKit read them first.
+    @MainActor
+    static let pinned: Result<Void, SnapshotError> = {
+        UserDefaults.standard.setVolatileDomain(
+            [
+                "AppleAccentColor": 4, "AppleHighlightColor": "0.698039 0.843137 1.000000 Blue",
+                "AppleShowScrollBars": "WhenScrolling", "AppleAquaColorVariant": 1,
+            ], forName: UserDefaults.argumentDomain)
+        let blue = NSColor.controlAccentColor.usingColorSpace(.sRGB)
+        guard NSScroller.preferredScrollerStyle == .overlay, let blue, abs(blue.blueComponent - 1) < 0.01,
+            abs(blue.redComponent) < 0.01
+        else { return .failure(.render("AppKit read the accent colour or scroller style before they were pinned")) }
+        return .success(())
+    }()
 
     /// Draws the view in a borderless window that is never shown, so nothing reaches the screen
     /// and the app asks for nothing. AppKit backed controls (tables, forms, buttons) need a real
     /// NSHostingView, which ImageRenderer would draw as placeholders.
     @MainActor
-    static func render<V: View>(_ view: V, look: Look, size: CGSize) throws -> Pixels {
+    static func render<V: View>(_ view: V, look: Look, size: CGSize, tableRows: Int? = nil) throws -> Pixels {
+        try pinned.get()
         NSApplication.shared.setActivationPolicy(.prohibited)
         let root =
             view
@@ -88,21 +129,52 @@ enum Snapshot {
             context.allowsImplicitAnimation = false
             host.layoutSubtreeIfNeeded()
         }
-        // Tables fill their rows on the next turn of the run loop.
-        RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.05))
+        if let tableRows {
+            // A table fills its rows on a later turn of the run loop.
+            let deadline = Date(timeIntervalSinceNow: 5)
+            while host.descendants(NSTableView.self).first?.numberOfRows != tableRows {
+                guard Date() < deadline else {
+                    throw SnapshotError.render("the table never showed \(tableRows) rows")
+                }
+                RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.01))
+                host.layoutSubtreeIfNeeded()
+            }
+        }
+        for scroll in host.descendants(NSScrollView.self) { scroll.scrollerStyle = .overlay }
         host.layoutSubtreeIfNeeded()
+        // Some controls (a dark table header) take more than one turn of the run loop to reach
+        // their final look, so the image is the first one that two turns in a row agree on.
+        var last = try capture(host, look: look, size: size)
+        let deadline = Date(timeIntervalSinceNow: 5)
+        while true {
+            RunLoop.main.run(until: Date(timeIntervalSinceNow: 0.02))
+            host.layoutSubtreeIfNeeded()
+            let next = try capture(host, look: look, size: size)
+            if next.bytes == last.bytes { break }
+            guard Date() < deadline else { throw SnapshotError.render("the view never settled") }
+            last = next
+        }
+        guard !window.isVisible else { throw SnapshotError.render("the window reached the screen") }
+        return last
+    }
+
+    @MainActor
+    private static func capture(_ host: NSView, look: Look, size: CGSize) throws -> Pixels {
+        // Tagged sRGB before anything draws, so no display's colour profile reaches the pixels.
         guard
-            let rep = NSBitmapImageRep(
+            let device = NSBitmapImageRep(
                 bitmapDataPlanes: nil, pixelsWide: Int(size.width), pixelsHigh: Int(size.height), bitsPerSample: 8,
                 samplesPerPixel: 4, hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0,
-                bitsPerPixel: 0)
+                bitsPerPixel: 0),
+            let rep = device.retagging(with: .sRGB)
         else { throw SnapshotError.render("no bitmap") }
         rep.size = size
         NSAppearance(named: look.appearance)?.performAsCurrentDrawingAppearance {
             host.cacheDisplay(in: host.bounds, to: rep)
         }
-        guard !window.isVisible else { throw SnapshotError.render("the window reached the screen") }
-        guard let image = rep.cgImage, let pixels = Pixels(image) else { throw SnapshotError.render("no image") }
+        guard let image = rep.cgImage, image.colorSpace?.name == CGColorSpace.sRGB, let pixels = Pixels(image) else {
+            throw SnapshotError.render("no sRGB image")
+        }
         return pixels
     }
 
@@ -126,6 +198,14 @@ enum Snapshot {
 
 enum SnapshotError: Error {
     case render(String)
+}
+
+extension NSView {
+    /// Every view of the given type in this view's subtree.
+    func descendants<T: NSView>(_ type: T.Type) -> [T] {
+        subviews.flatMap { view in (view as? T).map { [$0] } ?? [] }
+            + subviews.flatMap { $0.descendants(type) }
+    }
 }
 
 /// An image as opaque 8 bit sRGB RGBA bytes, so a rendered image and a decoded PNG compare alike.
