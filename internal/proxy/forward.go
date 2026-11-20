@@ -3,6 +3,7 @@ package proxy
 import (
 	"bufio"
 	"bytes"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
@@ -36,18 +37,19 @@ func overridesMethod(name string) bool {
 
 // forwarder serves one client tunnel to a granted host. It writes each request itself, from
 // bytes, so the value goes from locked memory to the TLS connection without ever being a string
-// or passing through a buffer the proxy does not zero. client and up are TLS connections when it
-// serves; they are plain net.Conn so the fuzzer can drive the parsers without a handshake.
+// or passing through a buffer the proxy does not zero. up is a *tls.Conn so the value can only
+// ever be written over TLS; client, which never sees the value, is a TLS connection when the
+// proxy serves and a plain net.Conn in the fuzzer.
 type forwarder struct {
 	s      *Server
 	g      *Grant
 	client net.Conn
 	raw    net.Conn
-	up     net.Conn
+	up     *tls.Conn
 	upR    *bufio.Reader
 }
 
-func (f *forwarder) setUpstream(up net.Conn) {
+func (f *forwarder) setUpstream(up *tls.Conn) {
 	if f.up != nil {
 		f.s.untrack(f.up)
 	}

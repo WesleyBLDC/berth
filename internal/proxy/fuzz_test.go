@@ -4,6 +4,8 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"io"
 	"log/slog"
@@ -44,6 +46,31 @@ func (c *scriptConn) written() []byte {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return bytes.Clone(c.out.Bytes())
+}
+
+var (
+	fuzzCAOnce  sync.Once
+	fuzzCALeaf  *tls.Certificate
+	fuzzCARoots *x509.CertPool
+	errFuzzCA   error
+)
+
+// fuzzLeaf is example.com's leaf from one CA made per process, and the pool that trusts it.
+func fuzzLeaf(t testing.TB) (*tls.Certificate, *x509.CertPool) {
+	t.Helper()
+	fuzzCAOnce.Do(func() {
+		var ca *CA
+		if ca, errFuzzCA = NewCA([]string{grantHost}, time.Now()); errFuzzCA != nil {
+			return
+		}
+		fuzzCALeaf, errFuzzCA = ca.Leaf(grantHost)
+		fuzzCARoots = x509.NewCertPool()
+		fuzzCARoots.AddCert(ca.Certificate())
+	})
+	if errFuzzCA != nil {
+		t.Fatal(errFuzzCA)
+	}
+	return fuzzCALeaf, fuzzCARoots
 }
 
 // fuzzGrants are made once per fuzz target: each value is a locked mapping that is never freed.
@@ -100,13 +127,14 @@ func readAll(r io.Reader) []seen {
 // body is whole, and answers with answer, until the proxy closes the pipe or sends something it
 // cannot parse. With once it closes after its first answer, as a server ends a response that
 // has no length.
-func fakeUpstream(conn net.Conn, answer []byte, once bool) (got func() []seen) {
+func fakeUpstream(conn, raw net.Conn, answer []byte, once bool) (got func() []seen) {
 	var mu sync.Mutex
 	var reqs []seen
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		defer func() { _ = conn.Close() }()
+		// Closing the pipe, not TLS: close_notify would wait 5 seconds for a reader.
+		defer func() { _ = raw.Close() }()
 		br := bufio.NewReader(conn)
 		for {
 			req, err := http.ReadRequest(br)
@@ -136,10 +164,17 @@ func fakeUpstream(conn net.Conn, answer []byte, once bool) (got func() []seen) {
 func tunnelRun(t testing.TB, s *Server, g *Grant, script, answer []byte, once bool) (client []byte, got []seen) {
 	t.Helper()
 	proxySide, upSide := net.Pipe()
-	got1 := fakeUpstream(upSide, answer, once)
+	// Real TLS on the pipe, since the forwarder writes the value only to a *tls.Conn.
+	leaf, roots := fuzzLeaf(t)
+	got1 := fakeUpstream(tls.Server(upSide, &tls.Config{Certificates: []tls.Certificate{*leaf}, MinVersion: tls.VersionTLS13}), upSide, answer, once)
+	up := tls.Client(proxySide, &tls.Config{ServerName: grantHost, RootCAs: roots, MinVersion: tls.VersionTLS13})
+	// The proxy handshakes before any request, in dialUpstream; so does the harness.
+	if err := up.HandshakeContext(context.Background()); err != nil {
+		t.Fatal(err)
+	}
 	c := &scriptConn{in: bytes.NewReader(script)}
 	f := &forwarder{s: s, g: g, client: c, raw: c}
-	f.setUpstream(proxySide)
+	f.setUpstream(up)
 	served := make(chan struct{})
 	go func() {
 		defer close(served)
@@ -147,12 +182,16 @@ func tunnelRun(t testing.TB, s *Server, g *Grant, script, answer []byte, once bo
 	}()
 	select {
 	case <-served:
-	case <-time.After(10 * time.Second):
+	case <-time.After(hangAfter):
 		t.Fatalf("the forwarder hung on %q", script)
 	}
-	_ = f.up.Close()
+	_ = proxySide.Close()
 	return c.written(), got1()
 }
+
+// hangAfter is how long one input may take before the forwarder counts as hung; it is far above
+// any run, and the -timeout of make fuzz, which bounds the run as a whole, stays above it.
+const hangAfter = 30 * time.Second
 
 const okAnswer = "HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nok"
 
