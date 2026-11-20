@@ -35,8 +35,9 @@ func Requirement(identifier string) string {
 	return `anchor apple generic and certificate leaf[subject.OU] = "` + TeamID + `" and identifier "` + identifier + `"`
 }
 
-// Pinner returns the cdhashes of a trusted Berth file, one per architecture slice, or false when
-// the file must not be trusted.
+// Pinner returns the cdhashes of a trusted Berth file, one per architecture slice, or false with
+// no error when the file failed the check. An error means the check could not finish (codesign
+// would not run, say), which keeps the last good pin.
 type Pinner func(ctx context.Context, path, identifier string) ([]ports.CDHash, bool, error)
 
 // SignedFiles returns the cdhash of every slice of a file whose code satisfies a requirement
@@ -110,12 +111,20 @@ func (f *File) repin(ctx context.Context) {
 	pinCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), pinTimeout)
 	h, ok, err := f.pin(pinCtx, f.path, f.identifier)
 	cancel()
-	if err != nil || !ok {
-		f.log.Warn("not trusting a Berth binary", "path", f.path, "identifier", f.identifier, "err", err)
-	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.cdhashes, f.ok = h, ok && err == nil
+	switch {
+	case err != nil && f.ok:
+		// Any local process can make berthd repin by presenting code that does not match, so a
+		// check that merely failed to run must not untrust the code last pinned, which satisfied the
+		// requirement.
+		f.log.Warn("could not read a Berth binary again; keeping its last pin", "path", f.path, "identifier", f.identifier, "err", err)
+	case err != nil || !ok:
+		f.log.Warn("not trusting a Berth binary", "path", f.path, "identifier", f.identifier, "err", err)
+		f.cdhashes, f.ok = nil, false
+	default:
+		f.cdhashes, f.ok = h, true
+	}
 	f.pinned, f.pinnedAt, f.inFlight = true, f.clock.Now(), nil
 	close(done)
 }

@@ -161,3 +161,45 @@ func TestRepinsAreSingleFlightAndSpacedFromTheirEnd(t *testing.T) {
 		}
 	})
 }
+
+// A repin any process can trigger, by presenting code that does not match, keeps the last good pin
+// when the check could not run, and drops it only when the file fails the check.
+func TestAFailedRepinKeepsTheLastPinUntilTheFileFails(t *testing.T) {
+	clock := testutil.NewClock()
+	var result struct {
+		ok  bool
+		err error
+	}
+	result.ok = true
+	pin := func(context.Context, string, string) ([]ports.CDHash, bool, error) {
+		if result.err != nil || !result.ok {
+			return nil, result.ok, result.err
+		}
+		return []ports.CDHash{{1}}, true, nil
+	}
+	genuine := &live{code: ports.LiveCode{CDHash: ports.CDHash{1}, Status: ports.CSValid | ports.CSRuntime}}
+	other := ports.LiveCode{CDHash: ports.CDHash{9}, Status: ports.CSValid | ports.CSRuntime}
+	f := codetrust.New(t.Context(), "/b/berthd", codetrust.DaemonSigningID, pin, genuine, clock, slog.New(slog.DiscardHandler))
+	p := ports.Peer{PID: 7}
+
+	result.err = errors.New("codesign: signal: killed")
+	clock.Advance(codetrust.RepinInterval + time.Second)
+	saved := genuine.code
+	genuine.code = other
+	if f.Runs(t.Context(), p) {
+		t.Fatal("other code was trusted")
+	}
+	genuine.code = saved
+	if !f.Runs(t.Context(), p) {
+		t.Fatal("a repin that could not run untrusted the pinned code")
+	}
+
+	result.err, result.ok = nil, false
+	clock.Advance(codetrust.RepinInterval + time.Second)
+	genuine.code = other
+	_ = f.Runs(t.Context(), p)
+	genuine.code = saved
+	if f.Runs(t.Context(), p) {
+		t.Fatal("a file that failed the check stayed trusted")
+	}
+}
