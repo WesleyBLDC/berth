@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"reflect"
 	"strconv"
 	"strings"
@@ -23,6 +22,9 @@ import (
 // is ignored (Go matches it, other readers do not), and invalid UTF-8 or a lone surrogate escape
 // (Go reads U+FFFD, other readers refuse or keep the bytes).
 func Decode(b []byte, into any) error {
+	if err := unembedded(reflect.TypeOf(into), map[reflect.Type]bool{}); err != nil {
+		return err
+	}
 	if !utf8.Valid(b) {
 		return errors.New("invalid UTF-8")
 	}
@@ -176,49 +178,46 @@ func mapKey(kt reflect.Type, name string) string {
 	return name
 }
 
-// fieldsOf maps the JSON names encoding/json reads into struct t to their types. Like
-// encoding/json it reads embedded structs level by level, so a shallower field hides a deeper
-// one of the same name, and it visits each struct type once, so an embedding cycle ends.
+// unembedded refuses a target type with an embedded struct anywhere in it: encoding/json's
+// rules for which embedded field a key names are subtle enough that strictjson does not mirror
+// them, and its callers decode plain structs. It is a programming error, which every caller's
+// tests catch.
+func unembedded(t reflect.Type, visited map[reflect.Type]bool) error {
+	if t == nil || visited[t] {
+		return nil
+	}
+	visited[t] = true
+	if k := t.Kind(); k == reflect.Pointer || k == reflect.Slice || k == reflect.Array || k == reflect.Map {
+		return unembedded(t.Elem(), visited)
+	}
+	if t.Kind() != reflect.Struct {
+		return nil
+	}
+	for f := range t.Fields() {
+		if f.Anonymous {
+			return fmt.Errorf("strictjson cannot decode into %s: it embeds %s", t, f.Type)
+		}
+		if err := unembedded(f.Type, visited); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// fieldsOf maps the JSON names encoding/json reads into struct t, which embeds nothing, to
+// their types.
 func fieldsOf(t reflect.Type) map[string]reflect.Type {
 	fields := map[string]reflect.Type{}
-	visited := map[reflect.Type]bool{}
-	for level := []reflect.Type{t}; len(level) > 0; {
-		var next []reflect.Type
-		found := map[string]reflect.Type{}
-		for _, st := range level {
-			if visited[st] {
-				continue
-			}
-			visited[st] = true
-			for f := range st.Fields() {
-				tag := f.Tag.Get("json")
-				if tag == "-" {
-					continue
-				}
-				name, _, _ := strings.Cut(tag, ",")
-				ft := f.Type
-				for ft.Kind() == reflect.Pointer {
-					ft = ft.Elem()
-				}
-				if f.Anonymous && name == "" && ft.Kind() == reflect.Struct {
-					next = append(next, ft)
-					continue
-				}
-				if !f.IsExported() {
-					continue
-				}
-				if name == "" {
-					name = f.Name
-				}
-				if _, shallower := fields[name]; !shallower {
-					if _, ok := found[name]; !ok {
-						found[name] = f.Type
-					}
-				}
-			}
+	for f := range t.Fields() {
+		tag := f.Tag.Get("json")
+		if tag == "-" || !f.IsExported() {
+			continue
 		}
-		maps.Copy(fields, found)
-		level = next
+		name, _, _ := strings.Cut(tag, ",")
+		if name == "" {
+			name = f.Name
+		}
+		fields[name] = f.Type
 	}
 	return fields
 }

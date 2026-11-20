@@ -1,8 +1,10 @@
 package strictjson_test
 
 import (
+	"strings"
 	"testing"
 
+	"berth/internal/proxyctl"
 	"berth/internal/strictjson"
 )
 
@@ -32,26 +34,40 @@ type embedded struct {
 	X struct{ A int } `json:"x"`
 }
 
-type shallow struct {
+type embeds struct {
 	X map[string]int `json:"x"`
 	embedded
 }
 
-type loop struct {
-	*loop
-	N int `json:"n"`
+type deepEmbeds struct {
+	List []*struct {
+		embedded
+	} `json:"list"`
 }
 
-// A shallower field hides an embedded one of the same name, as in encoding/json, an embedding
-// cycle ends, and map keys repeat when they decode alike.
-func TestDecodeReadsFieldsAndKeysAsEncodingJSON(t *testing.T) {
-	var s shallow
-	if err := strictjson.Decode([]byte(`{"x":{"a":1}}`), &s); err != nil || s.X["a"] != 1 {
-		t.Fatalf("the shallower map field: %v %+v", err, s)
+type tree struct {
+	Kids []*tree `json:"kids"`
+}
+
+// Every type Berth decodes with strictjson today decodes; native's outcome and berth-mcp's
+// argument structs are local to their packages, whose tests decode them. A type that embeds a
+// struct anywhere is refused before any byte is read, and map keys repeat when they decode
+// alike.
+func TestDecodeTakesPlainStructsAndRefusesEmbedding(t *testing.T) {
+	for in, into := range map[string]any{
+		`{"secrets":["gh-token"],"mode":"agent"}`:                                              &proxyctl.Request{},
+		`{"port":1,"credential":"c","ca_file":"a","bundle_file":"b","placeholders":{"K":"v"}}`: &proxyctl.Control{},
+		`{}`:                     &struct{}{},
+		`{"kids":[{"kids":[]}]}`: &tree{},
+	} {
+		if err := strictjson.Decode([]byte(in), into); err != nil {
+			t.Errorf("%s into %T: %v", in, into, err)
+		}
 	}
-	var l loop
-	if err := strictjson.Decode([]byte(`{"n":1}`), &l); err != nil || l.N != 1 || l.loop != nil {
-		t.Fatalf("a self embedding struct: %v %+v", err, l)
+	for _, into := range []any{&embeds{}, &deepEmbeds{}} {
+		if err := strictjson.Decode([]byte(`{}`), into); err == nil || !strings.Contains(err.Error(), "embeds") {
+			t.Errorf("%T: %v, want refused for embedding", into, err)
+		}
 	}
 	for in, ok := range map[string]bool{`{"1":"a","2":"b"}`: true, `{"1":"a","01":"b"}`: false, `{"1":"a","+1":"b"}`: false} {
 		var m map[int]string
