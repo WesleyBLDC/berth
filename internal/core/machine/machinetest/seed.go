@@ -7,26 +7,29 @@ import (
 	"testing"
 )
 
-// SeedEnv names a seed to replay instead of a fresh one; StepsEnv scales a model walk up.
+// SeedEnv names one seed to replay; RandomEnv, when set, walks a fresh random seed instead of the
+// fixed ones (make model-long); StepsEnv scales a walk up.
 const (
-	SeedEnv  = "BERTH_MODEL_SEED"
-	StepsEnv = "BERTH_MODEL_STEPS"
+	SeedEnv   = "BERTH_MODEL_SEED"
+	RandomEnv = "BERTH_MODEL_RANDOM"
+	StepsEnv  = "BERTH_MODEL_STEPS"
 )
 
-// Seed returns the seed SeedEnv names, or a fresh one, and logs it so a failing walk can be
-// replayed with the same commands.
-func Seed(t testing.TB) uint64 {
+// Seeds returns the seeds to walk: the one SeedEnv names, a fresh one when RandomEnv is set, or
+// else fixed, the checked in seeds make check runs every time.
+func Seeds(t testing.TB, fixed ...uint64) []uint64 {
 	t.Helper()
-	seed := rand.Uint64() //nolint:gosec // a replayable test seed, never a secret
 	if v := os.Getenv(SeedEnv); v != "" {
 		n, err := strconv.ParseUint(v, 10, 64)
 		if err != nil {
 			t.Fatalf("%s=%q is not a seed: %v", SeedEnv, v, err)
 		}
-		seed = n
+		return []uint64{n}
 	}
-	t.Logf("seed %d; replay with %s=%d", seed, SeedEnv, seed)
-	return seed
+	if os.Getenv(RandomEnv) != "" {
+		return []uint64{rand.Uint64()} //nolint:gosec // a replayable test seed, never a secret
+	}
+	return fixed
 }
 
 // Steps returns how many steps a walk takes: StepsEnv when set, else def.

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"syscall"
 	"testing"
+	"testing/synctest"
 
 	"berth/internal/adapters/sqlite"
 	"berth/internal/core/agentsession"
@@ -253,63 +254,80 @@ func sqliteStore(t *testing.T) ports.Store {
 // The budget is each test's share of make check: a sequential walk on SQLite, then concurrent
 // phases on the memory store, one of which stops berthd part way, and one on SQLite.
 const (
-	sequentialSteps = 120
+	sequentialSteps = 80
 	walkers         = 4
 	perWalker       = 100
-	sqliteWalker    = 25
+	sqliteWalker    = 15
 )
 
-func runModel[S ~string, E machine.Event, F any](t *testing.T, spec func(*testing.T, int) modelSpec[S, E, F], seed uint64, end func(*modelRun[S, E, F])) {
-	t.Run("sequential", func(t *testing.T) {
-		r := newModelRun(t, spec(t, 3), seed, sqliteStore(t))
-		r.walk(machinetest.Steps(t, sequentialSteps))
-		if end != nil {
-			end(r)
-		}
-	})
-	t.Run("concurrent", func(t *testing.T) { runConcurrent(t, spec, seed, end) })
-	t.Run("concurrent sqlite", func(t *testing.T) {
-		r := newModelRun(t, spec(t, 2), seed, sqliteStore(t))
-		r.concurrent(1, walkers, machinetest.Steps(t, sqliteWalker), false)
-		if end != nil {
-			end(r)
-		}
-	})
-}
+// modelSeeds are the seeds make check walks every time; the first two once found bugs.
+var modelSeeds = []uint64{1795143668884585000, 1795143902571008000}
 
-func runConcurrent[S ~string, E machine.Event, F any](t *testing.T, spec func(*testing.T, int) modelSpec[S, E, F], seed uint64, end func(*modelRun[S, E, F])) {
-	r := newModelRun(t, spec(t, 2), seed, memoryStore(t))
-	per := machinetest.Steps(t, perWalker)
-	r.concurrent(1, walkers, per, false)
-	r.concurrent(2, walkers, per, true)
-	r.concurrent(3, walkers, per, false)
-	if end != nil {
-		end(r)
+// runModel walks each seed: a sequential walk on SQLite, concurrent phases on the memory store
+// (in a synctest bubble unless the machine starts child processes), and one on SQLite.
+func runModel[S ~string, E machine.Event, F any](t *testing.T, spec func(*testing.T, int) modelSpec[S, E, F], bubble bool, end func(*modelRun[S, E, F])) {
+	for _, seed := range machinetest.Seeds(t, modelSeeds...) {
+		t.Run(fmt.Sprint(seed), func(t *testing.T) {
+			t.Run("sequential", func(t *testing.T) {
+				r := newModelRun(t, spec(t, 3), seed, sqliteStore(t), false)
+				r.walk(machinetest.Steps(t, sequentialSteps))
+				if end != nil {
+					end(r)
+				}
+			})
+			t.Run("concurrent", func(t *testing.T) { runConcurrent(t, spec, seed, bubble, end) })
+			t.Run("concurrent sqlite", func(t *testing.T) {
+				r := newModelRun(t, spec(t, 2), seed, sqliteStore(t), false)
+				r.concurrent(1, walkers, machinetest.Steps(t, sqliteWalker), false)
+				if end != nil {
+					end(r)
+				}
+			})
+		})
 	}
 }
 
+func runConcurrent[S ~string, E machine.Event, F any](t *testing.T, spec func(*testing.T, int) modelSpec[S, E, F], seed uint64, bubble bool, end func(*modelRun[S, E, F])) {
+	walk := func(t *testing.T) {
+		r := newModelRun(t, spec(t, 2), seed, memoryStore(t), bubble)
+		per := machinetest.Steps(t, perWalker)
+		r.concurrent(1, walkers, per, false)
+		r.concurrent(2, walkers, per, true)
+		r.concurrent(3, walkers, per, false)
+		if end != nil {
+			end(r)
+		}
+	}
+	if bubble {
+		synctest.Test(t, walk)
+		return
+	}
+	walk(t)
+}
+
 func TestModelSecret(t *testing.T) {
-	runModel(t, secretSpec, machinetest.Seed(t), nil)
+	runModel(t, secretSpec, true, nil)
 }
 
 func TestModelGrant(t *testing.T) {
-	runModel(t, grantSpec, machinetest.Seed(t), nil)
+	runModel(t, grantSpec, true, nil)
 }
 
 func TestModelProxySession(t *testing.T) {
-	runModel(t, proxySpec, machinetest.Seed(t), nil)
+	runModel(t, proxySpec, true, nil)
 }
 
 func TestModelAgentSession(t *testing.T) {
-	runModel(t, agentSpec, machinetest.Seed(t), nil)
+	runModel(t, agentSpec, true, nil)
 }
 
 func TestModelSession(t *testing.T) {
-	runModel(t, sessionSpec, machinetest.Seed(t), nil)
+	runModel(t, sessionSpec, true, nil)
 }
 
+// The browser walk starts real child processes, whose pipes would freeze a bubble's clock.
 func TestModelBrowser(t *testing.T) {
-	runModel(t, browserSpec, machinetest.Seed(t), endBrowsers)
+	runModel(t, browserSpec, false, endBrowsers)
 }
 
 // TestModelRegressions replays each seed that once found a bug. Goroutines interleave anew on
@@ -321,8 +339,8 @@ func TestModelRegressions(t *testing.T) {
 		seed uint64
 		run  func(*testing.T, uint64)
 	}{
-		{"secret refusal answered unavailable", 1795143668884585000, func(t *testing.T, seed uint64) { runConcurrent(t, secretSpec, seed, nil) }},
-		{"idle actor for an ended proxy session", 1795143902571008000, func(t *testing.T, seed uint64) { runConcurrent(t, proxySpec, seed, nil) }},
+		{"secret refusal answered unavailable", 1795143668884585000, func(t *testing.T, seed uint64) { runConcurrent(t, secretSpec, seed, true, nil) }},
+		{"idle actor for an ended proxy session", 1795143902571008000, func(t *testing.T, seed uint64) { runConcurrent(t, proxySpec, seed, true, nil) }},
 	} {
 		t.Run(c.name, func(t *testing.T) {
 			for range 4 {

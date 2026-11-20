@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"maps"
 	"math/rand/v2"
+	"os"
 	"runtime/pprof"
 	"slices"
 	"strconv"
@@ -22,6 +23,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"berth/internal/adapters/api"
@@ -67,6 +69,8 @@ type modelRun[S ~string, E machine.Event, F any] struct {
 	inner ports.Store
 	world *modelWorld
 	label string
+	// bubble is set when the walk runs inside synctest.Test, where it waits by fake time.
+	bubble bool
 	// jitter makes effects pause a little, so cancellations and stops land mid step.
 	jitter atomic.Bool
 
@@ -91,13 +95,16 @@ type modelRun[S ~string, E machine.Event, F any] struct {
 	trace     []string
 }
 
-func newModelRun[S ~string, E machine.Event, F any](t *testing.T, spec modelSpec[S, E, F], seed uint64, store ports.Store) *modelRun[S, E, F] {
+func newModelRun[S ~string, E machine.Event, F any](t *testing.T, spec modelSpec[S, E, F], seed uint64, store ports.Store, bubble bool) *modelRun[S, E, F] {
 	t.Helper()
+	// Straight to stderr: a test that times out loses what t.Logf buffered.
+	fmt.Fprintf(os.Stderr, "%s: %s walk, seed %d; replay with %s=%d\n", t.Name(), spec.name, seed, machinetest.SeedEnv, seed)
 	if machinetest.Walk(t, spec.states, spec.events, spec.kit.transition) == 0 {
 		t.Fatalf("%s has no legal pair to walk", spec.name)
 	}
 	r := &modelRun[S, E, F]{
 		t: t, spec: spec, seed: seed, inner: store, world: newModelWorld(t),
+		bubble:  bubble,
 		label:   fmt.Sprintf("%s-%d-%d", spec.name, seed, time.Now().UnixNano()),
 		stopped: map[int]bool{}, logs: map[int]*lockedBuffer{}, persisted: map[string]ports.TransitionRecord{},
 		savedBy: map[recKey]int{}, hookPre: map[recKey][]ports.TransitionRecord{}, hookPost: map[recKey][]ports.TransitionRecord{},
@@ -146,9 +153,39 @@ func (r *modelRun[S, E, F]) stop(midWalk bool) {
 	}
 	r.mu.Unlock()
 	cancel()
-	if !testutil.Eventually(func() bool { return r.actorGoroutines() == 0 }) {
+	if !r.await(func() bool { return r.actorGoroutines() == 0 }) {
 		r.fault("%d actor goroutines still run after berthd stopped", r.actorGoroutines())
 	}
+}
+
+// cancelKit cancels berthd's context alone, as a stop mid walk does while steps still run.
+func (r *modelRun[S, E, F]) cancelKit() {
+	r.mu.Lock()
+	r.stopped[r.instance] = true
+	cancel := r.cancel
+	r.mu.Unlock()
+	cancel()
+}
+
+// await waits until cond holds. In a synctest bubble it waits for every goroutine to block, then
+// moves fake time on; outside one (SQLite, child processes) it polls for five seconds.
+func (r *modelRun[S, E, F]) await(cond func() bool) bool {
+	if r.bubble {
+		for range 100 {
+			synctest.Wait()
+			if cond() {
+				return true
+			}
+			time.Sleep(time.Millisecond)
+		}
+		return false
+	}
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Microsecond) {
+		if cond() {
+			return true
+		}
+	}
+	return false
 }
 
 func (r *modelRun[S, E, F]) restart(midWalk bool) {
@@ -429,17 +466,13 @@ func (r *modelRun[S, E, F]) settle(where string, touched ...string) {
 		rows     map[string][]ports.TransitionRecord
 		problems []string
 	)
-	// Polled finely: the saved hook runs just after the step's waiter hears its outcome. The rows
-	// are read again on each poll, so the walk is checked only once it is at rest.
-	ok := false
-	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); time.Sleep(100 * time.Microsecond) {
+	// The saved hook runs just after the step's waiter hears its outcome, so wait for rest; the
+	// rows are read again on each try, so the walk is checked only once it is at rest.
+	if !r.await(func() bool {
 		rows = r.rows(touched...)
-		if problems = r.restProblems(rows); len(problems) == 0 {
-			ok = true
-			break
-		}
-	}
-	if !ok {
+		problems = r.restProblems(rows)
+		return len(problems) == 0
+	}) {
 		for _, p := range problems {
 			r.fault("%s", p)
 		}
@@ -675,7 +708,6 @@ func (r *modelRun[S, E, F]) concurrent(phase, walkers, perWalker int, stop bool)
 	if stop {
 		stopAt = 1 + machinetest.Rand(r.seed, fmt.Sprintf("stop-%d", phase)).IntN(walkers*perWalker)
 	}
-	stopped := make(chan struct{})
 	for g := range walkers {
 		wg.Go(func() {
 			rng := machinetest.Rand(r.seed, fmt.Sprintf("walker-%d-%d", phase, g))
@@ -690,18 +722,19 @@ func (r *modelRun[S, E, F]) concurrent(phase, walkers, perWalker int, stop bool)
 				e := r.pick(rng, s)
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				cancellable := rng.IntN(6) == 0
+				giveUp := func() bool { return false }
 				if cancellable {
-					wait := time.Duration(rng.IntN(300)) * time.Microsecond
-					go func() { time.Sleep(wait); cancel() }()
+					giveUp = time.AfterFunc(time.Duration(rng.IntN(300))*time.Microsecond, cancel).Stop
 				}
 				st := r.do(ctx, kit, entity, e)
+				giveUp()
 				cancel()
 				st.cancellable = cancellable
 				mu.Lock()
 				steps = append(steps, st)
 				done++
 				if done == stopAt {
-					go func() { r.stop(true); close(stopped) }()
+					r.cancelKit()
 				}
 				mu.Unlock()
 			}
@@ -709,11 +742,10 @@ func (r *modelRun[S, E, F]) concurrent(phase, walkers, perWalker int, stop bool)
 	}
 	wg.Wait()
 	// A caller that gave up returned before the actor finished with its event; wait for those too.
-	if !testutil.Eventually(func() bool { return idle(kit) }) {
+	if !r.await(func() bool { return idle(kit) }) {
 		r.fault("steps of callers that gave up never finished")
 	}
 	if stop {
-		<-stopped
 		r.stop(true)
 		r.start()
 	}

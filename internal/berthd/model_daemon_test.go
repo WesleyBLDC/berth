@@ -3,6 +3,8 @@ package berthd
 import (
 	"context"
 	"errors"
+	"fmt"
+	"os"
 	"slices"
 	"strconv"
 	"sync"
@@ -20,7 +22,13 @@ import (
 // one actor: each step sends a command and waits for its outcome, and the actor restarts over the
 // same store now and then, as berthd does.
 func TestModelDaemon(t *testing.T) {
-	seed := machinetest.Seed(t)
+	for _, seed := range machinetest.Seeds(t, modelSeeds...) {
+		t.Run(fmt.Sprint(seed), func(t *testing.T) { walkDaemon(t, seed) })
+	}
+}
+
+func walkDaemon(t *testing.T, seed uint64) {
+	fmt.Fprintf(os.Stderr, "%s: daemon walk, seed %d; replay with %s=%d\n", t.Name(), seed, machinetest.SeedEnv, seed)
 	rng := machinetest.Rand(seed, "daemon")
 	store := sqliteStore(t)
 	until := map[daemon.EventKind][]string{
@@ -83,7 +91,7 @@ func TestModelDaemon(t *testing.T) {
 		return a, cancel, done
 	}
 	actor, cancel, done := start()
-	for i := range machinetest.Steps(t, 200) {
+	for i := range machinetest.Steps(t, 120) {
 		if rng.IntN(25) == 0 {
 			cancel()
 			if err := <-done; err != nil {
