@@ -61,6 +61,9 @@ type slot[S ~string, E machine.Event, F any] struct {
 
 	mu     sync.Mutex
 	waiter chan applied
+	// ended is set while the actor rests in the final state it loaded and no step has sent it an
+	// event, so no event will come to stop it.
+	ended bool
 	// input is what the step's effects need beyond the event; output is what they hand back.
 	input  any
 	output any
@@ -123,6 +126,7 @@ func (a *actors[S, E, F]) get(ctx context.Context, entity string) (*slot[S, E, F
 		return nil, err
 	}
 	sl.actor = actor
+	sl.ended = slices.Contains(a.final, actor.State())
 	a.live[entity] = sl
 	actorCtx, cancel := context.WithCancel(a.ctx)
 	sl.cancel = cancel
@@ -148,6 +152,26 @@ func (a *actors[S, E, F]) forget(entity string, sl *slot[S, E, F]) {
 	defer a.mu.Unlock()
 	if a.live[entity] == sl {
 		delete(a.live, entity)
+	}
+}
+
+// abandon stops an actor that loaded a final state when the step that wanted it gave up before
+// sending its event, since no event would come to stop it. It acts only when it can take the
+// turn, so no step is between its holds check and its send; a step holding the turn either sends,
+// and the actor stops after that event, or abandons in turn.
+func (a *actors[S, E, F]) abandon(entity string, sl *slot[S, E, F]) {
+	select {
+	case sl.turn <- struct{}{}:
+	default:
+		return
+	}
+	defer func() { <-sl.turn }()
+	sl.mu.Lock()
+	ended := sl.ended
+	sl.mu.Unlock()
+	if ended && a.holds(entity, sl) {
+		a.forget(entity, sl)
+		sl.cancel()
 	}
 }
 
@@ -208,6 +232,7 @@ func step[S ~string, E machine.Event, F any, K ~string](ctx context.Context, a *
 		select {
 		case sl.turn <- struct{}{}:
 		case <-ctx.Done():
+			a.abandon(entity, sl)
 			return ports.TransitionRecord{}, nil, ctx.Err()
 		}
 		// The step before this one may have left the entity in a final state, which stops its
@@ -231,8 +256,12 @@ func step[S ~string, E machine.Event, F any, K ~string](ctx context.Context, a *
 	}
 	if err := sl.actor.Send(ctx, event); err != nil {
 		release()
+		a.abandon(entity, sl)
 		return ports.TransitionRecord{}, nil, err
 	}
+	sl.mu.Lock()
+	sl.ended = false
+	sl.mu.Unlock()
 	a.mu.Lock()
 	if a.busy++; a.idle == nil {
 		a.idle = make(chan struct{})
