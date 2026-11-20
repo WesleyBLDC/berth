@@ -14,9 +14,8 @@ import (
 	"berth/internal/core/ports"
 )
 
-// errActorStopped means the actor stopped before applying the step's event, most often because
-// another step moved the entity to a final state first. step turns it into machine.ErrIllegal or
-// api.ErrUnavailable, so it never reaches a caller.
+// errActorStopped means the actor stopped before the step heard its outcome. step turns it into
+// machine.ErrIllegal or api.ErrUnavailable by why the actor stopped, so it never reaches a caller.
 var errActorStopped = errors.New("actor stopped")
 
 // actors keeps one running actor per entity of one machine, created on first use.
@@ -64,6 +63,9 @@ type slot[S ~string, E machine.Event, F any] struct {
 	// ended is set while the actor rests in the final state it loaded and no step has sent it an
 	// event, so no event will come to stop it.
 	ended bool
+	// refusedIn is the final state the actor stopped in after refusing an event, set before it
+	// stops; any other stop (a failed save, berthd stopping) leaves it empty.
+	refusedIn S
 	// input is what the step's effects need beyond the event; output is what they hand back.
 	input  any
 	output any
@@ -91,6 +93,11 @@ func (a *actors[S, E, F]) get(ctx context.Context, entity string) (*slot[S, E, F
 	if sl, ok := a.live[entity]; ok {
 		return sl, nil
 	}
+	// A stopping berthd starts no actor: it could still save an event whose outcome no caller
+	// would hear.
+	if a.ctx.Err() != nil {
+		return nil, api.ErrUnavailable
+	}
 	sl := &slot[S, E, F]{turn: make(chan struct{}, 1), stopped: make(chan struct{})}
 	// An actor in a final state is forgotten before its waiter hears the outcome, so the next step,
 	// which can start only after that, finds no stale actor and loads a fresh one.
@@ -102,6 +109,9 @@ func (a *actors[S, E, F]) get(ctx context.Context, entity string) (*slot[S, E, F
 			final := slices.Contains(a.final, actor.State())
 			if final {
 				a.forget(entity, sl)
+				sl.mu.Lock()
+				sl.refusedIn = actor.State()
+				sl.mu.Unlock()
 			}
 			sl.tell(applied{err: err})
 			if final {
@@ -288,7 +298,7 @@ func step[S ~string, E machine.Event, F any, K ~string](ctx context.Context, a *
 	case r := <-done:
 		defer leave()
 		if errors.Is(r.err, errActorStopped) {
-			r.err = a.stopped(ctx, entity, event)
+			r.err = sl.whyStopped(event)
 		}
 		return r.rec, r.output, r.err
 	case <-ctx.Done():
@@ -297,13 +307,16 @@ func step[S ~string, E machine.Event, F any, K ~string](ctx context.Context, a *
 	}
 }
 
-// stopped explains an actor that stopped before it applied event: an entity in a final state
-// was ended by another step first, so the event is illegal; otherwise berthd could not record it
-// (a failed save, or it is stopping), which no caller may mistake for an outcome.
-func (a *actors[S, E, F]) stopped(ctx context.Context, entity string, event E) error {
-	st, err := loadState(ctx, a.store, entity, S(""))
-	if err == nil && slices.Contains(a.final, st) {
-		return machine.Illegal(st, event)
+// whyStopped explains an actor that stopped before its step heard an outcome: one that refused an
+// event in a final state answers that it is illegal there; any other stop (a failed save, or
+// berthd stopping, either of which may come after the event was saved) is Unavailable, which no
+// caller may mistake for an outcome. It never reads the store, where a later step may already
+// have moved the entity on.
+func (sl *slot[S, E, F]) whyStopped(event E) error {
+	sl.mu.Lock()
+	defer sl.mu.Unlock()
+	if sl.refusedIn != "" {
+		return machine.Illegal(sl.refusedIn, event)
 	}
 	return api.ErrUnavailable
 }
