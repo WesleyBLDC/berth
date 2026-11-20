@@ -72,10 +72,10 @@ hooks: ## Install the git hooks and prepare their environments
 .PHONY: fuzz fuzz-long
 FUZZTIME ?= 10s
 fuzz: ## Run every Fuzz test past its seed corpus for FUZZTIME each; make test runs the seeds alone, and crashers land in testdata/fuzz
-	@grep -rl --include='*_test.go' '^func Fuzz' internal cmd | xargs -n1 dirname | sort -u | while read -r d; do \
-		for f in $$(grep -ho '^func Fuzz[A-Za-z0-9_]*' "$$d"/*_test.go | cut -c6-); do \
-			go test "./$$d" -run '^$$' -fuzz "^$$f$$" -fuzztime $(FUZZTIME) || exit 1; \
-		done; \
+	@targets=$$(grep -rH --include='*_test.go' -o '^func Fuzz[A-Za-z0-9_]*' internal cmd | sed 's|/[^/]*_test.go:func |:|'); \
+	[ -n "$$targets" ] || { echo "make fuzz: no Fuzz tests found"; exit 1; }; \
+	for t in $$targets; do \
+		go test "./$${t%%:*}" -run '^$$' -fuzz "^$${t##*:}$$" -fuzztime $(FUZZTIME) || exit 1; \
 	done
 
 fuzz-long: ## The nightly lab's fuzzing: every Fuzz test for 5 minutes
