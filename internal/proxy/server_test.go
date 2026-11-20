@@ -2,6 +2,7 @@ package proxy
 
 import (
 	"bufio"
+	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"crypto/x509"
@@ -63,6 +64,19 @@ func newUpstreamWith(t *testing.T, configure func(*http.Server)) *upstream {
 		case "/echo":
 			w.Header().Set("X-Echo", auth)
 			_, _ = io.WriteString(w, "body says "+auth)
+		case "/gzip-echo":
+			// An API that compresses when asked, and echoes the request's headers.
+			if !strings.Contains(r.Header.Get("Accept-Encoding"), "gzip") {
+				w.Header().Set("X-Echo", auth)
+				_, _ = io.WriteString(w, "body says "+auth)
+				return
+			}
+			w.Header().Set("Content-Encoding", "gzip")
+			gzipped(w, "body says "+auth)
+		case "/always-gzip":
+			// An API that ignores Accept-Encoding: identity.
+			w.Header().Set("Content-Encoding", "gzip")
+			gzipped(w, "body says "+auth)
 		case "/stream":
 			_, _ = io.WriteString(w, "first part ")
 			w.(http.Flusher).Flush()
@@ -89,6 +103,12 @@ func newUpstreamWith(t *testing.T, configure func(*http.Server)) *upstream {
 	u.srv.StartTLS()
 	t.Cleanup(u.srv.Close)
 	return u
+}
+
+func gzipped(w io.Writer, s string) {
+	zw := gzip.NewWriter(w)
+	_, _ = io.WriteString(zw, s)
+	_ = zw.Close()
 }
 
 func (u *upstream) port() int { return u.srv.Listener.Addr().(*net.TCPAddr).Port }
@@ -522,6 +542,32 @@ func TestBodiesKeepAliveAndRedaction(t *testing.T) {
 	}
 	if h[4].Get("Expect") != "" {
 		t.Fatal("Expect reached the upstream")
+	}
+}
+
+func TestEncodedBodiesNeverCarryTheValue(t *testing.T) {
+	a := newUpstream(t)
+	f := startProxy(t, upstreamPool(a), a, testGrant(t, target(a.port(), nil)))
+	host := a.authority()
+	stars := strings.Repeat("*", len(canary))
+
+	tn := f.open(t, host)
+	resp, body := tn.do(t, "GET", "GET /gzip-echo HTTP/1.1\r\nHost: "+host+"\r\nAccept-Encoding: gzip, br\r\n\r\n")
+	if resp.StatusCode != http.StatusOK || body != "body says Bearer "+stars || resp.Header.Get("Content-Encoding") != "" {
+		t.Fatalf("asked for gzip: %d %q %q", resp.StatusCode, resp.Header.Get("Content-Encoding"), body)
+	}
+	h, _, _, _ := a.snapshot()
+	if got := h[0].Values("Accept-Encoding"); len(got) != 1 || got[0] != "identity" {
+		t.Fatalf("upstream Accept-Encoding %q, want identity", got)
+	}
+
+	tn = f.open(t, host)
+	resp, body = tn.do(t, "GET", "GET /always-gzip HTTP/1.1\r\nHost: "+host+"\r\n\r\n")
+	if resp.StatusCode != http.StatusBadGateway || resp.Header.Get("Berth-Refused") == "" || body != "" {
+		t.Fatalf("encoded anyway: %d %v %q", resp.StatusCode, resp.Header, body)
+	}
+	if _, err := tn.r.ReadByte(); err == nil {
+		t.Fatal("the tunnel carried more after the refusal")
 	}
 }
 

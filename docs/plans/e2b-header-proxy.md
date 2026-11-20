@@ -49,11 +49,11 @@ Every check rests on kernel facts (audit tokens, live cdhash), never on paths or
 - On the granted host: `Host` must equal it (else 421); optional method list and path glob (else 403, counted); every client copy of the header removed; `<Header>: <prefix><value><suffix>` written; hop by hop headers dropped; redirects never followed.
 - Upstream: dial the CONNECT target with `ServerName` set to the granted host, TLS 1.2 or later, system verifier (a compiled in test root only under `berth_e2e`), no proxy from the environment; a failed verification gets 502 with zero request bytes sent.
 - Header names that cannot be granted: `Host`, `Content-Length`, `Transfer-Encoding`, `Connection`, `Upgrade`, `TE`, `Trailer`, `Proxy-*`. IP literals and `localhost` are refused outside `berth_e2e`. A value with CR, LF or NUL is refused.
-- Backstop: the exact value is redacted from response headers and identity encoded bodies.
+- Backstop: the exact value is redacted from response headers and bodies. The proxy always asks upstream for `Accept-Encoding: identity`, replacing the client's, and refuses with a 502 and a `Berth-Refused` header any body sent with another `Content-Encoding`, since only an identity body can be masked.
 
 ### What a hostile same user agent can still do
 
-Use the key against the granted host while a run lives, within the grant's method and path limits; turn use into a readable credential if the API mints keys or echoes headers (mitigated by those limits); exfiltrate through the granted API itself; start `berth-proxy` directly (same as `berth run --proxy`); deny service.
+Use the key against the granted host while a run lives, within the grant's method and path limits; turn use into a readable credential if the API mints keys or echoes headers in a transformed form (base64, JSON escapes, split) that literal masking misses (a literal echo is masked, a compressed body is refused, and those limits narrow the rest); exfiltrate through the granted API itself; start `berth-proxy` directly (same as `berth run --proxy`); deny service.
 It cannot read the value, send it to another host, send it over cleartext, keep using it after revocation, or find it in `berth`, `berthd`, the child, files or logs.
 
 ## Lifecycle

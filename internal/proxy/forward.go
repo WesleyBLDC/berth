@@ -205,11 +205,12 @@ func forwardable(key string, dropped []string) bool {
 }
 
 // writeRequest writes the head in three pieces so the value goes straight from locked memory to
-// the connection, then streams the body with the client's framing.
+// the connection, then streams the body with the client's framing. It always asks for an identity
+// body, whatever the client accepts, since only an identity body can be masked.
 func (f *forwarder) writeRequest(req *http.Request) error {
-	dropped := append(connectionTokens(req.Header), f.g.Header, "Host")
+	dropped := append(connectionTokens(req.Header), f.g.Header, "Host", "Accept-Encoding")
 	var head bytes.Buffer
-	fmt.Fprintf(&head, "%s %s HTTP/1.1\r\nHost: %s\r\n", req.Method, req.RequestURI, req.Host)
+	fmt.Fprintf(&head, "%s %s HTTP/1.1\r\nHost: %s\r\nAccept-Encoding: identity\r\n", req.Method, req.RequestURI, req.Host)
 	for _, k := range sortedKeys(req.Header) {
 		if !forwardable(k, dropped) {
 			continue
@@ -312,8 +313,25 @@ func bodyAllowed(method string, code int) bool {
 		(code < 100 || code >= 200)
 }
 
-// relayResponse copies one response to the client with the value redacted from its headers
-// and, when it is identity encoded, its body. Redirects are passed to the client, never followed.
+// encodedRefusal names why a response was refused; it never quotes the upstream's header, which
+// could itself hold the value.
+const encodedRefusal = "Berth-Refused: upstream sent an encoded body, which berth-proxy cannot mask\r\n"
+
+// identityEncoded reports whether every Content-Encoding the response names is identity.
+func identityEncoded(h http.Header) bool {
+	for _, v := range h.Values("Content-Encoding") {
+		for c := range strings.SplitSeq(v, ",") {
+			if c = strings.TrimSpace(c); c != "" && !strings.EqualFold(c, "identity") {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// relayResponse copies one response to the client with the value redacted from its headers and
+// body. A body with any other Content-Encoding than identity is refused with a 502, since the
+// value inside it could not be found to mask. Redirects are passed to the client, never followed.
 func (f *forwarder) relayResponse(req *http.Request) (keep bool, err error) {
 	var resp *http.Response
 	for {
@@ -335,6 +353,11 @@ func (f *forwarder) relayResponse(req *http.Request) (keep bool, err error) {
 	defer func() { _ = resp.Body.Close() }()
 	cw := bufio.NewWriter(f.client)
 	hasBody := bodyAllowed(req.Method, resp.StatusCode)
+	if hasBody && !identityEncoded(resp.Header) {
+		f.s.log.Warn("upstream sent an encoded body; refused", "host", f.g.Host, "port", f.g.Port)
+		writeStatus(f.client, http.StatusBadGateway, encodedRefusal)
+		return false, errors.New("upstream sent an encoded body")
+	}
 	chunked := false
 	keep = !resp.Close
 	var framing string
@@ -365,15 +388,10 @@ func (f *forwarder) relayResponse(req *http.Request) (keep bool, err error) {
 	if chunked {
 		out = &chunkWriter{w: cw}
 	}
-	ce := resp.Header.Get("Content-Encoding")
-	if ce == "" || strings.EqualFold(ce, "identity") {
-		m := mask.NewSameLength(out, [][]byte{f.g.value.Bytes()})
-		_, err = io.Copy(m, resp.Body)
-		if cerr := m.Close(); err == nil {
-			err = cerr
-		}
-	} else {
-		_, err = io.Copy(out, resp.Body)
+	m := mask.NewSameLength(out, [][]byte{f.g.value.Bytes()})
+	_, err = io.Copy(m, resp.Body)
+	if cerr := m.Close(); err == nil {
+		err = cerr
 	}
 	if err != nil {
 		return false, err

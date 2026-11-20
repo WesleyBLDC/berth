@@ -291,7 +291,8 @@ func FuzzForward(f *testing.F) {
 }
 
 // forwardedHeader is what of the client's headers the proxy must pass: everything but the hop
-// by hop headers, the ones Connection names, Proxy-* and the granted header.
+// by hop headers, the ones Connection names, Proxy-* and the granted header, with Accept-Encoding
+// replaced by identity.
 func forwardedHeader(h http.Header) http.Header {
 	out := h.Clone()
 	for _, k := range append(connectionTokens(h), hopByHop...) {
@@ -303,12 +304,13 @@ func forwardedHeader(h http.Header) http.Header {
 		}
 	}
 	out.Del("Authorization")
+	out.Set("Accept-Encoding", "identity")
 	return out
 }
 
 // FuzzRelay answers one request with any bytes upstream might send and checks that the client
-// gets no byte of the value outside a body the proxy cannot read, and the same responses
-// upstream sent: each status and body, the value masked, no response smuggled in.
+// never gets the value (an encoded body, which the proxy cannot read, is refused), and the same
+// responses upstream sent: each status and body, the value masked, no response smuggled in.
 func FuzzRelay(f *testing.F) {
 	open, _ := fuzzGrants(f)
 	s := fuzzServer()
@@ -329,6 +331,7 @@ func FuzzRelay(f *testing.F) {
 		"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nTransfer-Encoding: chunked\r\n\r\n2\r\nok\r\n0\r\n\r\n",
 		"HTTP/1.1 200 OK\r\nContent-Length: 2\r\n\r\nokHTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n",
 		"HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: 2\r\n\r\nok",
+		"HTTP/1.1 200 OK\r\nContent-Encoding: identity, br\r\nContent-Length: 36\r\n\r\nbody says Bearer $V",
 		"HTTP/1.1 200 OK\r\nX: a\r\n b $V\r\nContent-Length: 0\r\n\r\n",
 		"HTTP/1.1 200 OK\r\nConnection: X-Secret\r\nX-Secret: $V\r\nContent-Length: 0\r\n\r\n",
 		"HTTP/1.0 200 OK\r\n\r\n$V",
@@ -344,7 +347,7 @@ func FuzzRelay(f *testing.F) {
 		script := []byte("GET /x HTTP/1.1\r\nHost: example.com\r\n\r\n")
 		client, _ := tunnelRun(t, s, open, script, answer, true)
 		encoded := bytes.Contains(bytes.ToLower(answer), []byte("content-encoding"))
-		if !encoded && bytes.Contains(client, []byte(canary)) {
+		if bytes.Contains(client, []byte(canary)) {
 			t.Fatalf("upstream answered %q and the client got the value: %q", answer, client)
 		}
 		want, wantErr := responses(bytes.NewReader(answer))
