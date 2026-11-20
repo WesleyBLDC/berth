@@ -68,3 +68,15 @@ gate: ## make check through the gate, which fails unless it ends with "check: PA
 hooks: ## Install the git hooks and prepare their environments
 	prek install
 	prek prepare-hooks
+
+.PHONY: fuzz fuzz-long
+FUZZTIME ?= 10s
+fuzz: ## Run every Fuzz test past its seed corpus for FUZZTIME each; make test runs the seeds alone, and crashers land in testdata/fuzz
+	@grep -rl --include='*_test.go' '^func Fuzz' internal cmd | xargs -n1 dirname | sort -u | while read -r d; do \
+		for f in $$(grep -ho '^func Fuzz[A-Za-z0-9_]*' "$$d"/*_test.go | cut -c6-); do \
+			go test "./$$d" -run '^$$' -fuzz "^$$f$$" -fuzztime $(FUZZTIME) || exit 1; \
+		done; \
+	done
+
+fuzz-long: ## The nightly lab's fuzzing: every Fuzz test for 5 minutes
+	@$(MAKE) fuzz FUZZTIME=5m

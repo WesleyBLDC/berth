@@ -27,6 +27,7 @@ Paste its last lines in your report; a failure is investigated to its root cause
 | `scripts/gate.sh merge <branch>` | From the main checkout: rebases the branch onto `main` in its worktree, checks it, fast forwards `main` and checks again; never pushes |
 | `scripts/gate.sh push` | gitleaks and a case insensitive personal data scan over every new commit, then a fast forward push of `main`, only of a tree whose clean checkout passed `make check` through the gate; never forces |
 | `make gitleaks-full` | gitleaks over the whole history |
+| `make fuzz` | Every `Fuzz` test past its seed corpus for `FUZZTIME` (10s) each; `make test` runs the seeds alone, `make fuzz-long` gives each 5 minutes for the nightly lab, and crashers land in the package's `testdata/fuzz` |
 
 The gate prints every step and its exit code, holds a lock so a merge and a push never overlap, stops at the first failure with nothing merged or pushed, and `scripts/test-gate.sh` (in `make check`) proves it; never hand chain `git rebase`, `make check`, `git merge` and `git push` instead, since one pipe such as `| tail -1` can hide a failed step.
 Planned by [the test lab](docs/plans/test-lab.md), not built yet: `make lab-image` (builds the tart base image) and `make lab-test` (the unattended VM suites).
