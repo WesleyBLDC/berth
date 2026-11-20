@@ -56,6 +56,10 @@ breaking: ## Schema changes that would break existing clients
 test-gate: ## The gate's own test: a failing merge, a failing check and a dirty tree move nothing
 	scripts/test-gate.sh
 
+.PHONY: model-long
+model-long: ## Long model based walks of the machines and the actors kit, for the nightly lab; BERTH_MODEL_SEED replays a seed
+	BERTH_MODEL_STEPS=$(or $(BERTH_MODEL_STEPS),2000) go test -race -count=1 -timeout 30m -run 'TestModel' ./internal/berthd/
+
 check: lint verify breaking test-gate test test-native test-app e2e vuln ## Everything that must pass before a commit
 	@echo "check: PASS"
 
