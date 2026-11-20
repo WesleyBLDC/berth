@@ -135,8 +135,12 @@ struct HTTPReader {
     private mutating func line(limit: Int) throws -> String {
         while true {
             if let end = crlf(in: buffer) {
-                guard let text = String(bytes: buffer[0..<end], encoding: .utf8) else {
-                    throw ClientError.malformed("a line is not UTF-8")
+                // berthd writes heads and chunk sizes in ASCII; anything else could join a
+                // delimiter into one Character and make a String check read past it.
+                guard buffer[0..<end].allSatisfy({ $0 < 0x80 }),
+                    let text = String(bytes: buffer[0..<end], encoding: .ascii)
+                else {
+                    throw ClientError.malformed("a line is not ASCII")
                 }
                 buffer.removeFirst(end + 2)
                 return text
@@ -395,9 +399,7 @@ private func readStream<Response: Decodable & Sendable>(
                 // Like connect-go: a compressed end, or any byte after the end, is a broken stream.
                 guard envelope.flags & Envelope.compressed == 0 else { throw ClientError.malformed("a compressed end") }
                 guard envelopes.isEmpty else { throw ClientError.malformed("data after the end of stream") }
-                while let more = try reader.next() {
-                    guard more.isEmpty else { throw ClientError.malformed("data after the end of stream") }
-                }
+                try expectEnd(&reader, connection)
                 let end = try? JSONDecoder().decode(EndOfStream.self, from: Data(envelope.payload))
                 guard let end else { throw ClientError.malformed("a bad end of stream") }
                 if let error = end.error { throw error.clientError }
@@ -413,6 +415,39 @@ private func readStream<Response: Decodable & Sendable>(
         }
     }
     throw ClientError.malformed("the stream ended without an end of stream message")
+}
+
+/// How long a stream's body may take to end after its end of stream message.
+let endGrace: TimeInterval = 1
+
+/// Reads what follows an end of stream: the body's own end is fine, any data is not. A peer that
+/// sends neither within endGrace is cut off and the stream ends cleanly, so it cannot hold the
+/// thread.
+private func expectEnd(_ reader: inout HTTPReader, _ connection: any Connection) throws {
+    let fired = Flag()
+    let timer = DispatchWorkItem {
+        fired.set()
+        connection.cancel()
+    }
+    DispatchQueue.global().asyncAfter(deadline: .now() + endGrace, execute: timer)
+    defer { timer.cancel() }
+    do {
+        while let more = try reader.next() {
+            if !more.isEmpty { throw ClientError.malformed("data after the end of stream") }
+        }
+    } catch ClientError.malformed("data after the end of stream") {
+        throw ClientError.malformed("data after the end of stream")
+    } catch  where fired.isSet {
+        return
+    }
+}
+
+private final class Flag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = false
+
+    var isSet: Bool { lock.withLock { value } }
+    func set() { lock.withLock { value = true } }
 }
 
 /// Lets a consumer that stops iterating end a read blocked on another thread.

@@ -144,6 +144,23 @@ private func cut(_ bytes: [UInt8], every size: Int) -> [[UInt8]] {
     }
 }
 
+/// A peer that never ends the body after its end of stream cannot hold the reading thread.
+@Test func aBodyHeldOpenAfterTheEndFinishesWithinTheGrace() async throws {
+    var answer = chunkedAnswer(envelope("{}", flags: 2), chunk: 100)
+    answer.removeLast("0\r\n\r\n".utf8.count)
+    let start = Date()
+    let (_, s) = stream([answer], holdOpen: true)
+    #expect(try await collect(s).isEmpty)
+    #expect(Date().timeIntervalSince(start) < endGrace + 2)
+}
+
+/// A head line must be ASCII, so no Character can join a delimiter to what follows it.
+@Test func aHeadThatIsNotASCIIIsRefused() async {
+    let head = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nX: caf\u{E9}\r\n\r\n"
+    let (_, s) = stream([Array(head.utf8) + Array("0\r\n\r\n".utf8)])
+    await #expect(throws: ClientError.malformed("a line is not ASCII")) { _ = try await collect(s) }
+}
+
 @Test func aStreamRefusedUpFrontCarriesTheError() async {
     let (_, s) = stream([Array(unaryAnswer(status: "429 Too Many Requests", #"{"code":"resource_exhausted"}"#).utf8)])
     await #expect(throws: ClientError.refused(code: "resource_exhausted", message: "", reason: nil)) {
