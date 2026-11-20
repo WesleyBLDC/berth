@@ -30,8 +30,29 @@ var copyLimits = struct {
 // pinFolderPrefix names the folders pins copy into, under the temporary folder.
 const pinFolderPrefix = "berth-pin-"
 
+// errRefused marks a check the file definitively failed, as opposed to one that could not run.
+var errRefused = errors.New("refused")
+
+// refusal reports a definitive failure: the file is missing, is a symlink or not a regular file,
+// is not a Mach-O Berth can name, or a tool ran and said no. Anything else (a tool that would not
+// run, a cancelled context, a copy or read that failed) is a glitch the caller may retry.
+func refusal(ctx context.Context, err error) bool {
+	return errors.Is(err, errRefused) || unsigned(ctx, err)
+}
+
+// openRefused marks a failed open of the file being pinned as definitive when the file is missing
+// or a symlink; a tool missing is never this, since only the file's own open goes through here.
+func openRefused(path string, err error) error {
+	if errors.Is(err, unix.ENOENT) || errors.Is(err, unix.ELOOP) || errors.Is(err, unix.ENOTDIR) {
+		return fmt.Errorf("%w: open %s: %w", errRefused, path, err)
+	}
+	return fmt.Errorf("open %s: %w", path, err)
+}
+
 // PinSigned returns the cdhash of every architecture slice of a Berth binary that satisfies
-// requirement, and false when any check fails.
+// requirement. It returns false with no error when the file definitively fails a check (see
+// refusal), and an error only when a check could not finish, so a caller can keep its last pin
+// through a glitch.
 //
 // It copies the file, or for an executable in X.app/Contents/MacOS (which its bundle seals, so it
 // cannot be checked alone) the whole bundle, into a new 0700 folder, and checks the copy against
@@ -59,7 +80,7 @@ func (x *Identity) PinSigned(ctx context.Context, path, requirement string) (sum
 			if named, err := bundleExecutable(ctx, cp); err != nil || named != filepath.Base(inner) {
 				ok = false
 				if err == nil {
-					err = fmt.Errorf("%s names %q as its executable, not %q", bundle, named, filepath.Base(inner))
+					err = fmt.Errorf("%w: %s names %q as its executable, not %q", errRefused, bundle, named, filepath.Base(inner))
 				}
 				return err
 			}
@@ -67,6 +88,9 @@ func (x *Identity) PinSigned(ctx context.Context, path, requirement string) (sum
 		})
 	} else {
 		err = withPrivateCopy(ctx, path, func(cp string) error { return check(cp, cp) })
+	}
+	if err != nil && refusal(ctx, err) {
+		return nil, false, nil
 	}
 	if err != nil || !ok {
 		return nil, false, err
@@ -78,6 +102,9 @@ func (x *Identity) PinSigned(ctx context.Context, path, requirement string) (sum
 // slice in one call, satisfies requirement and has that cdhash.
 func (x *Identity) boundSlices(ctx context.Context, signed, exe, requirement string) ([]ports.CDHash, bool, error) {
 	archs, err := sliceArchs(exe)
+	if fe := (*macho.FormatError)(nil); errors.As(err, &fe) || errors.Is(err, os.ErrNotExist) {
+		return nil, false, fmt.Errorf("%w: %w", errRefused, err)
+	}
 	if err != nil {
 		return nil, false, err
 	}
@@ -137,7 +164,7 @@ func archName(cpu macho.Cpu, sub uint32) (string, error) {
 	case cpu == macho.CpuAmd64:
 		return "x86_64", nil
 	}
-	return "", fmt.Errorf("a slice of CPU type %v that Berth cannot name", cpu)
+	return "", fmt.Errorf("%w: a slice of CPU type %v that Berth cannot name", errRefused, cpu)
 }
 
 // appBundleOf finds the bundle an executable in X.app/Contents/MacOS belongs to, and the
@@ -186,7 +213,7 @@ func withPrivateBundle(ctx context.Context, bundle string, do func(cp string) er
 		cp := filepath.Join(dir, filepath.Base(bundle))
 		fd, err := unix.Open(bundle, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC|unix.O_DIRECTORY, 0)
 		if err != nil {
-			return fmt.Errorf("open %s: %w", bundle, err)
+			return openRefused(bundle, err)
 		}
 		if err := copyFolder(ctx, fd, cp, 0, &copyBudget{}); err != nil {
 			return fmt.Errorf("copy %s: %w", bundle, err)
@@ -280,7 +307,7 @@ func withPrivateCopy(ctx context.Context, path string, do func(cp string) error)
 	return inPinFolder(func(dir string) error {
 		fd, err := unix.Open(path, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_NONBLOCK|unix.O_CLOEXEC, 0)
 		if err != nil {
-			return fmt.Errorf("open %s: %w", path, err)
+			return openRefused(path, err)
 		}
 		var st unix.Stat_t
 		if err := unix.Fstat(fd, &st); err != nil {
@@ -289,7 +316,7 @@ func withPrivateCopy(ctx context.Context, path string, do func(cp string) error)
 		}
 		if st.Mode&unix.S_IFMT != unix.S_IFREG {
 			_ = unix.Close(fd)
-			return fmt.Errorf("%s is not a regular file", path)
+			return fmt.Errorf("%w: %s is not a regular file", errRefused, path)
 		}
 		cp := filepath.Join(dir, filepath.Base(path))
 		if err := copyOpenFile(ctx, fd, cp, st, &copyBudget{}); err != nil {

@@ -142,13 +142,13 @@ func (x *Identity) sliceCDHash(ctx context.Context, path, arch string) (ports.CD
 			raw, err := hex.DecodeString(v)
 			var h ports.CDHash
 			if err != nil || len(raw) != len(h) {
-				return ports.CDHash{}, fmt.Errorf("codesign printed a malformed CDHash for %s", path)
+				return ports.CDHash{}, fmt.Errorf("%w: codesign printed a malformed CDHash for %s", errRefused, path)
 			}
 			copy(h[:], raw)
 			return h, nil
 		}
 	}
-	return ports.CDHash{}, fmt.Errorf("%s has no code directory hash", path)
+	return ports.CDHash{}, fmt.Errorf("%w: %s has no code directory hash", errRefused, path)
 }
 
 // signature verifies the code signature before trusting what it names: codesign -dv alone

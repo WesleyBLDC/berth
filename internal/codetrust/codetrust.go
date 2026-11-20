@@ -36,8 +36,9 @@ func Requirement(identifier string) string {
 }
 
 // Pinner returns the cdhashes of a trusted Berth file, one per architecture slice, or false with
-// no error when the file failed the check. An error means the check could not finish (codesign
-// would not run, say), which keeps the last good pin.
+// no error when the file definitively failed (missing, unsigned, failing the requirement or a
+// cdhash, or not the executable its bundle names), which drops the pin. An error means the check
+// could not finish (codesign would not run, a copy failed), which keeps the last good pin.
 type Pinner func(ctx context.Context, path, identifier string) ([]ports.CDHash, bool, error)
 
 // SignedFiles returns the cdhash of every slice of a file whose code satisfies a requirement

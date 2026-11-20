@@ -1,6 +1,7 @@
 package execid
 
 import (
+	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -120,8 +121,49 @@ func TestPinSignedChecksAnAppBundle(t *testing.T) {
 func TestPinSignedRefusesAnExecutableTheBundleDoesNotName(t *testing.T) {
 	exe := signedBundle(t, "Other")
 	sums, ok, err := New(DefaultCodesign).PinSigned(t.Context(), exe, appRequirement)
-	if ok || err == nil || !strings.Contains(err.Error(), `names "Other" as its executable`) {
-		t.Fatalf("pinned %x, ok %v, err %v; want a refusal by name", sums, ok, err)
+	if ok || err != nil || sums != nil {
+		t.Fatalf("pinned %x, ok %v, err %v; want a definitive refusal", sums, ok, err)
+	}
+}
+
+// A file that definitively fails answers false with no error, so its caller drops the pin; only a
+// check that could not run is an error, so its caller may keep the last good pin.
+func TestPinSignedTellsARefusalFromAGlitch(t *testing.T) {
+	dir := tempDir(t)
+	unsignedCopy := filepath.Join(dir, "unsigned")
+	signedCopy(t, unsignedCopy, "good")
+	if out, err := exec.CommandContext(t.Context(), DefaultCodesign, "--remove-signature", unsignedCopy).CombinedOutput(); err != nil {
+		t.Fatalf("remove signature: %v\n%s", err, out)
+	}
+	text := filepath.Join(dir, "text")
+	if err := os.WriteFile(text, []byte("#!/bin/sh\n"), 0o755); err != nil { //nolint:gosec // an executable fixture
+		t.Fatal(err)
+	}
+	good := filepath.Join(dir, "good")
+	signedCopy(t, good, "good")
+	link := filepath.Join(dir, "link")
+	if err := os.Symlink(good, link); err != nil {
+		t.Fatal(err)
+	}
+	for name, tc := range map[string]struct{ path, requirement string }{
+		"missing":            {filepath.Join(dir, "absent"), `identifier "good"`},
+		"unsigned":           {unsignedCopy, `identifier "good"`},
+		"not a Mach-O":       {text, `identifier "good"`},
+		"a symlink":          {link, `identifier "good"`},
+		"another identifier": {good, `identifier "other"`},
+		"a folder":           {dir, `identifier "good"`},
+	} {
+		if sums, ok, err := New(DefaultCodesign).PinSigned(t.Context(), tc.path, tc.requirement); ok || err != nil || sums != nil {
+			t.Errorf("%s: pinned %x, ok %v, err %v; want false with no error", name, sums, ok, err)
+		}
+	}
+	if _, ok, err := New(filepath.Join(dir, "no-codesign")).PinSigned(t.Context(), good, `identifier "good"`); ok || err == nil {
+		t.Errorf("a codesign that would not run: ok %v, err %v; want an error", ok, err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, ok, err := New(DefaultCodesign).PinSigned(ctx, good, `identifier "good"`); ok || err == nil {
+		t.Errorf("a cancelled check: ok %v, err %v; want an error", ok, err)
 	}
 }
 
