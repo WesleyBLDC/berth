@@ -37,8 +37,8 @@ Only the item that owns them may edit these; everything else names them as a fol
 - A change to behaviour or structure updates `ARCHITECTURE.md` in the same commit.
 - A reviewer reads the diff against its brief; a tester proves anything user or agent facing.
 - The leash is `held`: work branches stay local and Wesley merges, or tells the lead to merge, contract first, then build items smallest diff first, then integration.
-- Right before the final check the branch is rebased onto `main` and `make check` runs again, `buf breaking` included: parallel branches take the same `ErrorReason` numbers and migration numbers, and only the rebased tree shows the clash (M2 renumbered its reasons after E3 took 13; M4 started at 19 because E3 item 4 held 16 to 18).
-- The lead pushes `main` to the public repository only after `make check` printed `check: PASS` on the exact commit and the review is done; there are no releases or tags before M8 (ADR 0017).
+- `scripts/gate.sh merge <branch>` rebases the branch onto `main` and runs `make check` again before it fast forwards, `buf breaking` included: parallel branches take the same `ErrorReason` numbers and migration numbers, and only the rebased tree shows the clash (M2 renumbered its reasons after E3 took 13; M4 started at 19 because E3 item 4 held 16 to 18).
+- The lead pushes `main` to the public repository only with `scripts/gate.sh push`, after the review is done; it refuses a tree that has not passed the gate's check, a gitleaks finding, personal data and anything but a fast forward, and never forces; there are no releases or tags before M8 (ADR 0017).
 - Subagents default to Opus 5.5 at medium effort.
 
 ## Example: E2, terminal secrets

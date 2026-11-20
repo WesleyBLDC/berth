@@ -23,8 +23,12 @@ Paste its last lines in your report; a failure is investigated to its root cause
 | `make native` | `bin/berth-native`, the Swift helper, built in release mode and signed |
 | `make test-native` | Swift unit tests for the helper's core |
 | `make breaking` | `buf breaking` against the local `main` branch |
+| `make gate` | `scripts/gate.sh check`: `make check`, failing unless it exits 0 and ends with `check: PASS` |
+| `scripts/gate.sh merge <branch>` | From the main checkout: rebases the branch onto `main` in its worktree, checks it, fast forwards `main` and checks again; never pushes |
+| `scripts/gate.sh push` | gitleaks over the new commits, the personal data grep, then a fast forward push of `main`, only of a tree that passed the gate's check; never forces |
 
-Planned by [the test lab](docs/plans/test-lab.md), not built yet: `scripts/gate.sh` (the fail fast gate around check, merge and push), `make lab-image` (builds the tart base image) and `make lab-test` (the unattended VM suites).
+The gate prints every step and its exit code, stops at the first failure with nothing merged or pushed, and `scripts/test-gate.sh` (in `make check`) proves it; never hand chain `git rebase`, `make check`, `git merge` and `git push` instead, since one pipe such as `| tail -1` can hide a failed step.
+Planned by [the test lab](docs/plans/test-lab.md), not built yet: `make lab-image` (builds the tart base image) and `make lab-test` (the unattended VM suites).
 
 Binaries: `berthd` (daemon), `berth` (CLI and the `berth top` TUI), `berth-proxy` (one per `berth run --proxy`), `berth-native` (Swift, the only reader of Keychain values), and `berth-mcp` (an MCP server over stdio for agents without a shell).
 Build tags: `berth_lab` (planned, ADR 0020) will compile a lab only certificate authority and scripted approvals for the VM tests, and nothing else. `berth_e2e` compiles the test only pin rule, the test root of `berth-proxy`, loopback proxy targets and the `BERTH_NATIVE`, `BERTH_PROXY` and swap hooks; `test/e2e` builds its binaries with it, release builds never, and no environment variable turns it on.
@@ -77,7 +81,7 @@ Build tags: `berth_lab` (planned, ADR 0020) will compile a lab only certificate 
 1. Read the plan for the milestone in `docs/plans/` and the ADRs it names.
 2. Load the skill for the kind of change: `berth-add-rpc`, `berth-state-machine`, `berth-port-adapter`, `berth-milestone`; reviewers load `berth-review`. `berth-secrets` is for agents that use Berth, not for building it.
 3. Change the contract, write the failing test, then the code. A new branch of logic gets a test that fails without it.
-4. `make check`, then commit with a plain message (no `type:` prefix, no co-author trailer). Nothing is pushed or merged until `make check` has printed `check: PASS` on the exact commit.
+4. `make check`, then commit with a plain message (no `type:` prefix, no co-author trailer). Nothing is merged except by `scripts/gate.sh merge <branch>` and nothing is pushed except by `scripts/gate.sh push`, which refuses a tree that has not passed the gate's check.
 5. A change to behaviour or structure updates `ARCHITECTURE.md` in the same commit (state diagrams, layers, storage, security model, milestone status).
 6. If the change alters a decision, add or supersede an ADR in `docs/adr/`.
 
@@ -97,7 +101,7 @@ Build tags: `berth_lab` (planned, ADR 0020) will compile a lab only certificate 
 - Regenerate `gen/` with `make gen` instead of resolving conflicts in it by hand.
 - SQLite migrations are numbered; take the next free number when you rebase, and the contiguity test catches gaps.
 - `docs/agentic-work.md` explains how work is split so agents rarely touch the same files.
-- Rebase onto `main` right before the final check and run `make check` again, `buf breaking` included: parallel branches take the same `ErrorReason` and migration numbers, and only the rebased tree shows it.
+- `scripts/gate.sh merge <branch>` rebases onto `main` and runs `make check` again, `buf breaking` included: parallel branches take the same `ErrorReason` and migration numbers, and only the rebased tree shows it.
 
 ## Lessons from the review rounds
 

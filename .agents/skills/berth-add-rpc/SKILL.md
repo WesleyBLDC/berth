@@ -17,7 +17,7 @@ The schema is the contract every client is generated from, so it changes first a
    - A mutating method takes `string request_id = 1` with `min_len: 8, max_len: 128`.
    - Mark a method for agents only when the plan says so: `option (berth.v1.agent) = true;`.
    - Only add fields; never renumber, retype or remove. `buf breaking` enforces this.
-   - A new `ErrorReason` takes the next free number. Parallel branches take the same one, so rebase onto `main` right before the final check and run `make check` (with `buf breaking`) again; renumber yours if `main` took it.
+   - A new `ErrorReason` takes the next free number. Parallel branches take the same one, so `scripts/gate.sh merge <branch>` rebases onto `main` and runs `make check` (with `buf breaking`) again before it merges; renumber yours if `main` took it.
    - A stream has no stored reply: it takes a `request_id` only to hold back a retry while the first stream runs (`h.claim`, as `StartProxy` does).
 2. `make gen`, then `buf lint` passes. Commit the contract with its generated code before writing handlers, so other agents can build on it.
 3. **Handler** in `internal/adapters/api/`:

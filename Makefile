@@ -1,6 +1,6 @@
 export DEVELOPER_DIR ?= /Applications/Xcode.app/Contents/Developer
 
-.PHONY: build native app gen test test-native test-app e2e lint fmt vuln verify breaking check hooks
+.PHONY: build native app gen test test-native test-app e2e lint fmt vuln verify breaking check gate test-gate hooks
 
 build: ## Build berthd, berth, berth-proxy and berth-mcp into bin/; sign the three that trust each other with secrets
 	go build -o bin/ ./cmd/...
@@ -53,8 +53,14 @@ verify: ## Dependencies match go.sum
 breaking: ## Schema changes that would break existing clients
 	@if git rev-parse --verify -q main >/dev/null && git cat-file -e main:buf.yaml 2>/dev/null; then buf breaking --against '.git#branch=main'; else echo "no schema on main yet"; fi
 
-check: lint verify breaking test test-native test-app e2e vuln ## Everything that must pass before a commit
+test-gate: ## The gate's own test: a failing merge, a failing check and a dirty tree move nothing
+	scripts/test-gate.sh
+
+check: lint verify breaking test-gate test test-native test-app e2e vuln ## Everything that must pass before a commit
 	@echo "check: PASS"
+
+gate: ## make check through the gate, which fails unless it ends with "check: PASS"; merge and push with scripts/gate.sh
+	scripts/gate.sh check
 
 hooks: ## Install the git hooks and prepare their environments
 	prek install

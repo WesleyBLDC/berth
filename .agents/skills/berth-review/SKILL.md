@@ -35,7 +35,7 @@ The reviews of E2b to M4 kept finding these; look for them by name.
 17. **Tokens and the request log.** A token in a reply other than its create call, in a URL, an argument, a log line or the stored reply; a request id looked up without the principal; a trust check that runs after the request log is read.
 18. **Inconsistent trust.** The same question (is this the signed binary, is this host local, is this path inside the profile, is this process the agent's) answered by two pieces of code, or checked on one path and not on its twin (owner and agent socket, `--env` and `--proxy`, launch and boot recovery).
 19. **Docs overclaiming.** `ARCHITECTURE.md`, a plan's exit notes or a comment stating a limit, a count, a status or a command the code does not have. Check each sentence the diff adds against the code, and the pinned walk counts, the ports list and the agent surface against their tests.
-20. **Enum and migration numbers.** A branch not rebased onto `main` right before its final check: its `ErrorReason` or migration number may be taken.
+20. **Enum and migration numbers.** A branch not rebased onto `main` right before its final check: its `ErrorReason` or migration number may be taken. `scripts/gate.sh merge <branch>` rebases and checks again before it merges.
 
 ## Report
 

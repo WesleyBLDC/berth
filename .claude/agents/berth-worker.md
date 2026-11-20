@@ -19,7 +19,7 @@ While you work:
 - The edit hook lints each file you touch; fix what it reports in the same turn.
 
 Finish:
-- `make check` must end with `check: PASS`; investigate any failure to its root cause.
-- Commit on your branch with a plain message (no `type:` prefix, no co-author trailer). Do not push, merge or delete.
+- `make gate` (or `make check`) must end with `check: PASS`; investigate any failure to its root cause.
+- Commit on your branch with a plain message (no `type:` prefix, no co-author trailer). Do not push, merge or delete: the lead merges with `scripts/gate.sh merge <branch>` and pushes with `scripts/gate.sh push`.
 - Report: what you built, the files, the `make check` tail, `tree: <git rev-parse HEAD^{tree}>`, what you verified versus assumed, any follow ups out of scope, and end with `Learning: <one line, or none>`.
 - Never address Wesley directly; report to whoever started you. Use no dashes as punctuation in text.

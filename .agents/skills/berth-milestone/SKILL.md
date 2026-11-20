@@ -18,7 +18,7 @@ The Milestones section of `ARCHITECTURE.md` lists each milestone's builds and st
 ## During
 
 - The contract item lands alone before parallel items start.
-- Every item ends with `make check` passing and a commit on its branch; workers never push, and the lead pushes `main` after review.
+- Every item ends with `make check` passing and a commit on its branch; workers never push, and after review the lead merges with `scripts/gate.sh merge <branch>` and pushes with `scripts/gate.sh push`.
 - A reviewer (`berth-reviewer`) reads each item's diff; a tester (`berth-tester`) proves user facing behaviour with the real binaries.
 
 ## Close
