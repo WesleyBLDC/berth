@@ -4,10 +4,12 @@ package strictjson
 
 import (
 	"bytes"
+	"encoding"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"reflect"
 	"strconv"
 	"strings"
@@ -105,13 +107,13 @@ func checkValue(dec *json.Decoder, t reflect.Type) error {
 
 func checkObject(dec *json.Decoder, t reflect.Type) error {
 	var fields map[string]reflect.Type
-	var elem reflect.Type
+	var key, elem reflect.Type
 	switch {
 	case t == nil:
 	case t.Kind() == reflect.Struct:
-		fields = fieldsOf(t, map[string]reflect.Type{})
+		fields = fieldsOf(t)
 	case t.Kind() == reflect.Map:
-		elem = t.Elem()
+		key, elem = t.Key(), t.Elem()
 	}
 	seen := map[string]bool{}
 	for dec.More() {
@@ -119,18 +121,20 @@ func checkObject(dec *json.Decoder, t reflect.Type) error {
 		if err != nil {
 			return err
 		}
-		key, _ := tok.(string)
-		if seen[key] {
-			return fmt.Errorf("key %q repeats", key)
+		name, _ := tok.(string)
+		// Map keys repeat when they decode alike, as "1" and "01" do into an int.
+		same := mapKey(key, name)
+		if seen[same] {
+			return fmt.Errorf("key %q repeats", name)
 		}
-		seen[key] = true
+		seen[same] = true
 		child := elem
 		if fields != nil {
-			ft, exact := fields[key]
+			ft, exact := fields[name]
 			if !exact {
-				for name := range fields {
-					if strings.EqualFold(name, key) {
-						return fmt.Errorf("key %q names field %q only when case is ignored", key, name)
+				for field := range fields {
+					if strings.EqualFold(field, name) {
+						return fmt.Errorf("key %q names field %q only when case is ignored", name, field)
 					}
 				}
 			}
@@ -144,30 +148,77 @@ func checkObject(dec *json.Decoder, t reflect.Type) error {
 	return err
 }
 
-// fieldsOf adds the JSON names encoding/json reads into struct t, with their types, embedded
-// structs' fields included, to into.
-func fieldsOf(t reflect.Type, into map[string]reflect.Type) map[string]reflect.Type {
-	for f := range t.Fields() {
-		tag := f.Tag.Get("json")
-		if tag == "-" {
-			continue
-		}
-		name, _, _ := strings.Cut(tag, ",")
-		ft := f.Type
-		for ft.Kind() == reflect.Pointer {
-			ft = ft.Elem()
-		}
-		if f.Anonymous && name == "" && ft.Kind() == reflect.Struct {
-			fieldsOf(ft, into)
-			continue
-		}
-		if !f.IsExported() {
-			continue
-		}
-		if name == "" {
-			name = f.Name
-		}
-		into[name] = f.Type
+// mapKey is name as encoding/json decodes it into a map key of type kt: through
+// UnmarshalText, or as a number for an integer key. Other keys, and keys that do not decode,
+// stay as they are.
+func mapKey(kt reflect.Type, name string) string {
+	if kt == nil {
+		return name
 	}
-	return into
+	v := reflect.New(kt)
+	if u, ok := v.Interface().(encoding.TextUnmarshaler); ok {
+		if u.UnmarshalText([]byte(name)) != nil {
+			return name
+		}
+		return fmt.Sprint(v.Elem().Interface())
+	}
+	k := kt.Kind()
+	if k >= reflect.Int && k <= reflect.Int64 {
+		if n, err := strconv.ParseInt(name, 10, 64); err == nil {
+			return strconv.FormatInt(n, 10)
+		}
+	}
+	if k >= reflect.Uint && k <= reflect.Uintptr {
+		if n, err := strconv.ParseUint(name, 10, 64); err == nil {
+			return strconv.FormatUint(n, 10)
+		}
+	}
+	return name
+}
+
+// fieldsOf maps the JSON names encoding/json reads into struct t to their types. Like
+// encoding/json it reads embedded structs level by level, so a shallower field hides a deeper
+// one of the same name, and it visits each struct type once, so an embedding cycle ends.
+func fieldsOf(t reflect.Type) map[string]reflect.Type {
+	fields := map[string]reflect.Type{}
+	visited := map[reflect.Type]bool{}
+	for level := []reflect.Type{t}; len(level) > 0; {
+		var next []reflect.Type
+		found := map[string]reflect.Type{}
+		for _, st := range level {
+			if visited[st] {
+				continue
+			}
+			visited[st] = true
+			for f := range st.Fields() {
+				tag := f.Tag.Get("json")
+				if tag == "-" {
+					continue
+				}
+				name, _, _ := strings.Cut(tag, ",")
+				ft := f.Type
+				for ft.Kind() == reflect.Pointer {
+					ft = ft.Elem()
+				}
+				if f.Anonymous && name == "" && ft.Kind() == reflect.Struct {
+					next = append(next, ft)
+					continue
+				}
+				if !f.IsExported() {
+					continue
+				}
+				if name == "" {
+					name = f.Name
+				}
+				if _, shallower := fields[name]; !shallower {
+					if _, ok := found[name]; !ok {
+						found[name] = f.Type
+					}
+				}
+			}
+		}
+		maps.Copy(fields, found)
+		level = next
+	}
+	return fields
 }
