@@ -2,7 +2,6 @@
 
 Berth is a local macOS app that lists every browser agents, tests and scrapers have open, lets a person watch and take over any of them, and brokers Keychain secrets to browsers and terminals without agents ever reading them.
 The architecture, with what is built and what is planned, is in `ARCHITECTURE.md`; the decisions that bind code are in `docs/adr/`, the current milestone's plan is in `docs/plans/`, and the agent safety checklist is in `docs/agent-safety.md`.
-A lead session reads `lead.toml`; workers can ignore it.
 
 ## Done means
 
