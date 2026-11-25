@@ -27,9 +27,9 @@ Only the item that owns them may edit these; everything else names them as a fol
 - `go.mod`, `go.sum` (contract item adds dependencies up front)
 - `internal/berthd/` (integration item)
 - `internal/adapters/sqlite/migrations/` (numbers reserved in the plan; the contiguity test catches gaps)
-- `Makefile`, `AGENTS.md`, `.golangci.yml`, `lead.toml` (lead or Wesley)
+- `Makefile`, `AGENTS.md`, `.golangci.yml` (lead or Wesley)
 
-`lead.toml` sets `shared_files = "serialize"`, so two items whose file plans overlap never run at once.
+Two items whose file plans overlap never run at once.
 
 ## Landing
 
@@ -54,6 +54,5 @@ Only the item that owns them may edit these; everything else names them as a fol
 
 ## Running it
 
-- **Lead mode**: `/lead` in this repository reads `lead.toml` and runs the waves with `berth-worker`, `berth-reviewer` and `berth-tester`.
 - **By hand in Claude Code**: plan with a scout, land the contract with one worker, then start up to three `berth-worker` agents with `isolation: "worktree"`, two per message, each with its item's brief; review each with `berth-reviewer` in parallel.
 - **A workflow** (when Wesley asks for one): the same waves as a script, with each wave's results gating the next.
